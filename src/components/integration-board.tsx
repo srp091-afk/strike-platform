@@ -137,7 +137,7 @@ export function IntegrationBoard({
                       active ? "bg-emerald-50 text-emerald-700" : "bg-zinc-100 text-zinc-500",
                     )}
                   >
-                    {active ? "Подключено" : "Отключено"}
+                    {channel.provider === "whatsapp" ? (active ? "Активен" : "Отключено") : active ? "Подключено" : "Отключено"}
                   </span>
                 </div>
                 <p className="mt-4 text-sm leading-6 text-zinc-500">{channel.description}</p>
@@ -165,11 +165,22 @@ export function IntegrationBoard({
                 {assignError ? <p className="mt-2 text-xs text-red-600">{assignError}</p> : null}
                 <button
                   type="button"
-                  className="mt-4 w-full rounded-xl bg-zinc-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800 disabled:opacity-50"
+                  className={cn(
+                    "mt-4 w-full rounded-xl px-4 py-3 text-sm font-medium shadow-sm transition-all duration-200 disabled:opacity-50",
+                    channel.provider === "whatsapp" && active
+                      ? "border border-zinc-200 bg-white text-zinc-900 hover:bg-zinc-50"
+                      : "bg-zinc-900 text-white hover:bg-zinc-800",
+                  )}
                   disabled={!agentId}
                   onClick={() => setOpen(channel.provider)}
                 >
-                  {channel.provider === "whatsapp" ? "Получить QR-код" : active ? "Настроить" : "Подключить"}
+                  {channel.provider === "whatsapp"
+                    ? active
+                      ? "Переподключить"
+                      : "Подключить (QR-код)"
+                    : active
+                      ? "Настроить"
+                      : "Подключить"}
                 </button>
               </div>
             </article>
