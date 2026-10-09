@@ -1,26 +1,43 @@
 @import "tailwindcss";
+@config "../../tailwind.config.ts";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #09090b;
+  --strike: #e11d48;
+  --radius: 0.75rem;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-strike: #e11d48;
+  --color-strike-dark: #be123c;
+  --color-ink: #09090b;
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-heading: var(--font-jakarta), var(--font-inter), ui-sans-serif, sans-serif;
+  --font-display: var(--font-jakarta), var(--font-inter), ui-sans-serif, sans-serif;
+  --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@layer base {
+  html {
+    @apply bg-background text-ink antialiased;
   }
-}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  body {
+    @apply min-h-screen bg-background font-sans text-ink;
+  }
+
+  h1,
+  h2,
+  h3,
+  h4 {
+    @apply font-heading tracking-tight text-zinc-900;
+  }
+
+  ::selection {
+    background: #e11d48;
+    color: #ffffff;
+  }
 }
