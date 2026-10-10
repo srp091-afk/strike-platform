@@ -1,6 +1,6 @@
 "use client";
 
-import { Play, Trash } from "lucide-react";
+import { Maximize, Play, Trash } from "lucide-react";
 import { useActionState, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -245,18 +245,7 @@ function AgentDialog({
 
                 <CreativityField defaultValue={editing?.temperature ?? 0.7} />
 
-                <label className="grid gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                    Системная инструкция <span className="text-red-600">#ROLE</span>
-                  </span>
-                  <textarea
-                    className={`${fieldClass} min-h-80 resize-y`}
-                    name="system_prompt"
-                    required
-                    defaultValue={editing?.system_prompt ?? ""}
-                    placeholder={"#ROLE\nТы оператор STRIKE. Отвечай коротко, по делу, без воды."}
-                  />
-                </label>
+                <SystemPromptField defaultValue={editing?.system_prompt ?? ""} />
 
                 {error ? <p className="text-sm text-red-600">{error}</p> : null}
               </section>
@@ -274,6 +263,97 @@ function AgentDialog({
           </div>
         </form>
       </DialogContent>
+    </div>
+  );
+}
+
+const promptPlaceholder = "#ROLE\nТы оператор STRIKE. Отвечай коротко, по делу, без воды.";
+
+function SystemPromptField({ defaultValue }: { defaultValue: string }) {
+  const [prompt, setPrompt] = useState(defaultValue);
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+          Системная инструкция <span className="text-red-600">#ROLE</span>
+        </span>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label="Развернуть системную инструкцию"
+          onClick={() => setOpen(true)}
+        >
+          <Maximize className="size-4" />
+        </Button>
+      </div>
+      <textarea
+        className={`${fieldClass} min-h-80 resize-y`}
+        name="system_prompt"
+        required
+        value={prompt}
+        placeholder={promptPlaceholder}
+        onChange={(event) => setPrompt(event.target.value)}
+      />
+      {open ? (
+        <SystemPromptDialog value={prompt} onChange={setPrompt} onClose={() => setOpen(false)} />
+      ) : null}
+    </div>
+  );
+}
+
+function SystemPromptDialog({
+  value,
+  onChange,
+  onClose,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  return (
+    <div
+      data-channel-dialog=""
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-zinc-950/40 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="system-prompt-title"
+        className="flex h-[90vh] w-[90vw] flex-col rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.35)]"
+      >
+        <div>
+          <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</p>
+          <h2 id="system-prompt-title" className="mt-1 text-2xl font-semibold">
+            Системная инструкция <span className="text-red-600">#ROLE</span>
+          </h2>
+        </div>
+        <textarea
+          className={`${fieldClass} mt-4 min-h-0 flex-1 resize-none`}
+          value={value}
+          autoFocus
+          placeholder={promptPlaceholder}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <div className="mt-4 flex justify-end">
+          <Button type="button" onClick={onClose}>
+            Готово
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
