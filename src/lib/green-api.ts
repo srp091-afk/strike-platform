@@ -55,8 +55,8 @@ export async function sendGreenMessage(chatId: string, message: string, credenti
   return typeof payload?.idMessage === "string" ? payload.idMessage : null;
 }
 
-export async function getGreenQr() {
-  const response = await fetch(endpoint("qr"), {
+export async function getGreenQr(credentials?: GreenCredentials) {
+  const response = await fetch(endpoint("qr", credentials), {
     signal: AbortSignal.timeout(20000),
     cache: "no-store",
   });
@@ -73,8 +73,40 @@ export async function getGreenQr() {
   return { type, message };
 }
 
-export async function getGreenState() {
-  const response = await fetch(endpoint("getStateInstance"), {
+export async function getGreenPhone(credentials: GreenCredentials) {
+  const response = await fetch(endpoint("getSettings", credentials), {
+    signal: AbortSignal.timeout(15000),
+    cache: "no-store",
+  });
+  const payload = (await response.json().catch(() => null)) as { wid?: string; phone?: string | number } | null;
+  if (!response.ok) {
+    throw new Error(`Green API getSettings ${response.status}`);
+  }
+
+  const wid = typeof payload?.wid === "string" ? payload.wid.split("@")[0] ?? "" : "";
+  const fromWid = wid.replace(/\D/g, "");
+  if (fromWid) return fromWid;
+  if (typeof payload?.phone === "number" && Number.isFinite(payload.phone)) return String(payload.phone);
+  if (typeof payload?.phone === "string") return payload.phone.replace(/\D/g, "");
+  return "";
+}
+
+export async function getGreenAuthorizationCode(credentials: GreenCredentials, phoneNumber: string) {
+  const response = await fetch(endpoint("getAuthorizationCode", credentials), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ phoneNumber: Number(phoneNumber) }),
+    signal: AbortSignal.timeout(20000),
+  });
+  const payload = (await response.json().catch(() => null)) as { code?: string } | null;
+  if (!response.ok || typeof payload?.code !== "string" || !payload.code.trim()) {
+    throw new Error("Не удалось получить код связывания.");
+  }
+  return payload.code.trim();
+}
+
+export async function getGreenState(credentials?: GreenCredentials) {
+  const response = await fetch(endpoint("getStateInstance", credentials), {
     signal: AbortSignal.timeout(15000),
     cache: "no-store",
   });

@@ -4,6 +4,13 @@ import { revalidatePath } from "next/cache";
 
 import { getWorkspaceUserId } from "@/lib/agents";
 import {
+  getGreenAuthorizationCode,
+  getGreenPhone,
+  getGreenQr,
+  getGreenState,
+  type GreenCredentials,
+} from "@/lib/green-api";
+import {
   integrationDefinition,
   isIntegrationProvider,
   type IntegrationProvider,
@@ -282,32 +289,195 @@ export async function saveWhatsAppAccount(
     const agentOk = await agentBelongsToWorkspace(supabase, userId, agentId);
     if (!agentOk) return { ...emptyState, error: "Агент не найден." };
 
-    const { data, error } = await supabase
-      .from("whatsapp_accounts")
-      .insert({
-        phone_number: phoneNumber.slice(0, 40),
-        instance_id: instanceId,
-        api_token: apiToken,
-        agent_id: agentId,
-        is_active: true,
-      })
-      .select("id")
-      .single();
-
-    if (error) {
-      if (error.code === "23505") return { ...emptyState, error: "Этот Instance ID уже подключён." };
-      if (error.message.includes("whatsapp_accounts")) {
-        return { ...emptyState, error: "Сначала создайте таблицу whatsapp_accounts в Supabase." };
-      }
-      return { ...emptyState, error: error.message };
-    }
-
-    await upsertWhatsAppIntegration(supabase, userId, agentId, instanceId);
-    revalidatePath("/integrations");
-    return { ok: true, error: null, savedId: data.id as string };
+    return persistWhatsAppAccount(supabase, userId, {
+      phoneNumber,
+      instanceId,
+      apiToken,
+      agentId,
+    });
   } catch (error) {
     return { ...emptyState, error: error instanceof Error ? error.message : "Не удалось сохранить номер." };
   }
+}
+
+function readGreenPair(instanceId: string, apiToken: string): GreenCredentials | null {
+  const idInstance = instanceId.trim();
+  const token = apiToken.trim();
+  if (!/^\d{4,}$/.test(idInstance) || token.length < 8) return null;
+  return { idInstance, apiToken: token };
+}
+
+export async function requestWhatsAppQr(instanceId: string, apiToken: string) {
+  const credentials = readGreenPair(instanceId, apiToken);
+  if (!credentials) {
+    return { ok: false as const, image: null, alreadyAuthorized: false, error: "Укажите Instance ID и API Token." };
+  }
+
+  try {
+    const qr = await getGreenQr(credentials);
+    if (qr.type === "alreadyLogged") {
+      return { ok: true as const, image: null, alreadyAuthorized: true, error: null };
+    }
+    if (qr.type === "qrCode" && qr.message) {
+      return { ok: true as const, image: qr.message, alreadyAuthorized: false, error: null };
+    }
+    return { ok: false as const, image: null, alreadyAuthorized: false, error: "Не удалось получить QR-код." };
+  } catch {
+    return { ok: false as const, image: null, alreadyAuthorized: false, error: "Не удалось получить QR-код." };
+  }
+}
+
+export async function requestWhatsAppLinkCode(instanceId: string, apiToken: string, phoneNumber: string) {
+  const credentials = readGreenPair(instanceId, apiToken);
+  const digits = phoneNumber.replace(/\D/g, "");
+  if (!credentials) {
+    return { ok: false as const, code: null, error: "Укажите Instance ID и API Token." };
+  }
+  if (!/^\d{8,15}$/.test(digits)) {
+    return {
+      ok: false as const,
+      code: null,
+      error: "Введите номер в международном формате, например 79991234567.",
+    };
+  }
+
+  try {
+    const code = await getGreenAuthorizationCode(credentials, digits);
+    return { ok: true as const, code, error: null };
+  } catch {
+    return { ok: false as const, code: null, error: "Не удалось получить код связывания." };
+  }
+}
+
+export async function confirmWhatsAppAuthorization(input: {
+  instanceId: string;
+  apiToken: string;
+  agentId: string;
+  phoneNumber: string;
+}) {
+  const credentials = readGreenPair(input.instanceId, input.apiToken);
+  if (!credentials) {
+    return { ok: false as const, authorized: false, error: "Укажите Instance ID и API Token." };
+  }
+  if (!UUID_PATTERN.test(input.agentId)) {
+    return { ok: false as const, authorized: false, error: "Выберите агента." };
+  }
+
+  try {
+    const state = await getGreenState(credentials);
+    if (state !== "authorized") {
+      return { ok: true as const, authorized: false, error: null };
+    }
+
+    let phone = "";
+    try {
+      phone = await getGreenPhone(credentials);
+    } catch {
+      phone = "";
+    }
+    if (!phone) phone = input.phoneNumber.replace(/\D/g, "");
+    if (!phone) {
+      return { ok: false as const, authorized: true, error: "Не удалось определить номер телефона." };
+    }
+
+    const supabase = createSupabaseAdminClient();
+    const userId = await getWorkspaceUserId();
+    const saved = await persistWhatsAppAccount(supabase, userId, {
+      phoneNumber: phone,
+      instanceId: credentials.idInstance,
+      apiToken: credentials.apiToken,
+      agentId: input.agentId,
+    });
+    return { ok: saved.ok, authorized: saved.ok, error: saved.error };
+  } catch {
+    return { ok: false as const, authorized: false, error: "Не удалось проверить статус WhatsApp." };
+  }
+}
+
+export async function deleteWhatsAppAccount(accountId: string) {
+  if (!UUID_PATTERN.test(accountId)) {
+    return { ok: false as const, error: "Номер не найден." };
+  }
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const userId = await getWorkspaceUserId();
+    const { data, error: lookupError } = await supabase
+      .from("whatsapp_accounts")
+      .select("id, instance_id")
+      .eq("id", accountId)
+      .maybeSingle();
+
+    if (lookupError) return { ok: false as const, error: lookupError.message };
+    if (!data) return { ok: false as const, error: "Номер не найден." };
+
+    const { error } = await supabase.from("whatsapp_accounts").delete().eq("id", accountId);
+    if (error) return { ok: false as const, error: error.message };
+
+    if (data.instance_id) {
+      await supabase
+        .from("integrations")
+        .update({ status: "disconnected" })
+        .eq("user_id", userId)
+        .eq("provider", "whatsapp")
+        .eq("external_id", String(data.instance_id));
+    }
+
+    revalidatePath("/integrations");
+    return { ok: true as const, error: null };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось удалить номер." };
+  }
+}
+
+async function persistWhatsAppAccount(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  userId: string,
+  input: { phoneNumber: string; instanceId: string; apiToken: string; agentId: string },
+): Promise<SaveIntegrationState> {
+  const agentOk = await agentBelongsToWorkspace(supabase, userId, input.agentId);
+  if (!agentOk) return { ...emptyState, error: "Агент не найден." };
+
+  const row = {
+    phone_number: input.phoneNumber.slice(0, 40),
+    instance_id: input.instanceId,
+    api_token: input.apiToken,
+    agent_id: input.agentId,
+    is_active: true,
+  };
+
+  const inserted = await supabase.from("whatsapp_accounts").insert(row).select("id").single();
+  let savedId = inserted.data?.id as string | undefined;
+
+  if (inserted.error) {
+    if (inserted.error.message.includes("whatsapp_accounts")) {
+      return { ...emptyState, error: "Сначала создайте таблицу whatsapp_accounts в Supabase." };
+    }
+    if (inserted.error.code !== "23505") {
+      return { ...emptyState, error: inserted.error.message };
+    }
+
+    const updated = await supabase
+      .from("whatsapp_accounts")
+      .update({
+        phone_number: row.phone_number,
+        api_token: row.api_token,
+        agent_id: row.agent_id,
+        is_active: true,
+      })
+      .eq("instance_id", input.instanceId)
+      .select("id")
+      .maybeSingle();
+
+    if (updated.error || !updated.data) {
+      return { ...emptyState, error: updated.error?.message ?? "Не удалось обновить номер." };
+    }
+    savedId = updated.data.id as string;
+  }
+
+  await upsertWhatsAppIntegration(supabase, userId, input.agentId, input.instanceId);
+  revalidatePath("/integrations");
+  return { ok: true, error: null, savedId: savedId ?? null };
 }
 
 export async function assignWhatsAppAccountAgent(accountId: string, agentId: string) {

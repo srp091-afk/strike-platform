@@ -3,15 +3,28 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useActionState } from "react";
+import { Check, X } from "lucide-react";
 
 import {
   assignIntegrationAgent,
   assignWhatsAppAccountAgent,
+  deleteWhatsAppAccount,
   saveIntegration,
-  saveWhatsAppAccount,
   type SaveIntegrationState,
 } from "@/app/integrations/actions";
 import { ChannelIcon } from "@/components/channel-icons";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { WhatsAppConnectDialog } from "@/components/whatsapp-connect-dialog";
 import {
   integrationCatalog,
   integrationDefinition,
@@ -173,7 +186,7 @@ export function IntegrationBoard({
       </div>
 
       {connectWhatsApp ? (
-        <WhatsAppAccountDialog agents={agents} onClose={() => setConnectWhatsApp(false)} />
+        <WhatsAppConnectDialog agents={agents} onClose={() => setConnectWhatsApp(false)} />
       ) : null}
       {open && open !== "whatsapp" ? (
         <IntegrationDialog
@@ -216,6 +229,18 @@ function WhatsAppAccountList({
     });
   }
 
+  function onDelete(accountId: string) {
+    setError(null);
+    startTransition(async () => {
+      const result = await deleteWhatsAppAccount(accountId);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   return (
     <div>
       {accounts.length === 0 ? (
@@ -224,7 +249,42 @@ function WhatsAppAccountList({
         <ul className="grid gap-3">
           {accounts.map((account) => (
             <li key={account.id} className="grid gap-2 rounded-xl bg-zinc-50 px-3 py-3">
-              <p className="text-sm font-medium text-zinc-900">{account.phoneNumber}</p>
+              <div className="flex items-start justify-between gap-2">
+                <p className="text-sm font-medium text-zinc-900">{account.phoneNumber}</p>
+                <AlertDialog>
+                  <AlertDialogTrigger
+                    className="text-xs font-medium text-red-500 transition-colors hover:text-red-600 disabled:opacity-50"
+                    disabled={pending}
+                  >
+                    Удалить
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Удалить номер?</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Номер {account.phoneNumber} будет отключён от STRIKE. История чатов сохранится.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Отмена</AlertDialogCancel>
+                      <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={() => onDelete(account.id)}>
+                        Удалить
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              </div>
+              {account.isActive ? (
+                <p className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
+                  <Check className="size-3.5" />
+                  Авторизован
+                </p>
+              ) : (
+                <p className="inline-flex items-center gap-1 text-xs font-medium text-red-600">
+                  <X className="size-3.5" />
+                  Отключен
+                </p>
+              )}
               <select
                 className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-all duration-200 focus:border-zinc-300 disabled:opacity-50"
                 value={account.agentId}
@@ -253,100 +313,6 @@ function WhatsAppAccountList({
       >
         + Подключить номер
       </button>
-    </div>
-  );
-}
-
-function WhatsAppAccountDialog({ agents, onClose }: { agents: AgentOption[]; onClose: () => void }) {
-  const router = useRouter();
-  const [state, action, pending] = useActionState(saveWhatsAppAccount, initialSave);
-  const activeAgents = agents.filter((agent) => agent.isActive);
-
-  useEffect(() => {
-    if (!state.ok) return;
-    onClose();
-    router.refresh();
-  }, [state.ok, state.savedId, onClose, router]);
-
-  useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = previous;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
-
-  return (
-    <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/40 p-4"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="whatsapp-account-title"
-        className="w-full max-w-md rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.35)]"
-      >
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">WhatsApp Business</p>
-        <h2 id="whatsapp-account-title" className="mt-1 text-2xl font-semibold">
-          Подключить номер
-        </h2>
-        <form action={action} className="mt-5 grid gap-4">
-          <label className="grid gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-              Номер телефона (для отображения)
-            </span>
-            <input className={fieldClass} name="phone_number" required autoComplete="off" placeholder="+971 50 000 0000" />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Instance ID</span>
-            <input className={fieldClass} name="instance_id" required autoComplete="off" inputMode="numeric" />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">API Token</span>
-            <input className={fieldClass} name="api_token" type="password" required autoComplete="off" />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</span>
-            <select
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-all duration-200 focus:border-zinc-300"
-              name="agent_id"
-              required
-              defaultValue={activeAgents[0]?.id ?? ""}
-            >
-              {activeAgents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          {state.error ? <p className="text-sm text-red-600">{state.error}</p> : null}
-          <div className="mt-2 flex justify-end gap-2">
-            <button
-              type="button"
-              className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-all duration-200 hover:bg-zinc-50"
-              onClick={onClose}
-            >
-              Отмена
-            </button>
-            <button
-              type="submit"
-              className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800 disabled:opacity-50"
-              disabled={pending || activeAgents.length === 0}
-            >
-              {pending ? "Сохранение" : "Сохранить"}
-            </button>
-          </div>
-        </form>
-      </div>
     </div>
   );
 }

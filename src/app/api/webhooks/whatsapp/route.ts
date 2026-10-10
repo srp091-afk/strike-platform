@@ -396,6 +396,7 @@ async function resolveWhatsAppAccount(
     .from("whatsapp_accounts")
     .select("instance_id, api_token, agent_id, is_active")
     .eq("instance_id", instanceId)
+    .eq("is_active", true)
     .maybeSingle();
 
   if (error) {
