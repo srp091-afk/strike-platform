@@ -6,7 +6,7 @@ import { IntegrationBoard } from "@/components/integration-board";
 import { PageFrame } from "@/components/page-frame";
 import { listAgents } from "@/lib/agents";
 import { listIntegrations } from "@/lib/integrations";
-import { listWhatsAppAccounts } from "@/lib/whatsapp-accounts";
+import { listWhatsAppAccounts, readWhatsAppCredentialDefaults } from "@/lib/whatsapp-accounts";
 
 export const metadata: Metadata = {
   title: "Интеграции",
@@ -30,10 +30,11 @@ async function IntegrationsData() {
   await io();
 
   try {
-    const [agents, integrations, whatsappAccounts] = await Promise.all([
+    const [agents, integrations, whatsappAccounts, whatsappDefaults] = await Promise.all([
       listAgents(),
       listIntegrations(),
       listWhatsAppAccounts(),
+      readWhatsAppCredentialDefaults(),
     ]);
     return (
       <IntegrationBoard
@@ -44,6 +45,7 @@ async function IntegrationsData() {
         }))}
         integrations={integrations}
         whatsappAccounts={whatsappAccounts}
+        whatsappDefaults={whatsappDefaults}
         loadError={null}
       />
     );
@@ -53,6 +55,7 @@ async function IntegrationsData() {
         agents={[]}
         integrations={[]}
         whatsappAccounts={[]}
+        whatsappDefaults={{ instanceId: "", apiToken: "" }}
         loadError={error instanceof Error ? error.message : "Не удалось загрузить каналы."}
       />
     );

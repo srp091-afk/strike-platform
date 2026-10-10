@@ -31,7 +31,7 @@ import {
   type IntegrationProvider,
   type IntegrationView,
 } from "@/lib/integration-catalog";
-import type { WhatsAppAccountView } from "@/lib/whatsapp-accounts";
+import type { WhatsAppAccountView, WhatsAppCredentialDefaults } from "@/lib/whatsapp-accounts";
 import { cn } from "@/lib/utils";
 
 type AgentOption = {
@@ -55,11 +55,13 @@ export function IntegrationBoard({
   agents,
   integrations,
   whatsappAccounts,
+  whatsappDefaults,
   loadError,
 }: {
   agents: AgentOption[];
   integrations: IntegrationView[];
   whatsappAccounts: WhatsAppAccountView[];
+  whatsappDefaults: WhatsAppCredentialDefaults;
   loadError: string | null;
 }) {
   const router = useRouter();
@@ -186,7 +188,11 @@ export function IntegrationBoard({
       </div>
 
       {connectWhatsApp ? (
-        <WhatsAppConnectDialog agents={agents} onClose={() => setConnectWhatsApp(false)} />
+        <WhatsAppConnectDialog
+          agents={agents}
+          defaults={whatsappDefaults}
+          onClose={() => setConnectWhatsApp(false)}
+        />
       ) : null}
       {open && open !== "whatsapp" ? (
         <IntegrationDialog

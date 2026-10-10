@@ -9,6 +9,7 @@ import {
   requestWhatsAppQr,
 } from "@/app/integrations/actions";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import type { WhatsAppCredentialDefaults } from "@/lib/whatsapp-accounts";
 
 type AgentOption = {
   id: string;
@@ -19,11 +20,20 @@ type AgentOption = {
 const fieldClass =
   "w-full rounded-xl border border-transparent bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none transition-all duration-200 placeholder:text-zinc-400 hover:bg-zinc-100/80 focus:border-zinc-300 focus:bg-white";
 
-export function WhatsAppConnectDialog({ agents, onClose }: { agents: AgentOption[]; onClose: () => void }) {
+export function WhatsAppConnectDialog({
+  agents,
+  defaults,
+  onClose,
+}: {
+  agents: AgentOption[];
+  defaults: WhatsAppCredentialDefaults;
+  onClose: () => void;
+}) {
   const router = useRouter();
   const activeAgents = agents.filter((agent) => agent.isActive);
-  const [instanceId, setInstanceId] = useState("");
-  const [apiToken, setApiToken] = useState("");
+  const [instanceId, setInstanceId] = useState(defaults.instanceId);
+  const [apiToken, setApiToken] = useState(defaults.apiToken);
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [agentId, setAgentId] = useState(activeAgents[0]?.id ?? "");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [qrImage, setQrImage] = useState<string | null>(null);
@@ -93,9 +103,11 @@ export function WhatsAppConnectDialog({ agents, onClose }: { agents: AgentOption
   }
 
   function credentialsError() {
-    if (!/^\d{4,}$/.test(instanceId.trim())) return "Instance ID должен состоять из цифр.";
-    if (apiToken.trim().length < 8) return "Укажите API Token.";
     if (!agentId) return "Выберите агента.";
+    if (!/^\d{4,}$/.test(instanceId.trim()) || apiToken.trim().length < 8) {
+      setSettingsOpen(true);
+      return "Укажите Instance ID и API Token в настройках инстанса.";
+    }
     return null;
   }
 
@@ -166,26 +178,6 @@ export function WhatsAppConnectDialog({ agents, onClose }: { agents: AgentOption
         </h2>
         <div className="mt-5 grid gap-4">
           <label className="grid gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Instance ID</span>
-            <input
-              className={fieldClass}
-              value={instanceId}
-              autoComplete="off"
-              inputMode="numeric"
-              onChange={(event) => setInstanceId(event.target.value)}
-            />
-          </label>
-          <label className="grid gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">API Token</span>
-            <input
-              className={fieldClass}
-              type="password"
-              value={apiToken}
-              autoComplete="off"
-              onChange={(event) => setApiToken(event.target.value)}
-            />
-          </label>
-          <label className="grid gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</span>
             <select
               className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-all duration-200 focus:border-zinc-300"
@@ -206,13 +198,9 @@ export function WhatsAppConnectDialog({ agents, onClose }: { agents: AgentOption
               resetFlow();
             }}
           >
-            <TabsList className="grid h-auto grid-cols-1 gap-1 sm:grid-cols-2">
-              <TabsTrigger value="qr" className="h-auto whitespace-normal px-2 py-2 text-xs leading-4">
-                Авторизация по QR-коду
-              </TabsTrigger>
-              <TabsTrigger value="phone" className="h-auto whitespace-normal px-2 py-2 text-xs leading-4">
-                Авторизация по номеру телефона
-              </TabsTrigger>
+            <TabsList className="grid h-auto grid-cols-2">
+              <TabsTrigger value="qr">QR-код</TabsTrigger>
+              <TabsTrigger value="phone">Код на телефон</TabsTrigger>
             </TabsList>
             <TabsContent value="qr" className="grid gap-4">
               <button
@@ -227,7 +215,7 @@ export function WhatsAppConnectDialog({ agents, onClose }: { agents: AgentOption
                 <img src={qrImage} alt="QR-код WhatsApp" className="mx-auto h-56 w-56 rounded-xl bg-white" />
               ) : null}
               <p className="text-sm leading-6 text-zinc-500">
-                Откройте WhatsApp ➔ Настройки ➔ Связанные устройства ➔ Привязать устройство
+                Откройте WhatsApp ➔ Связанные устройства ➔ Привязать устройство и сканируйте код
               </p>
             </TabsContent>
             <TabsContent value="phone" className="grid gap-4">
@@ -248,18 +236,51 @@ export function WhatsAppConnectDialog({ agents, onClose }: { agents: AgentOption
                 disabled={codePending || activeAgents.length === 0}
                 onClick={() => void showCode()}
               >
-                {codePending ? "Загрузка" : "Получить код связывания"}
+                {codePending ? "Загрузка" : "Получить код"}
               </button>
               {linkCode ? <p className="text-center text-3xl font-semibold tracking-[0.2em] text-zinc-900">{linkCode}</p> : null}
               <p className="text-sm leading-6 text-zinc-500">
-                Откройте WhatsApp на телефоне ➔ Связанные устройства ➔ Привязать устройство ➔ Привязать по номеру
-                телефона и введите этот код
+                Введите этот код в WhatsApp в разделе Связанные устройства
               </p>
             </TabsContent>
           </Tabs>
 
           {watching ? <p className="text-sm text-zinc-500">Проверяем подключение…</p> : null}
           {message ? <p className="text-sm text-red-600">{message}</p> : null}
+
+          <button
+            type="button"
+            className="text-left text-sm font-medium text-zinc-500 transition-colors hover:text-zinc-900"
+            aria-expanded={settingsOpen}
+            onClick={() => setSettingsOpen((open) => !open)}
+          >
+            ⚙️ Настройки инстанса Green API
+          </button>
+          {settingsOpen ? (
+            <div className="grid gap-4">
+              <label className="grid gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Instance ID</span>
+                <input
+                  className={fieldClass}
+                  value={instanceId}
+                  autoComplete="off"
+                  inputMode="numeric"
+                  onChange={(event) => setInstanceId(event.target.value)}
+                />
+              </label>
+              <label className="grid gap-2">
+                <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">API Token</span>
+                <input
+                  className={fieldClass}
+                  type="password"
+                  value={apiToken}
+                  autoComplete="off"
+                  onChange={(event) => setApiToken(event.target.value)}
+                />
+              </label>
+            </div>
+          ) : null}
+
           <div className="flex justify-end">
             <button
               type="button"
