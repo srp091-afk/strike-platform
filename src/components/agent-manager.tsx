@@ -224,6 +224,7 @@ function AgentDialog({
               <div className="grid content-start gap-6">
                 <ChannelSettings initial={editing?.active_channels ?? DEFAULT_ACTIVE_CHANNELS} />
                 <ResponseDelayField defaultValue={editing?.response_delay ?? 0} />
+                <SplitMessagesField defaultValue={editing?.split_messages ?? false} />
               </div>
             </div>
           </div>
@@ -338,6 +339,24 @@ function ResponseDelayField({ defaultValue }: { defaultValue: number }) {
           </Button>
         ))}
       </div>
+    </section>
+  );
+}
+
+function SplitMessagesField({ defaultValue }: { defaultValue: boolean }) {
+  const [enabled, setEnabled] = useState(defaultValue);
+
+  return (
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+      <h3 className="font-heading text-lg font-semibold text-zinc-900">Форматирование</h3>
+      <input type="hidden" name="split_messages" value={enabled ? "true" : "false"} />
+      <label className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-4 py-3">
+        <span className="text-sm font-medium text-zinc-800">Дробить текст на отдельные сообщения</span>
+        <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Дробить текст на отдельные сообщения" />
+      </label>
+      <p className="text-sm leading-6 text-zinc-500">
+        Если включено, абзацы будут отправляться отдельными сообщениями (пузырями) с учетом задержки между ними
+      </p>
     </section>
   );
 }

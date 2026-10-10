@@ -97,33 +97,44 @@ async function handleIncoming(request: NextRequest) {
   const reply = completion.choices[0]?.message?.content?.trim() ?? "";
   if (!reply) throw new Error("Модель вернула пустой ответ.");
 
-  let delivered = false;
-  let outboundId: string | null = null;
-  try {
-    const responseDelay = Number(agent.response_delay);
-    if (responseDelay > 0) {
-      await new Promise((resolve) => setTimeout(resolve, responseDelay * 1000));
+  const responseDelay = Number(agent.response_delay);
+  const chunks =
+    agent.split_messages === true
+      ? reply.split("\n\n").filter((chunk) => chunk.trim() !== "")
+      : [reply];
+  if (chunks.length === 0) throw new Error("Модель вернула пустой ответ.");
+
+  let preview = chunks[0];
+  for (const chunk of chunks) {
+    let delivered = false;
+    let outboundId: string | null = null;
+    try {
+      if (responseDelay > 0) {
+        await new Promise((resolve) => setTimeout(resolve, responseDelay * 1000));
+      }
+      outboundId = await sendGreenMessage(incoming.from, chunk);
+      delivered = true;
+    } catch (error) {
+      console.error("[whatsapp webhook] green", error instanceof Error ? error.message : error);
     }
-    outboundId = await sendGreenMessage(incoming.from, reply);
-    delivered = true;
-  } catch (error) {
-    console.error("[whatsapp webhook] green", error instanceof Error ? error.message : error);
+
+    const { error: outboundError } = await supabase.from("messages").insert({
+      conversation_id: conversationId,
+      role: "assistant",
+      content: chunk,
+      status: delivered ? "sent" : "failed",
+      external_message_id: outboundId,
+    });
+
+    if (outboundError) throw new Error(outboundError.message);
+    preview = chunk;
+    if (!delivered) break;
   }
-
-  const { error: outboundError } = await supabase.from("messages").insert({
-    conversation_id: conversationId,
-    role: "assistant",
-    content: reply,
-    status: delivered ? "sent" : "failed",
-    external_message_id: outboundId,
-  });
-
-  if (outboundError) throw new Error(outboundError.message);
 
   const { error: previewError } = await supabase
     .from("conversations")
     .update({
-      last_message_preview: reply.slice(0, 140),
+      last_message_preview: preview.slice(0, 140),
       last_message_at: new Date().toISOString(),
       agent_id: agent.id,
     })
@@ -168,22 +179,22 @@ async function loadWhatsAppAgent(
 ) {
   const withChannels = await supabase
     .from("agents")
-    .select("id, system_prompt, model, temperature, is_active, active_channels, response_delay")
+    .select("id, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages")
     .eq("id", agentId)
     .maybeSingle();
 
-  if (!withChannels.error || !withChannels.error.message.includes("response_delay")) {
+  if (!withChannels.error || !withChannels.error.message.includes("split_messages")) {
     return withChannels;
   }
 
   const fallback = await supabase
     .from("agents")
-    .select("id, system_prompt, model, temperature, is_active, active_channels")
+    .select("id, system_prompt, model, temperature, is_active, active_channels, response_delay")
     .eq("id", agentId)
     .maybeSingle();
 
   return {
-    data: fallback.data ? { ...fallback.data, response_delay: 0 } : null,
+    data: fallback.data ? { ...fallback.data, split_messages: false } : null,
     error: fallback.error,
   };
 }

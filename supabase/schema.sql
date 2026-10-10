@@ -67,6 +67,7 @@ create table if not exists public.agents (
   is_active boolean not null default true,
   active_channels jsonb not null default '{"whatsapp": true, "telegram": false, "instagram": false}'::jsonb,
   response_delay integer not null default 0,
+  split_messages boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint agents_temperature_range check (temperature >= 0 and temperature <= 2),

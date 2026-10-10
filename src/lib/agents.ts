@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
-import { readActiveChannels, readResponseDelay, type AgentRecord } from "@/lib/agent-models";
+import { readActiveChannels, readResponseDelay, readSplitMessages, type AgentRecord } from "@/lib/agent-models";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const WORKSPACE_EMAIL = "owner@strike.local";
@@ -74,14 +74,14 @@ export async function listAgents(): Promise<AgentRecord[]> {
   if (!userId) return [];
   const withDelay = await supabase
     .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, created_at")
+    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
-  const rows = withDelay.error?.message.includes("response_delay")
+  const rows = withDelay.error?.message.includes("split_messages")
     ? await supabase
         .from("agents")
-        .select("id, name, system_prompt, model, temperature, is_active, active_channels, created_at")
+        .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, created_at")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
     : withDelay;
@@ -100,6 +100,7 @@ export async function listAgents(): Promise<AgentRecord[]> {
     created_at: row.created_at as string,
     active_channels: readActiveChannels("active_channels" in row ? row.active_channels : undefined),
     response_delay: readResponseDelay("response_delay" in row ? row.response_delay : 0),
+    split_messages: readSplitMessages("split_messages" in row ? row.split_messages : false),
   }));
 }
 

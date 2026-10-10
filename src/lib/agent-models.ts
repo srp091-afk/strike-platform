@@ -41,6 +41,7 @@ export type AgentRecord = {
   is_active: boolean;
   active_channels: ActiveChannels;
   response_delay: number;
+  split_messages: boolean;
   created_at: string;
 };
 
@@ -48,6 +49,10 @@ export function readResponseDelay(value: unknown) {
   const delay = Number(value);
   if (!Number.isFinite(delay) || delay < 0) return 0;
   return Math.round(delay);
+}
+
+export function readSplitMessages(value: unknown) {
+  return value === true || value === "true";
 }
 
 export function isAgentModel(value: string): value is AgentModel {

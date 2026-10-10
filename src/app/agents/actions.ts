@@ -2,7 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 
-import { DEFAULT_ACTIVE_CHANNELS, isAgentModel, readResponseDelay, type ActiveChannels } from "@/lib/agent-models";
+import {
+  DEFAULT_ACTIVE_CHANNELS,
+  isAgentModel,
+  readResponseDelay,
+  readSplitMessages,
+  type ActiveChannels,
+} from "@/lib/agent-models";
 import { getWorkspaceUserId } from "@/lib/agents";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -18,6 +24,7 @@ function readAgentFields(formData: FormData) {
   const model = String(formData.get("model") ?? "").trim();
   const temperature = Number(formData.get("temperature") ?? 0.7);
   const responseDelay = readDelay(formData.get("response_delay"));
+  const splitMessages = readSplitMessages(formData.get("split_messages"));
   const id = String(formData.get("id") ?? "").trim();
   const activeChannels = readChannels(formData.get("active_channels"));
 
@@ -49,6 +56,7 @@ function readAgentFields(formData: FormData) {
     model,
     temperature,
     responseDelay,
+    splitMessages,
     activeChannels,
   };
 }
@@ -89,6 +97,7 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
       model: fields.model,
       temperature: fields.temperature,
       response_delay: fields.responseDelay,
+      split_messages: fields.splitMessages,
       active_channels: fields.activeChannels,
       user_id: userId,
     };
