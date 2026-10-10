@@ -5,7 +5,7 @@ import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export const maxDuration = 120;
+export const maxDuration = 180;
 
 export async function POST(request: NextRequest) {
   try {
@@ -120,82 +120,87 @@ async function handleIncoming(request: NextRequest, body: unknown) {
   if (!conversation.botActive) return;
   if (!whatsappChannelEnabled(agent.active_channels)) return;
 
-  const { data: history, error: historyError } = await supabase
-    .from("messages")
-    .select("role, content, created_at")
-    .eq("conversation_id", conversationId)
-    .order("created_at", { ascending: false })
-    .limit(40);
+  const locked = await acquireProcessingLock(supabase, conversationId);
+  if (!locked) return;
 
-  if (historyError) throw new Error(historyError.message);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, readDebounceMs(agent.response_delay)));
 
-  const dialogue = (history ?? [])
-    .reverse()
-    .filter((message) => message.role === "user" || message.role === "assistant")
-    .map((message) => ({
-      role: message.role as "user" | "assistant",
-      content: message.content as string,
-    }));
+    const { data: history, error: historyError } = await supabase
+      .from("messages")
+      .select("role, content, created_at")
+      .eq("conversation_id", conversationId)
+      .order("created_at", { ascending: false })
+      .limit(40);
 
-  const model = (agent.model as string) || "gpt-4o-mini";
-  const completion = await getOpenAI().chat.completions.create({
-    model,
-    temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
-    messages: [
-      {
-        role: "system",
-        content: (agent.system_prompt as string) || "You are a STRIKE agent.",
-      },
-      ...dialogue,
-    ],
-  });
+    if (historyError) throw new Error(historyError.message);
 
-  const reply = completion.choices[0]?.message?.content?.trim() ?? "";
-  if (!reply) throw new Error("Модель вернула пустой ответ.");
+    const dialogue = collapseTrailingUserMessages(history ?? []);
+    const latest = dialogue[dialogue.length - 1];
+    if (!latest || latest.role !== "user" || !latest.content.trim()) return;
 
-  const responseDelay = Number(agent.response_delay);
-  const chunks =
-    agent.split_messages === true
-      ? reply.split("\n\n").filter((chunk) => chunk.trim() !== "")
-      : [reply];
-  if (chunks.length === 0) throw new Error("Модель вернула пустой ответ.");
+    const model = (agent.model as string) || "gpt-4o-mini";
+    const completion = await getOpenAI().chat.completions.create({
+      model,
+      temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
+      messages: [
+        {
+          role: "system",
+          content: (agent.system_prompt as string) || "You are a STRIKE agent.",
+        },
+        ...dialogue,
+      ],
+    });
 
-  let preview = chunks[0];
-  for (const chunk of chunks) {
-    let delivered = false;
-    let outboundId: string | null = null;
-    try {
-      if (responseDelay > 0) {
-        await new Promise((resolve) => setTimeout(resolve, responseDelay * 1000));
+    const reply = completion.choices[0]?.message?.content?.trim() ?? "";
+    if (!reply) throw new Error("Модель вернула пустой ответ.");
+
+    const responseDelay = Number(agent.response_delay);
+    const chunks =
+      agent.split_messages === true
+        ? reply.split("\n\n").filter((chunk) => chunk.trim() !== "")
+        : [reply];
+    if (chunks.length === 0) throw new Error("Модель вернула пустой ответ.");
+
+    let preview = chunks[0];
+    for (const chunk of chunks) {
+      let delivered = false;
+      let outboundId: string | null = null;
+      try {
+        if (responseDelay > 0) {
+          await new Promise((resolve) => setTimeout(resolve, responseDelay * 1000));
+        }
+        outboundId = await sendGreenMessage(incoming.from, chunk, channel.credentials);
+        delivered = true;
+      } catch (error) {
+        console.error("[whatsapp webhook] green", error instanceof Error ? error.message : error);
       }
-      outboundId = await sendGreenMessage(incoming.from, chunk, channel.credentials);
-      delivered = true;
-    } catch (error) {
-      console.error("[whatsapp webhook] green", error instanceof Error ? error.message : error);
+
+      await insertMessage(supabase, {
+        conversation_id: conversationId,
+        role: "assistant",
+        content: chunk,
+        status: delivered ? "sent" : "failed",
+        external_message_id: outboundId,
+        created_at: null,
+      });
+      preview = chunk;
+      if (!delivered) break;
     }
 
-    await insertMessage(supabase, {
-      conversation_id: conversationId,
-      role: "assistant",
-      content: chunk,
-      status: delivered ? "sent" : "failed",
-      external_message_id: outboundId,
-      created_at: null,
-    });
-    preview = chunk;
-    if (!delivered) break;
+    const { error: previewError } = await supabase
+      .from("conversations")
+      .update({
+        last_message_preview: preview.slice(0, 140),
+        last_message_at: new Date().toISOString(),
+        agent_id: agent.id,
+      })
+      .eq("id", conversationId);
+
+    if (previewError) throw new Error(previewError.message);
+  } finally {
+    await releaseProcessingLock(supabase, conversationId);
   }
-
-  const { error: previewError } = await supabase
-    .from("conversations")
-    .update({
-      last_message_preview: preview.slice(0, 140),
-      last_message_at: new Date().toISOString(),
-      agent_id: agent.id,
-    })
-    .eq("id", conversationId);
-
-  if (previewError) throw new Error(previewError.message);
 }
 
 type ChatText = {
@@ -397,6 +402,80 @@ async function loadWhatsAppAgent(
     data: fallback.data ? { ...fallback.data, split_messages: false } : null,
     error: fallback.error,
   };
+}
+
+async function acquireProcessingLock(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  conversationId: string,
+) {
+  const claimed = await supabase
+    .from("conversations")
+    .update({ is_processing: true })
+    .eq("id", conversationId)
+    .eq("is_processing", false)
+    .select("id");
+
+  if (claimed.error) throw new Error(claimed.error.message);
+  if (claimed.data && claimed.data.length > 0) return true;
+
+  const current = await supabase
+    .from("conversations")
+    .select("is_processing, updated_at")
+    .eq("id", conversationId)
+    .maybeSingle();
+  if (current.error) throw new Error(current.error.message);
+
+  const updatedAt = current.data?.updated_at ? Date.parse(String(current.data.updated_at)) : 0;
+  const stale = current.data?.is_processing === true && Date.now() - updatedAt > 3 * 60 * 1000;
+  if (!stale) return false;
+
+  await supabase.from("conversations").update({ is_processing: false }).eq("id", conversationId);
+  const retry = await supabase
+    .from("conversations")
+    .update({ is_processing: true })
+    .eq("id", conversationId)
+    .eq("is_processing", false)
+    .select("id");
+  if (retry.error) throw new Error(retry.error.message);
+  return Boolean(retry.data && retry.data.length > 0);
+}
+
+async function releaseProcessingLock(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  conversationId: string,
+) {
+  const { error } = await supabase
+    .from("conversations")
+    .update({ is_processing: false })
+    .eq("id", conversationId);
+  if (error) console.error("[whatsapp webhook] unlock", error.message);
+}
+
+function readDebounceMs(value: unknown) {
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds <= 0) return 8000;
+  return seconds * 1000;
+}
+
+function collapseTrailingUserMessages(history: { role?: string; content?: string }[]) {
+  const dialogue = [...history]
+    .reverse()
+    .filter((message) => message.role === "user" || message.role === "assistant")
+    .map((message) => ({
+      role: message.role as "user" | "assistant",
+      content: String(message.content ?? ""),
+    }));
+
+  let splitAt = dialogue.length;
+  while (splitAt > 0 && dialogue[splitAt - 1]?.role === "user") splitAt -= 1;
+
+  const burst = dialogue
+    .slice(splitAt)
+    .map((message) => message.content.trim())
+    .filter((content) => content !== "");
+  if (burst.length === 0) return dialogue;
+
+  return [...dialogue.slice(0, splitAt), { role: "user" as const, content: burst.join("\n") }];
 }
 
 function whatsappChannelEnabled(value: unknown) {

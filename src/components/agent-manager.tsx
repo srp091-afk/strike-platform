@@ -658,7 +658,7 @@ function ResponseDelayField({ defaultValue }: { defaultValue: number }) {
             role="tooltip"
             className="rounded-xl bg-zinc-950 px-3 py-2.5 text-left text-xs leading-5 font-normal normal-case tracking-normal text-white"
           >
-            Имитация печати человека перед отправкой ответа. 0 сек — мгновенный ответ.
+            Бот ждёт это время и склеивает сообщения, которые клиент отправил подряд. 0 сек — пауза 8 секунд. Если значение больше нуля, та же пауза ещё раз стоит перед отправкой каждого сообщения.
           </span>
         ) : null}
         <input
