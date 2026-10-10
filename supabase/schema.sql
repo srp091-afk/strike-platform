@@ -141,6 +141,7 @@ create table if not exists public.conversations (
   last_message_preview text,
   last_message_at timestamptz,
   unread_count integer not null default 0,
+  is_bot_active boolean not null default true,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint conversations_external_unique unique (integration_id, external_chat_id)

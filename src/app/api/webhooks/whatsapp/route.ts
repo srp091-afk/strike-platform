@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { readBotFlags } from "@/lib/bot-state";
 import { sendGreenMessage } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -46,7 +47,7 @@ async function handleIncoming(request: NextRequest) {
     throw new Error("Агент не найден или выключен.");
   }
 
-  const conversationId = await upsertConversation(supabase, {
+  const conversation = await upsertConversation(supabase, {
     userId: channel.userId,
     agentId: agent.id as string,
     integrationId: channel.integrationId,
@@ -54,6 +55,7 @@ async function handleIncoming(request: NextRequest) {
     contactName: incoming.contactName,
     preview: incoming.text,
   });
+  const conversationId = conversation.id;
 
   const { error: inboundError } = await supabase.from("messages").insert({
     conversation_id: conversationId,
@@ -64,6 +66,7 @@ async function handleIncoming(request: NextRequest) {
   });
 
   if (inboundError) throw new Error(inboundError.message);
+  if (!conversation.botActive) return;
 
   const { data: history, error: historyError } = await supabase
     .from("messages")
@@ -218,7 +221,7 @@ async function upsertConversation(
   if (existing?.id) {
     const { error } = await supabase.from("conversations").update(patch).eq("id", existing.id);
     if (error) throw new Error(error.message);
-    return existing.id as string;
+    return { id: existing.id as string, botActive: await readBotActive(supabase, existing.id as string) };
   }
 
   const { data, error } = await supabase
@@ -232,7 +235,15 @@ async function upsertConversation(
     .single();
 
   if (error || !data) throw new Error(error?.message ?? "Не удалось создать диалог.");
-  return data.id as string;
+  return { id: data.id as string, botActive: true };
+}
+
+async function readBotActive(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  conversationId: string,
+) {
+  const flags = await readBotFlags(supabase, [conversationId]);
+  return flags.get(conversationId) ?? true;
 }
 
 function clampTemperature(value: unknown) {

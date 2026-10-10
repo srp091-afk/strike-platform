@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { readBotFlags } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
 import { getOpenAI } from "@/lib/openai";
 import { sleep, splitReply } from "@/lib/reply";
@@ -76,8 +77,9 @@ export async function POST(request: NextRequest) {
   }
 
   let conversationId: string;
+  let botActive = true;
   try {
-    conversationId = await upsertConversation(supabase, {
+    const conversation = await upsertConversation(supabase, {
       userId: integration.user_id as string,
       agentId: agent.id as string,
       integrationId: integration.id as string,
@@ -85,6 +87,8 @@ export async function POST(request: NextRequest) {
       contactName: incoming.contactName,
       preview: incoming.text,
     });
+    conversationId = conversation.id;
+    botActive = conversation.botActive;
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Не удалось создать диалог." },
@@ -102,6 +106,10 @@ export async function POST(request: NextRequest) {
 
   if (inboundError) {
     return Response.json({ error: inboundError.message }, { status: 500 });
+  }
+
+  if (!botActive) {
+    return Response.json({ ok: true, paused: true });
   }
 
   const { data: history, error: historyError } = await supabase
@@ -304,7 +312,8 @@ async function upsertConversation(
     if (error) {
       throw new Error(error.message);
     }
-    return existing.id as string;
+    const flags = await readBotFlags(supabase, [existing.id as string]);
+    return { id: existing.id as string, botActive: flags.get(existing.id as string) ?? true };
   }
 
   const { data, error } = await supabase
@@ -321,7 +330,7 @@ async function upsertConversation(
     throw new Error(error?.message ?? "Не удалось создать диалог.");
   }
 
-  return data.id as string;
+  return { id: data.id as string, botActive: true };
 }
 
 function clampTemperature(value: unknown) {
