@@ -2,7 +2,7 @@ import "server-only";
 
 const API_URL = "https://7103.api.greenapi.com";
 
-type GreenCredentials = {
+export type GreenCredentials = {
   idInstance: string;
   apiToken: string;
 };
@@ -16,13 +16,15 @@ export function greenApiCredentials(): GreenCredentials {
   return { idInstance, apiToken };
 }
 
-function endpoint(method: string) {
-  const { idInstance, apiToken } = greenApiCredentials();
-  return `${API_URL}/waInstance${idInstance}/${method}/${apiToken}`;
+function endpoint(method: string, credentials?: GreenCredentials) {
+  const { idInstance, apiToken } = credentials ?? greenApiCredentials();
+  const prefix = idInstance.slice(0, 4);
+  const host = /^\d{4}$/.test(prefix) ? `https://${prefix}.api.greenapi.com` : API_URL;
+  return `${host}/waInstance${idInstance}/${method}/${apiToken}`;
 }
 
-export async function getGreenChatHistory(chatId: string, count = 10) {
-  const response = await fetch(endpoint("getChatHistory"), {
+export async function getGreenChatHistory(chatId: string, count = 10, credentials?: GreenCredentials) {
+  const response = await fetch(endpoint("getChatHistory", credentials), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chatId, count }),
@@ -37,8 +39,8 @@ export async function getGreenChatHistory(chatId: string, count = 10) {
   return Array.isArray(payload) ? payload : [];
 }
 
-export async function sendGreenMessage(chatId: string, message: string) {
-  const response = await fetch(endpoint("sendMessage"), {
+export async function sendGreenMessage(chatId: string, message: string, credentials?: GreenCredentials) {
+  const response = await fetch(endpoint("sendMessage", credentials), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ chatId, message }),

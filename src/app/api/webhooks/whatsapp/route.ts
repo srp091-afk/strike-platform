@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { readBotFlags } from "@/lib/bot-state";
-import { getGreenChatHistory, sendGreenMessage } from "@/lib/green-api";
+import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -12,9 +12,9 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const type = stringValue(asRecord(body).typeWebhook);
     if (type === "outgoingMessageReceived" || type === "outgoingAPIMessageReceived") {
-      await handleOutgoing(body);
+      await handleOutgoing(request, body);
     } else if (type === "incomingMessageReceived") {
-      await handleIncoming(body);
+      await handleIncoming(request, body);
     }
   } catch (error) {
     console.error("[whatsapp webhook]", error instanceof Error ? error.message : error);
@@ -23,14 +23,15 @@ export async function POST(request: NextRequest) {
   return Response.json({ ok: true });
 }
 
-async function handleOutgoing(body: unknown) {
+async function handleOutgoing(request: NextRequest, body: unknown) {
   const outgoing = readOutgoing(body);
   if (!outgoing) return;
 
   const supabase = createSupabaseAdminClient();
   if (await messageExists(supabase, outgoing.messageId)) return;
 
-  const channel = await findWhatsAppChannel(supabase);
+  const channel = await resolveWhatsAppAccount(request, body, supabase);
+  if (!channel) return;
   const conversation = await upsertConversation(supabase, {
     userId: channel.userId,
     agentId: channel.agentId,
@@ -50,12 +51,13 @@ async function handleOutgoing(body: unknown) {
   });
 }
 
-async function handleIncoming(body: unknown) {
+async function handleIncoming(request: NextRequest, body: unknown) {
   const incoming = readIncoming(body);
   if (!incoming) return;
 
   const supabase = createSupabaseAdminClient();
-  const channel = await findWhatsAppChannel(supabase);
+  const channel = await resolveWhatsAppAccount(request, body, supabase);
+  if (!channel) return;
 
   if (incoming.messageId) {
     const { data: existing, error: duplicateError } = await supabase
@@ -94,7 +96,7 @@ async function handleIncoming(body: unknown) {
   });
 
   if (inboundError) throw new Error(inboundError.message);
-  await syncOpeningHistory(supabase, conversationId, incoming.from);
+  await syncOpeningHistory(supabase, conversationId, incoming.from, channel.credentials);
   if (!conversation.botActive) return;
   if (!whatsappChannelEnabled(agent.active_channels)) return;
 
@@ -146,7 +148,7 @@ async function handleIncoming(body: unknown) {
       if (responseDelay > 0) {
         await new Promise((resolve) => setTimeout(resolve, responseDelay * 1000));
       }
-      outboundId = await sendGreenMessage(incoming.from, chunk);
+      outboundId = await sendGreenMessage(incoming.from, chunk, channel.credentials);
       delivered = true;
     } catch (error) {
       console.error("[whatsapp webhook] green", error instanceof Error ? error.message : error);
@@ -188,6 +190,7 @@ async function syncOpeningHistory(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   conversationId: string,
   chatId: string,
+  credentials: GreenCredentials,
 ) {
   const { count, error } = await supabase
     .from("messages")
@@ -200,7 +203,7 @@ async function syncOpeningHistory(
 
   let journal: unknown[] = [];
   try {
-    journal = await getGreenChatHistory(chatId, 10);
+    journal = await getGreenChatHistory(chatId, 10, credentials);
   } catch (historyError) {
     console.error(
       "[whatsapp webhook] history",
@@ -381,26 +384,96 @@ function whatsappChannelEnabled(value: unknown) {
   return (value as { whatsapp?: unknown }).whatsapp !== false;
 }
 
-async function findWhatsAppChannel(supabase: ReturnType<typeof createSupabaseAdminClient>) {
+async function resolveWhatsAppAccount(
+  request: NextRequest,
+  body: unknown,
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+) {
+  const instanceId = readInstanceId(request, body);
+  if (!instanceId) return null;
+
   const { data, error } = await supabase
+    .from("whatsapp_accounts")
+    .select("instance_id, api_token, agent_id, is_active")
+    .eq("instance_id", instanceId)
+    .maybeSingle();
+
+  if (error) {
+    if (error.message.includes("whatsapp_accounts")) return null;
+    throw new Error(error.message);
+  }
+  if (!data || data.is_active === false || !data.agent_id || !data.api_token) return null;
+
+  const agentId = data.agent_id as string;
+  const { data: agent, error: agentError } = await supabase
+    .from("agents")
+    .select("user_id")
+    .eq("id", agentId)
+    .maybeSingle();
+  if (agentError) throw new Error(agentError.message);
+  if (!agent?.user_id) return null;
+
+  const integration = await ensureWhatsAppIntegration(supabase, {
+    userId: agent.user_id as string,
+    agentId,
+    instanceId,
+  });
+
+  return {
+    integrationId: integration.id,
+    userId: agent.user_id as string,
+    agentId,
+    credentials: {
+      idInstance: String(data.instance_id),
+      apiToken: String(data.api_token),
+    } satisfies GreenCredentials,
+  };
+}
+
+function readInstanceId(request: NextRequest, body: unknown) {
+  const record = asRecord(body);
+  const instance = asRecord(record.instanceData);
+  const fromBody = stringValue(instance.idInstance) || stringValue(record.idInstance);
+  if (fromBody) return fromBody;
+  return request.headers.get("x-id-instance")?.trim() || request.headers.get("id-instance")?.trim() || "";
+}
+
+async function ensureWhatsAppIntegration(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  input: { userId: string; agentId: string; instanceId: string },
+) {
+  const { data: existing, error: lookupError } = await supabase
     .from("integrations")
-    .select("id, user_id, agent_id")
+    .select("id")
     .eq("provider", "whatsapp")
-    .eq("status", "connected")
-    .order("updated_at", { ascending: false })
+    .eq("external_id", input.instanceId)
     .limit(1)
     .maybeSingle();
 
-  if (error) throw new Error(error.message);
-  if (!data?.id || !data.user_id || !data.agent_id) {
-    throw new Error("Нет активной WhatsApp-интеграции.");
+  if (lookupError) throw new Error(lookupError.message);
+  if (existing?.id) {
+    await supabase
+      .from("integrations")
+      .update({ agent_id: input.agentId, status: "connected" })
+      .eq("id", existing.id);
+    return { id: existing.id as string };
   }
 
-  return {
-    integrationId: data.id as string,
-    userId: data.user_id as string,
-    agentId: data.agent_id as string,
-  };
+  const { data, error } = await supabase
+    .from("integrations")
+    .insert({
+      user_id: input.userId,
+      agent_id: input.agentId,
+      provider: "whatsapp",
+      name: "WhatsApp Business",
+      status: "connected",
+      external_id: input.instanceId,
+    })
+    .select("id")
+    .single();
+
+  if (error || !data) throw new Error(error?.message ?? "Не удалось привязать номер.");
+  return { id: data.id as string };
 }
 
 async function upsertConversation(

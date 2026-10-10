@@ -25,7 +25,7 @@ export const integrationCatalog: readonly IntegrationDefinition[] = [
   {
     provider: "whatsapp",
     title: "WhatsApp Business",
-    description: "Подключение WhatsApp по QR-коду через Green API.",
+    description: "Несколько номеров Green API. У каждого номера свой агент.",
     fields: [],
   },
   {

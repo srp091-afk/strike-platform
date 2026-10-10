@@ -4,15 +4,21 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useActionState } from "react";
 
-import { assignIntegrationAgent, saveIntegration, type SaveIntegrationState } from "@/app/integrations/actions";
+import {
+  assignIntegrationAgent,
+  assignWhatsAppAccountAgent,
+  saveIntegration,
+  saveWhatsAppAccount,
+  type SaveIntegrationState,
+} from "@/app/integrations/actions";
 import { ChannelIcon } from "@/components/channel-icons";
-import { WhatsAppQrDialog } from "@/components/whatsapp-qr-dialog";
 import {
   integrationCatalog,
   integrationDefinition,
   type IntegrationProvider,
   type IntegrationView,
 } from "@/lib/integration-catalog";
+import type { WhatsAppAccountView } from "@/lib/whatsapp-accounts";
 import { cn } from "@/lib/utils";
 
 type AgentOption = {
@@ -35,10 +41,12 @@ const initialSave: SaveIntegrationState = { ok: false, error: null, savedId: nul
 export function IntegrationBoard({
   agents,
   integrations,
+  whatsappAccounts,
   loadError,
 }: {
   agents: AgentOption[];
   integrations: IntegrationView[];
+  whatsappAccounts: WhatsAppAccountView[];
   loadError: string | null;
 }) {
   const router = useRouter();
@@ -46,8 +54,8 @@ export function IntegrationBoard({
     initialAgents(agents, integrations),
   );
   const [open, setOpen] = useState<IntegrationProvider | null>(null);
+  const [connectWhatsApp, setConnectWhatsApp] = useState(false);
   const [assignError, setAssignError] = useState<string | null>(null);
-  const [whatsappAuthorized, setWhatsappAuthorized] = useState<boolean | null>(null);
   const [pendingAssign, startAssign] = useTransition();
 
   useEffect(() => {
@@ -61,31 +69,6 @@ export function IntegrationBoard({
       return next;
     });
   }, [agents, integrations]);
-
-  useEffect(() => {
-    const agentId = agentByProvider.whatsapp ?? "";
-    let cancelled = false;
-
-    async function poll() {
-      try {
-        const response = await fetch(`/api/integrations/whatsapp/state?agent=${encodeURIComponent(agentId)}`, {
-          cache: "no-store",
-        });
-        const payload = (await response.json()) as { state?: string };
-        if (cancelled || !payload.state || payload.state === "error") return;
-        setWhatsappAuthorized(payload.state === "authorized");
-      } catch {
-        if (!cancelled) setWhatsappAuthorized(null);
-      }
-    }
-
-    void poll();
-    const timer = window.setInterval(() => void poll(), 4000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(timer);
-    };
-  }, [agentByProvider.whatsapp]);
 
   function onAgentChange(provider: IntegrationProvider, agentId: string) {
     setAgentByProvider((current) => ({ ...current, [provider]: agentId }));
@@ -116,7 +99,9 @@ export function IntegrationBoard({
           const row = integrations.find((item) => item.provider === channel.provider);
           const agentId = agentByProvider[channel.provider] ?? "";
           const active =
-            channel.provider === "whatsapp" ? (whatsappAuthorized ?? Boolean(row?.active)) : Boolean(row?.active);
+            channel.provider === "whatsapp"
+              ? whatsappAccounts.some((account) => account.isActive)
+              : Boolean(row?.active);
 
           return (
             <article
@@ -144,56 +129,51 @@ export function IntegrationBoard({
               </div>
 
               <div className="mt-6">
-                <label className="grid gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</span>
-                  <select
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-all duration-200 focus:border-zinc-300 disabled:opacity-50"
-                    value={agentId}
-                    disabled={agents.length === 0 || pendingAssign}
-                    onChange={(event) => onAgentChange(channel.provider, event.target.value)}
-                  >
-                    <option value="">Выберите агента</option>
-                    {agents
-                      .filter((agent) => agent.isActive || agent.id === agentId)
-                      .map((agent) => (
-                        <option key={agent.id} value={agent.id}>
-                          {agent.name}
-                        </option>
-                      ))}
-                  </select>
-                </label>
-                {assignError ? <p className="mt-2 text-xs text-red-600">{assignError}</p> : null}
-                <button
-                  type="button"
-                  className={cn(
-                    "mt-4 w-full rounded-xl px-4 py-3 text-sm font-medium shadow-sm transition-all duration-200 disabled:opacity-50",
-                    channel.provider === "whatsapp" && active
-                      ? "border border-zinc-200 bg-white text-zinc-900 hover:bg-zinc-50"
-                      : "bg-zinc-900 text-white hover:bg-zinc-800",
-                  )}
-                  disabled={!agentId}
-                  onClick={() => setOpen(channel.provider)}
-                >
-                  {channel.provider === "whatsapp"
-                    ? active
-                      ? "Переподключить"
-                      : "Подключить (QR-код)"
-                    : active
-                      ? "Настроить"
-                      : "Подключить"}
-                </button>
+                {channel.provider === "whatsapp" ? (
+                  <WhatsAppAccountList
+                    accounts={whatsappAccounts}
+                    agents={agents}
+                    onConnect={() => setConnectWhatsApp(true)}
+                  />
+                ) : (
+                  <>
+                    <label className="grid gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</span>
+                      <select
+                        className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-all duration-200 focus:border-zinc-300 disabled:opacity-50"
+                        value={agentId}
+                        disabled={agents.length === 0 || pendingAssign}
+                        onChange={(event) => onAgentChange(channel.provider, event.target.value)}
+                      >
+                        <option value="">Выберите агента</option>
+                        {agents
+                          .filter((agent) => agent.isActive || agent.id === agentId)
+                          .map((agent) => (
+                            <option key={agent.id} value={agent.id}>
+                              {agent.name}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    {assignError ? <p className="mt-2 text-xs text-red-600">{assignError}</p> : null}
+                    <button
+                      type="button"
+                      className="mt-4 w-full rounded-xl bg-zinc-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800 disabled:opacity-50"
+                      disabled={!agentId}
+                      onClick={() => setOpen(channel.provider)}
+                    >
+                      {active ? "Настроить" : "Подключить"}
+                    </button>
+                  </>
+                )}
               </div>
             </article>
           );
         })}
       </div>
 
-      {open === "whatsapp" ? (
-        <WhatsAppQrDialog
-          agentId={agentByProvider.whatsapp ?? ""}
-          agentName={agents.find((agent) => agent.id === agentByProvider.whatsapp)?.name ?? ""}
-          onClose={() => setOpen(null)}
-        />
+      {connectWhatsApp ? (
+        <WhatsAppAccountDialog agents={agents} onClose={() => setConnectWhatsApp(false)} />
       ) : null}
       {open && open !== "whatsapp" ? (
         <IntegrationDialog
@@ -206,6 +186,167 @@ export function IntegrationBoard({
           onClose={() => setOpen(null)}
         />
       ) : null}
+    </div>
+  );
+}
+
+function WhatsAppAccountList({
+  accounts,
+  agents,
+  onConnect,
+}: {
+  accounts: WhatsAppAccountView[];
+  agents: AgentOption[];
+  onConnect: () => void;
+}) {
+  const router = useRouter();
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function onAgentChange(accountId: string, agentId: string) {
+    if (!agentId) return;
+    setError(null);
+    startTransition(async () => {
+      const result = await assignWhatsAppAccountAgent(accountId, agentId);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
+  return (
+    <div>
+      {accounts.length === 0 ? (
+        <p className="rounded-xl bg-zinc-50 px-4 py-3 text-sm text-zinc-500">Подключённых номеров пока нет.</p>
+      ) : (
+        <ul className="grid gap-3">
+          {accounts.map((account) => (
+            <li key={account.id} className="grid gap-2 rounded-xl bg-zinc-50 px-3 py-3">
+              <p className="text-sm font-medium text-zinc-900">{account.phoneNumber}</p>
+              <select
+                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-all duration-200 focus:border-zinc-300 disabled:opacity-50"
+                value={account.agentId}
+                disabled={pending || agents.length === 0}
+                aria-label={`Агент для ${account.phoneNumber}`}
+                onChange={(event) => onAgentChange(account.id, event.target.value)}
+              >
+                {agents
+                  .filter((agent) => agent.isActive || agent.id === account.agentId)
+                  .map((agent) => (
+                    <option key={agent.id} value={agent.id}>
+                      {agent.name}
+                    </option>
+                  ))}
+              </select>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error ? <p className="mt-2 text-xs text-red-600">{error}</p> : null}
+      <button
+        type="button"
+        className="mt-4 w-full rounded-xl bg-zinc-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800 disabled:opacity-50"
+        disabled={agents.length === 0}
+        onClick={onConnect}
+      >
+        + Подключить номер
+      </button>
+    </div>
+  );
+}
+
+function WhatsAppAccountDialog({ agents, onClose }: { agents: AgentOption[]; onClose: () => void }) {
+  const router = useRouter();
+  const [state, action, pending] = useActionState(saveWhatsAppAccount, initialSave);
+  const activeAgents = agents.filter((agent) => agent.isActive);
+
+  useEffect(() => {
+    if (!state.ok) return;
+    onClose();
+    router.refresh();
+  }, [state.ok, state.savedId, onClose, router]);
+
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/40 p-4"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="whatsapp-account-title"
+        className="w-full max-w-md rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.35)]"
+      >
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">WhatsApp Business</p>
+        <h2 id="whatsapp-account-title" className="mt-1 text-2xl font-semibold">
+          Подключить номер
+        </h2>
+        <form action={action} className="mt-5 grid gap-4">
+          <label className="grid gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+              Номер телефона (для отображения)
+            </span>
+            <input className={fieldClass} name="phone_number" required autoComplete="off" placeholder="+971 50 000 0000" />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Instance ID</span>
+            <input className={fieldClass} name="instance_id" required autoComplete="off" inputMode="numeric" />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">API Token</span>
+            <input className={fieldClass} name="api_token" type="password" required autoComplete="off" />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</span>
+            <select
+              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-all duration-200 focus:border-zinc-300"
+              name="agent_id"
+              required
+              defaultValue={activeAgents[0]?.id ?? ""}
+            >
+              {activeAgents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {state.error ? <p className="text-sm text-red-600">{state.error}</p> : null}
+          <div className="mt-2 flex justify-end gap-2">
+            <button
+              type="button"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-all duration-200 hover:bg-zinc-50"
+              onClick={onClose}
+            >
+              Отмена
+            </button>
+            <button
+              type="submit"
+              className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800 disabled:opacity-50"
+              disabled={pending || activeAgents.length === 0}
+            >
+              {pending ? "Сохранение" : "Сохранить"}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

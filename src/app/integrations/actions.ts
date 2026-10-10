@@ -261,3 +261,117 @@ async function insertIntegration(
 
   return data.id as string;
 }
+
+export async function saveWhatsAppAccount(
+  _prev: SaveIntegrationState,
+  formData: FormData,
+): Promise<SaveIntegrationState> {
+  const phoneNumber = String(formData.get("phone_number") ?? "").trim();
+  const instanceId = String(formData.get("instance_id") ?? "").trim();
+  const apiToken = String(formData.get("api_token") ?? "").trim();
+  const agentId = String(formData.get("agent_id") ?? "").trim();
+
+  if (!phoneNumber) return { ...emptyState, error: "Укажите номер телефона." };
+  if (!/^\d{4,}$/.test(instanceId)) return { ...emptyState, error: "Instance ID должен состоять из цифр." };
+  if (apiToken.length < 8) return { ...emptyState, error: "Укажите API Token." };
+  if (!UUID_PATTERN.test(agentId)) return { ...emptyState, error: "Выберите агента." };
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const userId = await getWorkspaceUserId();
+    const agentOk = await agentBelongsToWorkspace(supabase, userId, agentId);
+    if (!agentOk) return { ...emptyState, error: "Агент не найден." };
+
+    const { data, error } = await supabase
+      .from("whatsapp_accounts")
+      .insert({
+        phone_number: phoneNumber.slice(0, 40),
+        instance_id: instanceId,
+        api_token: apiToken,
+        agent_id: agentId,
+        is_active: true,
+      })
+      .select("id")
+      .single();
+
+    if (error) {
+      if (error.code === "23505") return { ...emptyState, error: "Этот Instance ID уже подключён." };
+      if (error.message.includes("whatsapp_accounts")) {
+        return { ...emptyState, error: "Сначала создайте таблицу whatsapp_accounts в Supabase." };
+      }
+      return { ...emptyState, error: error.message };
+    }
+
+    await upsertWhatsAppIntegration(supabase, userId, agentId, instanceId);
+    revalidatePath("/integrations");
+    return { ok: true, error: null, savedId: data.id as string };
+  } catch (error) {
+    return { ...emptyState, error: error instanceof Error ? error.message : "Не удалось сохранить номер." };
+  }
+}
+
+export async function assignWhatsAppAccountAgent(accountId: string, agentId: string) {
+  if (!UUID_PATTERN.test(accountId) || !UUID_PATTERN.test(agentId)) {
+    return { ok: false as const, error: "Некорректные данные." };
+  }
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const userId = await getWorkspaceUserId();
+    const agentOk = await agentBelongsToWorkspace(supabase, userId, agentId);
+    if (!agentOk) return { ok: false as const, error: "Агент не найден." };
+
+    const { data, error } = await supabase
+      .from("whatsapp_accounts")
+      .update({ agent_id: agentId })
+      .eq("id", accountId)
+      .select("instance_id")
+      .maybeSingle();
+
+    if (error) return { ok: false as const, error: error.message };
+    if (!data) return { ok: false as const, error: "Номер не найден." };
+
+    await upsertWhatsAppIntegration(supabase, userId, agentId, String(data.instance_id));
+    revalidatePath("/integrations");
+    return { ok: true as const, error: null };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось сменить агента." };
+  }
+}
+
+async function upsertWhatsAppIntegration(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  userId: string,
+  agentId: string,
+  instanceId: string,
+) {
+  const { data: existing, error: lookupError } = await supabase
+    .from("integrations")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("provider", "whatsapp")
+    .eq("external_id", instanceId)
+    .maybeSingle();
+
+  if (lookupError) throw new Error(lookupError.message);
+
+  if (existing?.id) {
+    const { error } = await supabase
+      .from("integrations")
+      .update({ agent_id: agentId, status: "connected", name: "WhatsApp Business" })
+      .eq("id", existing.id)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    return;
+  }
+
+  const { error } = await supabase.from("integrations").insert({
+    user_id: userId,
+    agent_id: agentId,
+    provider: "whatsapp",
+    name: "WhatsApp Business",
+    status: "connected",
+    external_id: instanceId,
+  });
+  if (error) throw new Error(error.message);
+}
