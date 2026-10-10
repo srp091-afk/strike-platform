@@ -6,6 +6,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { deleteAgent, saveAgent, type SaveState } from "@/app/agents/actions";
+import { assignWhatsAppAccountAgent, unbindWhatsAppAccount } from "@/app/integrations/actions";
 import { ChannelIcon } from "@/components/channel-icons";
 import { Button } from "@/components/ui/button";
 import { DialogContent } from "@/components/ui/dialog";
@@ -17,6 +18,7 @@ import {
   type AgentRecord,
 } from "@/lib/agent-models";
 import type { IntegrationProvider } from "@/lib/integration-catalog";
+import type { WhatsAppAccountView } from "@/lib/whatsapp-accounts";
 
 const fieldClass =
   "w-full rounded-xl border border-transparent bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none transition-all duration-200 placeholder:text-zinc-400 hover:bg-zinc-100/80 focus:border-zinc-300 focus:bg-white";
@@ -25,9 +27,11 @@ const initialState: SaveState = { ok: false, error: null, savedId: null };
 
 export function AgentManager({
   agents,
+  whatsappAccounts,
   loadError,
 }: {
   agents: AgentRecord[];
+  whatsappAccounts: WhatsAppAccountView[];
   loadError: string | null;
 }) {
   const router = useRouter();
@@ -128,6 +132,7 @@ export function AgentManager({
           action={action}
           pending={pending}
           error={state.error}
+          whatsappAccounts={whatsappAccounts}
           onClose={closeDialog}
         />
       ) : null}
@@ -140,12 +145,14 @@ function AgentDialog({
   action,
   pending,
   error,
+  whatsappAccounts,
   onClose,
 }: {
   editing: AgentRecord | null;
   action: (payload: FormData) => void;
   pending: boolean;
   error: string | null;
+  whatsappAccounts: WhatsAppAccountView[];
   onClose: () => void;
 }) {
   useEffect(() => {
@@ -222,7 +229,11 @@ function AgentDialog({
               </section>
 
               <div className="grid content-start gap-6">
-                <ChannelSettings initial={editing?.active_channels ?? DEFAULT_ACTIVE_CHANNELS} />
+                <ChannelSettings
+                  agentId={editing?.id ?? null}
+                  accounts={whatsappAccounts}
+                  initial={editing?.active_channels ?? DEFAULT_ACTIVE_CHANNELS}
+                />
                 <ResponseDelayField defaultValue={editing?.response_delay ?? 0} />
                 <SplitMessagesField defaultValue={editing?.split_messages ?? false} />
               </div>
@@ -246,7 +257,15 @@ const channelOptions: { id: IntegrationProvider; label: string }[] = [
   { id: "instagram", label: "Instagram" },
 ];
 
-function ChannelSettings({ initial }: { initial: ActiveChannels }) {
+function ChannelSettings({
+  agentId,
+  accounts,
+  initial,
+}: {
+  agentId: string | null;
+  accounts: WhatsAppAccountView[];
+  initial: ActiveChannels;
+}) {
   const [channels, setChannels] = useState<ActiveChannels>(initial);
 
   return (
@@ -259,26 +278,104 @@ function ChannelSettings({ initial }: { initial: ActiveChannels }) {
       </div>
       <input type="hidden" name="active_channels" value={JSON.stringify(channels)} />
       <div className="grid gap-3">
-        {channelOptions.map((channel) => (
-          <label
-            key={channel.id}
-            className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-4 py-3"
-          >
-            <span className="flex items-center gap-3 text-sm font-medium text-zinc-800">
-              <span className={`grid size-9 place-items-center rounded-xl ${channelTone[channel.id]}`}>
-                <ChannelIcon provider={channel.id} className="size-4" />
+        {channelOptions.map((channel) =>
+          channel.id === "whatsapp" ? (
+            <div key={channel.id} className="grid gap-3 rounded-xl bg-zinc-50 px-4 py-3">
+              <label className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-3 text-sm font-medium text-zinc-800">
+                  <span className={`grid size-9 place-items-center rounded-xl ${channelTone.whatsapp}`}>
+                    <ChannelIcon provider="whatsapp" className="size-4" />
+                  </span>
+                  WhatsApp
+                </span>
+                <Switch
+                  checked={channels.whatsapp}
+                  onCheckedChange={(checked) => setChannels((current) => ({ ...current, whatsapp: checked }))}
+                  aria-label="WhatsApp"
+                />
+              </label>
+              <WhatsAppNumberSwitches agentId={agentId} accounts={accounts} />
+            </div>
+          ) : (
+            <label
+              key={channel.id}
+              className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-4 py-3"
+            >
+              <span className="flex items-center gap-3 text-sm font-medium text-zinc-800">
+                <span className={`grid size-9 place-items-center rounded-xl ${channelTone[channel.id]}`}>
+                  <ChannelIcon provider={channel.id} className="size-4" />
+                </span>
+                {channel.label}
               </span>
-              {channel.label}
-            </span>
-            <Switch
-              checked={channels[channel.id]}
-              onCheckedChange={(checked) => setChannels((current) => ({ ...current, [channel.id]: checked }))}
-              aria-label={channel.label}
-            />
-          </label>
-        ))}
+              <Switch
+                checked={channels[channel.id]}
+                onCheckedChange={(checked) => setChannels((current) => ({ ...current, [channel.id]: checked }))}
+                aria-label={channel.label}
+              />
+            </label>
+          ),
+        )}
       </div>
     </section>
+  );
+}
+
+function WhatsAppNumberSwitches({
+  agentId,
+  accounts,
+}: {
+  agentId: string | null;
+  accounts: WhatsAppAccountView[];
+}) {
+  const router = useRouter();
+  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const boundIds = new Set(accounts.filter((account) => account.agentId === agentId).map((account) => account.id));
+
+  async function onToggle(accountId: string, enabled: boolean) {
+    if (!agentId) return;
+    setError(null);
+    setPendingId(accountId);
+    const result = enabled
+      ? await assignWhatsAppAccountAgent(accountId, agentId)
+      : await unbindWhatsAppAccount(accountId);
+    setPendingId(null);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+    router.refresh();
+  }
+
+  if (!agentId) {
+    return <p className="text-xs leading-5 text-zinc-500">Сохраните агента, чтобы привязать номер.</p>;
+  }
+
+  if (accounts.length === 0) {
+    return <p className="text-xs leading-5 text-zinc-500">Подключённых номеров пока нет.</p>;
+  }
+
+  return (
+    <div className="grid gap-2">
+      {accounts.map((account) => {
+        const enabled = boundIds.has(account.id);
+        return (
+          <div key={account.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-medium text-zinc-900">{account.phoneNumber}</p>
+              <p className="text-xs text-zinc-500">{enabled ? "Включен для этого агента" : "Отключен"}</p>
+            </div>
+            <Switch
+              checked={enabled}
+              disabled={pendingId === account.id}
+              aria-label={`${account.phoneNumber}: ${enabled ? "Включен для этого агента" : "Отключен"}`}
+              onCheckedChange={(checked) => void onToggle(account.id, checked)}
+            />
+          </div>
+        );
+      })}
+      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+    </div>
   );
 }
 

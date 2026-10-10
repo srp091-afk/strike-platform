@@ -5,7 +5,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 export type WhatsAppAccountView = {
   id: string;
   phoneNumber: string;
-  agentId: string;
+  agentId: string | null;
   isActive: boolean;
 };
 
@@ -64,7 +64,7 @@ export async function listWhatsAppAccounts(): Promise<WhatsAppAccountView[]> {
   return (data ?? []).map((row) => ({
     id: row.id as string,
     phoneNumber: String(row.phone_number ?? ""),
-    agentId: String(row.agent_id ?? ""),
+    agentId: row.agent_id ? String(row.agent_id) : null,
     isActive: row.is_active !== false,
   }));
 }

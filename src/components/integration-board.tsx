@@ -3,13 +3,14 @@
 import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { useActionState } from "react";
-import { Check, X } from "lucide-react";
+import { Check, Trash, X } from "lucide-react";
 
 import {
   assignIntegrationAgent,
   assignWhatsAppAccountAgent,
   deleteWhatsAppAccount,
   saveIntegration,
+  unbindWhatsAppAccount,
   type SaveIntegrationState,
 } from "@/app/integrations/actions";
 import { ChannelIcon } from "@/components/channel-icons";
@@ -247,6 +248,18 @@ function WhatsAppAccountList({
     });
   }
 
+  function onUnbind(accountId: string) {
+    setError(null);
+    startTransition(async () => {
+      const result = await unbindWhatsAppAccount(accountId);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
+
   return (
     <div>
       {accounts.length === 0 ? (
@@ -257,30 +270,43 @@ function WhatsAppAccountList({
             <li key={account.id} className="grid gap-2 rounded-xl bg-zinc-50 px-3 py-3">
               <div className="flex items-start justify-between gap-2">
                 <p className="text-sm font-medium text-zinc-900">{account.phoneNumber}</p>
-                <AlertDialog>
-                  <AlertDialogTrigger
-                    className="text-xs font-medium text-red-500 transition-colors hover:text-red-600 disabled:opacity-50"
-                    disabled={pending}
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-zinc-600 transition-colors hover:text-zinc-900 disabled:opacity-40"
+                    disabled={pending || !account.agentId}
+                    onClick={() => onUnbind(account.id)}
                   >
-                    Удалить
-                  </AlertDialogTrigger>
-                  <AlertDialogContent>
-                    <AlertDialogHeader>
-                      <AlertDialogTitle>Удалить номер?</AlertDialogTitle>
-                      <AlertDialogDescription>
-                        Номер {account.phoneNumber} будет отключён от STRIKE. История чатов сохранится.
-                      </AlertDialogDescription>
-                    </AlertDialogHeader>
-                    <AlertDialogFooter>
-                      <AlertDialogCancel>Отмена</AlertDialogCancel>
-                      <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={() => onDelete(account.id)}>
-                        Удалить
-                      </AlertDialogAction>
-                    </AlertDialogFooter>
-                  </AlertDialogContent>
-                </AlertDialog>
+                    Отвязать от бота
+                  </button>
+                  <AlertDialog>
+                    <AlertDialogTrigger
+                      className="text-red-500 transition-colors hover:text-red-600 disabled:opacity-40"
+                      disabled={pending}
+                      aria-label="Удалить аккаунт"
+                    >
+                      <Trash className="size-4" />
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Удалить аккаунт?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Номер {account.phoneNumber} будет удалён из системы. История чатов сохранится.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Отмена</AlertDialogCancel>
+                        <AlertDialogAction className="bg-red-600 text-white hover:bg-red-700" onClick={() => onDelete(account.id)}>
+                          Удалить аккаунт
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               </div>
-              {account.isActive ? (
+              {!account.agentId ? (
+                <p className="text-xs font-medium text-zinc-500">Не привязан к боту</p>
+              ) : account.isActive ? (
                 <p className="inline-flex items-center gap-1 text-xs font-medium text-emerald-600">
                   <Check className="size-3.5" />
                   Авторизован
@@ -293,11 +319,16 @@ function WhatsAppAccountList({
               )}
               <select
                 className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-all duration-200 focus:border-zinc-300 disabled:opacity-50"
-                value={account.agentId}
+                value={account.agentId ?? ""}
                 disabled={pending || agents.length === 0}
                 aria-label={`Агент для ${account.phoneNumber}`}
-                onChange={(event) => onAgentChange(account.id, event.target.value)}
+                onChange={(event) => {
+                  const nextAgent = event.target.value;
+                  if (!nextAgent) onUnbind(account.id);
+                  else onAgentChange(account.id, nextAgent);
+                }}
               >
+                <option value="">Не привязан</option>
                 {agents
                   .filter((agent) => agent.isActive || agent.id === account.agentId)
                   .map((agent) => (

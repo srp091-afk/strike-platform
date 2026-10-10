@@ -424,9 +424,48 @@ export async function deleteWhatsAppAccount(accountId: string) {
     }
 
     revalidatePath("/integrations");
+    revalidatePath("/agents");
     return { ok: true as const, error: null };
   } catch (error) {
     return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось удалить номер." };
+  }
+}
+
+export async function unbindWhatsAppAccount(accountId: string) {
+  if (!UUID_PATTERN.test(accountId)) {
+    return { ok: false as const, error: "Номер не найден." };
+  }
+
+  try {
+    const supabase = createSupabaseAdminClient();
+    const { data, error } = await supabase
+      .from("whatsapp_accounts")
+      .update({ agent_id: null })
+      .eq("id", accountId)
+      .select("instance_id")
+      .maybeSingle();
+
+    if (error) {
+      if (error.code === "23502") {
+        return { ok: false as const, error: "Сначала разрешите пустую привязку агента в таблице whatsapp_accounts." };
+      }
+      return { ok: false as const, error: error.message };
+    }
+    if (!data) return { ok: false as const, error: "Номер не найден." };
+
+    if (data.instance_id) {
+      await supabase
+        .from("integrations")
+        .update({ agent_id: null })
+        .eq("provider", "whatsapp")
+        .eq("external_id", String(data.instance_id));
+    }
+
+    revalidatePath("/integrations");
+    revalidatePath("/agents");
+    return { ok: true as const, error: null };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось отвязать номер." };
   }
 }
 
@@ -503,6 +542,7 @@ export async function assignWhatsAppAccountAgent(accountId: string, agentId: str
 
     await upsertWhatsAppIntegration(supabase, userId, agentId, String(data.instance_id));
     revalidatePath("/integrations");
+    revalidatePath("/agents");
     return { ok: true as const, error: null };
   } catch (error) {
     return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось сменить агента." };

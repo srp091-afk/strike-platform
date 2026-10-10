@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { getExistingWorkspaceUserId } from "@/lib/agents";
 import { readBotFlags } from "@/lib/bot-state";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
@@ -68,6 +69,26 @@ async function handleIncoming(request: NextRequest, body: unknown) {
 
     if (duplicateError) throw new Error(duplicateError.message);
     if (existing && existing.length > 0) return;
+  }
+
+  if (!channel.agentId) {
+    const conversation = await upsertConversation(supabase, {
+      userId: channel.userId,
+      agentId: null,
+      integrationId: channel.integrationId,
+      externalChatId: incoming.from,
+      contactName: incoming.contactName,
+      preview: incoming.text,
+    });
+    const { error: storedError } = await supabase.from("messages").insert({
+      conversation_id: conversation.id,
+      role: "user",
+      content: incoming.text,
+      status: "sent",
+      external_message_id: incoming.messageId,
+    });
+    if (storedError) throw new Error(storedError.message);
+    return;
   }
 
   const { data: agent, error: agentError } = await loadWhatsAppAgent(supabase, channel.agentId);
@@ -403,26 +424,45 @@ async function resolveWhatsAppAccount(
     if (error.message.includes("whatsapp_accounts")) return null;
     throw new Error(error.message);
   }
-  if (!data || data.is_active === false || !data.agent_id || !data.api_token) return null;
+  if (!data || data.is_active === false || !data.api_token) return null;
 
-  const agentId = data.agent_id as string;
-  const { data: agent, error: agentError } = await supabase
-    .from("agents")
-    .select("user_id")
-    .eq("id", agentId)
-    .maybeSingle();
-  if (agentError) throw new Error(agentError.message);
-  if (!agent?.user_id) return null;
+  const agentId = data.agent_id ? String(data.agent_id) : null;
+  let userId = "";
+  if (agentId) {
+    const { data: agent, error: agentError } = await supabase
+      .from("agents")
+      .select("user_id")
+      .eq("id", agentId)
+      .maybeSingle();
+    if (agentError) throw new Error(agentError.message);
+    userId = agent?.user_id ? String(agent.user_id) : "";
+    if (!userId) return null;
+  }
+
+  if (!userId) {
+    const { data: integration, error: integrationError } = await supabase
+      .from("integrations")
+      .select("user_id")
+      .eq("provider", "whatsapp")
+      .eq("external_id", instanceId)
+      .limit(1)
+      .maybeSingle();
+    if (integrationError) throw new Error(integrationError.message);
+    userId = integration?.user_id ? String(integration.user_id) : "";
+  }
+
+  if (!userId) userId = (await getExistingWorkspaceUserId()) ?? "";
+  if (!userId) return null;
 
   const integration = await ensureWhatsAppIntegration(supabase, {
-    userId: agent.user_id as string,
+    userId,
     agentId,
     instanceId,
   });
 
   return {
     integrationId: integration.id,
-    userId: agent.user_id as string,
+    userId,
     agentId,
     credentials: {
       idInstance: String(data.instance_id),
@@ -441,7 +481,7 @@ function readInstanceId(request: NextRequest, body: unknown) {
 
 async function ensureWhatsAppIntegration(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
-  input: { userId: string; agentId: string; instanceId: string },
+  input: { userId: string; agentId: string | null; instanceId: string },
 ) {
   const { data: existing, error: lookupError } = await supabase
     .from("integrations")
@@ -481,7 +521,7 @@ async function upsertConversation(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   input: {
     userId: string;
-    agentId: string;
+    agentId: string | null;
     integrationId: string;
     externalChatId: string;
     contactName: string | null;
@@ -499,7 +539,7 @@ async function upsertConversation(
 
   const patch: {
     user_id: string;
-    agent_id: string;
+    agent_id: string | null;
     contact_name?: string;
     last_message_preview: string;
     last_message_at: string;

@@ -130,7 +130,7 @@ create table if not exists public.whatsapp_accounts (
   phone_number text not null,
   instance_id text not null,
   api_token text not null,
-  agent_id uuid not null references public.agents (id) on delete cascade,
+  agent_id uuid references public.agents (id) on delete set null,
   is_active boolean not null default true,
   created_at timestamptz not null default now(),
   constraint whatsapp_accounts_instance_unique unique (instance_id)
