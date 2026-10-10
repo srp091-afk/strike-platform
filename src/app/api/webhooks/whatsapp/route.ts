@@ -82,9 +82,10 @@ async function handleIncoming(request: NextRequest) {
       content: message.content as string,
     }));
 
+  const model = (agent.model as string) || "gpt-4o-mini";
   const completion = await getOpenAI().chat.completions.create({
-    model: (agent.model as string) || "gpt-4o-mini",
-    temperature: clampTemperature(agent.temperature),
+    model,
+    temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
     messages: [
       {
         role: "system",
