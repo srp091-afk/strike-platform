@@ -221,7 +221,10 @@ function AgentDialog({
                 {error ? <p className="text-sm text-red-600">{error}</p> : null}
               </section>
 
-              <ChannelSettings initial={editing?.active_channels ?? DEFAULT_ACTIVE_CHANNELS} />
+              <div className="grid content-start gap-6">
+                <ChannelSettings initial={editing?.active_channels ?? DEFAULT_ACTIVE_CHANNELS} />
+                <ResponseDelayField defaultValue={editing?.response_delay ?? 0} />
+              </div>
             </div>
           </div>
         </form>
@@ -272,6 +275,67 @@ function ChannelSettings({ initial }: { initial: ActiveChannels }) {
               aria-label={channel.label}
             />
           </label>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+const responseDelayPresets = [0, 10, 20, 30, 60];
+
+function ResponseDelayField({ defaultValue }: { defaultValue: number }) {
+  const [seconds, setSeconds] = useState(String(defaultValue));
+  const [open, setOpen] = useState(false);
+  const selected = Number(seconds);
+
+  return (
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+      <h3 className="font-heading text-lg font-semibold text-zinc-900">Задержка ответа</h3>
+      <label className="grid gap-2">
+        <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+          Задержка (в секундах)
+          <button
+            type="button"
+            aria-expanded={open}
+            aria-label="Что значит задержка ответа"
+            className="grid h-4 w-4 shrink-0 place-items-center rounded-full border border-zinc-300 text-[10px] font-semibold normal-case tracking-normal text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-800"
+            onClick={(event) => {
+              event.preventDefault();
+              setOpen((current) => !current);
+            }}
+          >
+            ?
+          </button>
+        </span>
+        {open ? (
+          <span
+            role="tooltip"
+            className="rounded-xl bg-zinc-950 px-3 py-2.5 text-left text-xs leading-5 font-normal normal-case tracking-normal text-white"
+          >
+            Имитация печати человека перед отправкой ответа. 0 сек — мгновенный ответ.
+          </span>
+        ) : null}
+        <input
+          className={fieldClass}
+          name="response_delay"
+          type="number"
+          min={0}
+          step={1}
+          value={seconds}
+          onChange={(event) => setSeconds(event.target.value)}
+        />
+      </label>
+      <div className="flex flex-wrap gap-2">
+        {responseDelayPresets.map((preset) => (
+          <Button
+            key={preset}
+            type="button"
+            size="sm"
+            variant={selected === preset ? "dark" : "outline"}
+            onClick={() => setSeconds(String(preset))}
+          >
+            {preset} сек
+          </Button>
         ))}
       </div>
     </section>

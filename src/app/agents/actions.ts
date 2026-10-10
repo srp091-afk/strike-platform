@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { DEFAULT_ACTIVE_CHANNELS, isAgentModel, type ActiveChannels } from "@/lib/agent-models";
+import { DEFAULT_ACTIVE_CHANNELS, isAgentModel, readResponseDelay, type ActiveChannels } from "@/lib/agent-models";
 import { getWorkspaceUserId } from "@/lib/agents";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -17,6 +17,7 @@ function readAgentFields(formData: FormData) {
   const systemPrompt = String(formData.get("system_prompt") ?? "").trim();
   const model = String(formData.get("model") ?? "").trim();
   const temperature = Number(formData.get("temperature") ?? 0.7);
+  const responseDelay = readDelay(formData.get("response_delay"));
   const id = String(formData.get("id") ?? "").trim();
   const activeChannels = readChannels(formData.get("active_channels"));
 
@@ -36,6 +37,10 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "Температура должна быть от 0 до 2." };
   }
 
+  if (responseDelay === null) {
+    return { ok: false as const, error: "Задержка должна быть не меньше 0 секунд." };
+  }
+
   return {
     ok: true as const,
     id,
@@ -43,8 +48,16 @@ function readAgentFields(formData: FormData) {
     systemPrompt,
     model,
     temperature,
+    responseDelay,
     activeChannels,
   };
+}
+
+function readDelay(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value.trim()) return 0;
+  const delay = Number(value);
+  if (!Number.isFinite(delay) || delay < 0) return null;
+  return readResponseDelay(delay);
 }
 
 function readChannels(value: FormDataEntryValue | null): ActiveChannels {
@@ -75,6 +88,7 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
       system_prompt: fields.systemPrompt,
       model: fields.model,
       temperature: fields.temperature,
+      response_delay: fields.responseDelay,
       active_channels: fields.activeChannels,
       user_id: userId,
     };

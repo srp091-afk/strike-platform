@@ -40,8 +40,15 @@ export type AgentRecord = {
   temperature: number;
   is_active: boolean;
   active_channels: ActiveChannels;
+  response_delay: number;
   created_at: string;
 };
+
+export function readResponseDelay(value: unknown) {
+  const delay = Number(value);
+  if (!Number.isFinite(delay) || delay < 0) return 0;
+  return Math.round(delay);
+}
 
 export function isAgentModel(value: string): value is AgentModel {
   return AGENT_MODELS.some((model) => model.value === value);

@@ -5,7 +5,7 @@ import { sendGreenMessage } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {
@@ -100,6 +100,10 @@ async function handleIncoming(request: NextRequest) {
   let delivered = false;
   let outboundId: string | null = null;
   try {
+    const responseDelay = Number(agent.response_delay);
+    if (responseDelay > 0) {
+      await new Promise((resolve) => setTimeout(resolve, responseDelay * 1000));
+    }
     outboundId = await sendGreenMessage(incoming.from, reply);
     delivered = true;
   } catch (error) {
@@ -164,22 +168,22 @@ async function loadWhatsAppAgent(
 ) {
   const withChannels = await supabase
     .from("agents")
-    .select("id, system_prompt, model, temperature, is_active, active_channels")
+    .select("id, system_prompt, model, temperature, is_active, active_channels, response_delay")
     .eq("id", agentId)
     .maybeSingle();
 
-  if (!withChannels.error || !withChannels.error.message.includes("active_channels")) {
+  if (!withChannels.error || !withChannels.error.message.includes("response_delay")) {
     return withChannels;
   }
 
   const fallback = await supabase
     .from("agents")
-    .select("id, system_prompt, model, temperature, is_active")
+    .select("id, system_prompt, model, temperature, is_active, active_channels")
     .eq("id", agentId)
     .maybeSingle();
 
   return {
-    data: fallback.data ? { ...fallback.data, active_channels: null } : null,
+    data: fallback.data ? { ...fallback.data, response_delay: 0 } : null,
     error: fallback.error,
   };
 }

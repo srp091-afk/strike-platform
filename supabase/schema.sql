@@ -66,9 +66,11 @@ create table if not exists public.agents (
   temperature numeric(3, 2) not null default 0.70,
   is_active boolean not null default true,
   active_channels jsonb not null default '{"whatsapp": true, "telegram": false, "instagram": false}'::jsonb,
+  response_delay integer not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  constraint agents_temperature_range check (temperature >= 0 and temperature <= 2)
+  constraint agents_temperature_range check (temperature >= 0 and temperature <= 2),
+  constraint agents_response_delay_nonnegative check (response_delay >= 0)
 );
 
 create index if not exists agents_user_id_idx on public.agents (user_id);
