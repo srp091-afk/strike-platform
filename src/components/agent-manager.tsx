@@ -196,8 +196,8 @@ function AgentDialog({
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Модель</span>
                   <select className={fieldClass} name="model" defaultValue={editing?.model ?? "gpt-4o-mini"}>
                     {AGENT_MODELS.map((model) => (
-                      <option key={model} value={model}>
-                        {model}
+                      <option key={model.value} value={model.value}>
+                        {model.value} ({model.label})
                       </option>
                     ))}
                   </select>

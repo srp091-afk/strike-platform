@@ -1,6 +1,11 @@
-export const AGENT_MODELS = ["gpt-4o-mini", "gpt-4o", "gpt-4.1-mini"] as const;
+export const AGENT_MODELS = [
+  { value: "gpt-4o-mini", label: "Базовая" },
+  { value: "gpt-4o", label: "Продвинутая" },
+  { value: "gpt-6-astra", label: "GPT-6 Astra" },
+  { value: "gpt-6.1-sol", label: "GPT-6.1 Sol" },
+] as const;
 
-export type AgentModel = (typeof AGENT_MODELS)[number];
+export type AgentModel = (typeof AGENT_MODELS)[number]["value"];
 
 export type ActiveChannels = {
   whatsapp: boolean;
@@ -39,5 +44,5 @@ export type AgentRecord = {
 };
 
 export function isAgentModel(value: string): value is AgentModel {
-  return AGENT_MODELS.includes(value as AgentModel);
+  return AGENT_MODELS.some((model) => model.value === value);
 }
