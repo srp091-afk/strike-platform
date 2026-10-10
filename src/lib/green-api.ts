@@ -21,6 +21,22 @@ function endpoint(method: string) {
   return `${API_URL}/waInstance${idInstance}/${method}/${apiToken}`;
 }
 
+export async function getGreenChatHistory(chatId: string, count = 10) {
+  const response = await fetch(endpoint("getChatHistory"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ chatId, count }),
+    signal: AbortSignal.timeout(15000),
+  });
+
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(`Green API getChatHistory ${response.status}`);
+  }
+
+  return Array.isArray(payload) ? payload : [];
+}
+
 export async function sendGreenMessage(chatId: string, message: string) {
   const response = await fetch(endpoint("sendMessage"), {
     method: "POST",

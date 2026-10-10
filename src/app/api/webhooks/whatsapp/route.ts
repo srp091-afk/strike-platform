@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { readBotFlags } from "@/lib/bot-state";
-import { sendGreenMessage } from "@/lib/green-api";
+import { getGreenChatHistory, sendGreenMessage } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -9,7 +9,13 @@ export const maxDuration = 120;
 
 export async function POST(request: NextRequest) {
   try {
-    await handleIncoming(request);
+    const body = await request.json();
+    const type = stringValue(asRecord(body).typeWebhook);
+    if (type === "outgoingMessageReceived" || type === "outgoingAPIMessageReceived") {
+      await handleOutgoing(body);
+    } else if (type === "incomingMessageReceived") {
+      await handleIncoming(body);
+    }
   } catch (error) {
     console.error("[whatsapp webhook]", error instanceof Error ? error.message : error);
   }
@@ -17,8 +23,34 @@ export async function POST(request: NextRequest) {
   return Response.json({ ok: true });
 }
 
-async function handleIncoming(request: NextRequest) {
-  const body = await request.json();
+async function handleOutgoing(body: unknown) {
+  const outgoing = readOutgoing(body);
+  if (!outgoing) return;
+
+  const supabase = createSupabaseAdminClient();
+  if (await messageExists(supabase, outgoing.messageId)) return;
+
+  const channel = await findWhatsAppChannel(supabase);
+  const conversation = await upsertConversation(supabase, {
+    userId: channel.userId,
+    agentId: channel.agentId,
+    integrationId: channel.integrationId,
+    externalChatId: outgoing.from,
+    contactName: outgoing.contactName,
+    preview: outgoing.text,
+  });
+
+  await insertMessage(supabase, {
+    conversation_id: conversation.id,
+    role: "assistant",
+    content: outgoing.text,
+    status: "sent",
+    external_message_id: outgoing.messageId,
+    created_at: outgoing.sentAt,
+  });
+}
+
+async function handleIncoming(body: unknown) {
   const incoming = readIncoming(body);
   if (!incoming) return;
 
@@ -62,6 +94,7 @@ async function handleIncoming(request: NextRequest) {
   });
 
   if (inboundError) throw new Error(inboundError.message);
+  await syncOpeningHistory(supabase, conversationId, incoming.from);
   if (!conversation.botActive) return;
   if (!whatsappChannelEnabled(agent.active_channels)) return;
 
@@ -119,15 +152,14 @@ async function handleIncoming(request: NextRequest) {
       console.error("[whatsapp webhook] green", error instanceof Error ? error.message : error);
     }
 
-    const { error: outboundError } = await supabase.from("messages").insert({
+    await insertMessage(supabase, {
       conversation_id: conversationId,
       role: "assistant",
       content: chunk,
       status: delivered ? "sent" : "failed",
       external_message_id: outboundId,
+      created_at: null,
     });
-
-    if (outboundError) throw new Error(outboundError.message);
     preview = chunk;
     if (!delivered) break;
   }
@@ -144,34 +176,178 @@ async function handleIncoming(request: NextRequest) {
   if (previewError) throw new Error(previewError.message);
 }
 
-type IncomingText = {
+type ChatText = {
   from: string;
   text: string;
   messageId: string | null;
   contactName: string | null;
+  sentAt: string | null;
 };
 
-function readIncoming(body: unknown): IncomingText | null {
+async function syncOpeningHistory(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  conversationId: string,
+  chatId: string,
+) {
+  const { count, error } = await supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("conversation_id", conversationId)
+    .eq("role", "assistant");
+
+  if (error) throw new Error(error.message);
+  if ((count ?? 0) > 0) return;
+
+  let journal: unknown[] = [];
+  try {
+    journal = await getGreenChatHistory(chatId, 10);
+  } catch (historyError) {
+    console.error(
+      "[whatsapp webhook] history",
+      historyError instanceof Error ? historyError.message : historyError,
+    );
+    return;
+  }
+
+  const outgoing = journal
+    .map(readHistoryOutgoing)
+    .filter((item): item is HistoryOutgoing => item !== null)
+    .reverse();
+  const fallbackBase = Date.now() - outgoing.length * 1000;
+
+  for (const [index, item] of outgoing.entries()) {
+    await insertMessage(supabase, {
+      conversation_id: conversationId,
+      role: "assistant",
+      content: item.text,
+      status: "sent",
+      external_message_id: item.messageId,
+      created_at: item.sentAt ?? new Date(fallbackBase + index * 1000).toISOString(),
+    });
+  }
+}
+
+type HistoryOutgoing = {
+  messageId: string | null;
+  text: string;
+  sentAt: string | null;
+};
+
+function readHistoryOutgoing(value: unknown): HistoryOutgoing | null {
+  const record = asRecord(value);
+  if (record.type !== "outgoing" || record.isDeleted === true) return null;
+
+  const extended = asRecord(record.extendedTextMessage);
+  const text = (stringValue(record.textMessage) || stringValue(extended.text)).slice(0, 8000);
+  if (!text) return null;
+
+  return {
+    messageId: stringValue(record.idMessage) || null,
+    text,
+    sentAt: timestampToIso(record.timestamp),
+  };
+}
+
+async function messageExists(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  messageId: string | null,
+) {
+  if (!messageId) return false;
+  const { data, error } = await supabase
+    .from("messages")
+    .select("id")
+    .eq("external_message_id", messageId)
+    .limit(1);
+
+  if (error) throw new Error(error.message);
+  return Boolean(data && data.length > 0);
+}
+
+async function insertMessage(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  row: {
+    conversation_id: string;
+    role: "assistant";
+    content: string;
+    status: "sent" | "failed";
+    external_message_id: string | null;
+    created_at: string | null;
+  },
+) {
+  if (await messageExists(supabase, row.external_message_id)) return;
+
+  const payload: {
+    conversation_id: string;
+    role: "assistant";
+    content: string;
+    status: "sent" | "failed";
+    external_message_id: string | null;
+    created_at?: string;
+  } = {
+    conversation_id: row.conversation_id,
+    role: row.role,
+    content: row.content,
+    status: row.status,
+    external_message_id: row.external_message_id,
+  };
+  if (row.created_at) payload.created_at = row.created_at;
+
+  const { error } = await supabase.from("messages").insert(payload);
+  if (error && error.code !== "23505") throw new Error(error.message);
+}
+
+function readIncoming(body: unknown): ChatText | null {
   const record = asRecord(body);
   if (record.typeWebhook !== "incomingMessageReceived") return null;
 
   const sender = asRecord(record.senderData);
-  const message = asRecord(record.messageData);
-  const textMessage = asRecord(message.textMessageData);
-  const extended = asRecord(message.extendedTextMessageData);
-  const text = stringValue(textMessage.textMessage) || stringValue(extended.text);
+  const text = readWebhookText(record);
   const from = stringValue(sender.sender);
   if (!text || !from) return null;
   if (text.length > 8000) throw new Error("Сообщение слишком длинное.");
-
-  const contactName = stringValue(sender.senderName) || stringValue(sender.senderContactName) || null;
 
   return {
     from,
     text,
     messageId: stringValue(record.idMessage) || null,
-    contactName,
+    contactName: stringValue(sender.senderName) || stringValue(sender.senderContactName) || null,
+    sentAt: null,
   };
+}
+
+function readOutgoing(body: unknown): ChatText | null {
+  const record = asRecord(body);
+  const type = record.typeWebhook;
+  if (type !== "outgoingMessageReceived" && type !== "outgoingAPIMessageReceived") return null;
+
+  const sender = asRecord(record.senderData);
+  const text = readWebhookText(record).slice(0, 8000);
+  const from = stringValue(sender.chatId);
+  if (!text || !from) return null;
+
+  return {
+    from,
+    text,
+    messageId: stringValue(record.idMessage) || null,
+    contactName: stringValue(sender.chatName) || null,
+    sentAt: timestampToIso(record.timestamp),
+  };
+}
+
+function readWebhookText(record: Record<string, unknown>) {
+  const message = asRecord(record.messageData);
+  const textMessage = asRecord(message.textMessageData);
+  const extended = asRecord(message.extendedTextMessageData);
+  return stringValue(textMessage.textMessage) || stringValue(extended.text);
+}
+
+function timestampToIso(value: unknown) {
+  const timestamp = Number(value);
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return null;
+  const millis = timestamp > 1e12 ? timestamp : timestamp * 1000;
+  const date = new Date(millis);
+  if (Number.isNaN(date.getTime())) return null;
+  return date.toISOString();
 }
 
 async function loadWhatsAppAgent(
