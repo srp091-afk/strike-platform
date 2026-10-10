@@ -39,7 +39,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <SiteHeader />
         </Suspense>
         <main className="flex-1">{children}</main>
-        <SiteFooter />
+        <Suspense fallback={<div className="mt-auto h-14 border-t border-zinc-200 bg-white" />}>
+          <SiteFooter />
+        </Suspense>
       </body>
     </html>
   );
