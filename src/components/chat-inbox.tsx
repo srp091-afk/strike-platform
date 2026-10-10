@@ -1,10 +1,22 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { MessagesSquare } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { MessagesSquare, Trash } from "lucide-react";
 
-import { setChatBotActive } from "@/app/chats/actions";
+import { deleteChat, setChatBotActive } from "@/app/chats/actions";
 import { ChannelIcon } from "@/components/channel-icons";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { ChatMessage, ChatProvider, ChatThread } from "@/lib/chat-types";
 import type { IntegrationProvider } from "@/lib/integration-catalog";
@@ -39,6 +51,9 @@ export function ChatInbox({
   const [selectedId, setSelectedId] = useState(initialSelectedId);
   const [error, setError] = useState(loadError);
   const [pending, setPending] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const removedRef = useRef(new Set<string>());
 
   const selected = threads.find((thread) => thread.id === selectedId) ?? null;
 
@@ -56,7 +71,9 @@ export function ChatInbox({
         };
         if (!response.ok) throw new Error(payload.error || "Не удалось обновить чат.");
         if (cancelled) return;
-        if (payload.conversations) setThreads(payload.conversations);
+        if (payload.conversations) {
+          setThreads(payload.conversations.filter((thread) => !removedRef.current.has(thread.id)));
+        }
         if (payload.messages) setMessages(payload.messages);
         setError(null);
       } catch (failure) {
@@ -89,7 +106,9 @@ export function ChatInbox({
         error?: string;
       };
       if (!response.ok) throw new Error(payload.error || "Не удалось открыть диалог.");
-      if (payload.conversations) setThreads(payload.conversations);
+      if (payload.conversations) {
+        setThreads(payload.conversations.filter((thread) => !removedRef.current.has(thread.id)));
+      }
       setMessages(payload.messages ?? []);
       setError(null);
     } catch (failure) {
@@ -112,6 +131,27 @@ export function ChatInbox({
       );
       setError(result.error);
     }
+  }
+
+  async function removeSelected() {
+    if (!selected || deleting) return;
+    const id = selected.id;
+    setDeleting(true);
+    const result = await deleteChat(id);
+    setDeleting(false);
+    if (!result.ok) {
+      setError(result.error);
+      return;
+    }
+
+    removedRef.current.add(id);
+    setThreads((current) => current.filter((thread) => thread.id !== id));
+    setMessages([]);
+    setSelectedId(null);
+    setConfirmOpen(false);
+    const url = new URL(window.location.href);
+    url.searchParams.delete("chat");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
   }
 
   return (
@@ -174,15 +214,42 @@ export function ChatInbox({
                     </p>
                   </div>
                 </div>
-                <label className="flex items-center gap-3 text-sm text-zinc-700">
-                  ИИ-агент активен
-                  <Switch
-                    checked={selected.botActive}
-                    disabled={pending}
-                    onCheckedChange={(checked) => void toggleBot(checked)}
-                    aria-label="ИИ-агент активен"
-                  />
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className="flex items-center gap-3 text-sm text-zinc-700">
+                    ИИ-агент активен
+                    <Switch
+                      checked={selected.botActive}
+                      disabled={pending || deleting}
+                      onCheckedChange={(checked) => void toggleBot(checked)}
+                      aria-label="ИИ-агент активен"
+                    />
+                  </label>
+                  <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+                    <AlertDialogTrigger asChild>
+                      <Button type="button" variant="ghost" className="text-red-500" aria-label="Удалить чат">
+                        <Trash className="size-4" strokeWidth={2} />
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Удалить этот чат?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          Вся история переписки будет стерта, и бот начнет общение с нуля при следующем сообщении. Это
+                          действие нельзя отменить.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel disabled={deleting}>Отмена</AlertDialogCancel>
+                        <AlertDialogAction disabled={deleting} onClick={(event) => {
+                          event.preventDefault();
+                          void removeSelected();
+                        }}>
+                          {deleting ? "Удаление" : "Удалить"}
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
+                </div>
               </header>
               {!selected.botActive ? (
                 <p className="border-b border-zinc-200/80 bg-amber-50 px-5 py-2 text-xs text-amber-800">

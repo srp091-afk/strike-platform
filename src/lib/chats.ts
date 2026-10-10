@@ -79,6 +79,30 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
     .filter((message) => message.content && !isBotMarker(message.content));
 }
 
+export async function deleteConversation(conversationId: string) {
+  if (!isUuid(conversationId)) return { ok: false as const, error: "Диалог не найден." };
+  const userId = await getExistingWorkspaceUserId();
+  if (!userId) return { ok: false as const, error: "Рабочее пространство не найдено." };
+
+  const supabase = createSupabaseAdminClient();
+  const { data: owned, error: ownedError } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("id", conversationId)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (ownedError) return { ok: false as const, error: ownedError.message };
+  if (!owned) return { ok: false as const, error: "Диалог не найден." };
+
+  const { error: messagesError } = await supabase.from("messages").delete().eq("conversation_id", conversationId);
+  if (messagesError) return { ok: false as const, error: messagesError.message };
+
+  const { error } = await supabase.from("conversations").delete().eq("id", conversationId).eq("user_id", userId);
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
+}
+
 export async function setConversationBotActive(conversationId: string, active: boolean) {
   if (!isUuid(conversationId)) return { ok: false as const, error: "Диалог не найден." };
   const userId = await getExistingWorkspaceUserId();
