@@ -79,13 +79,15 @@ async function handleIncoming(request: NextRequest, body: unknown) {
       contactName: incoming.contactName,
       preview: incoming.text,
     });
-    const { error: storedError } = await supabase.from("messages").insert({
+    const stored = await supabase.from("messages").insert({
       conversation_id: conversation.id,
       role: "user",
       content: incoming.text,
       status: "sent",
       external_message_id: incoming.messageId,
+      ...(incoming.sentAt ? { created_at: incoming.sentAt } : {}),
     });
+    const storedError = stored.error;
     if (storedError) throw new Error(storedError.message);
     return;
   }
@@ -97,6 +99,10 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     throw new Error("Агент не найден или выключен.");
   }
 
+  const priorId = await findConversationId(supabase, channel.integrationId, incoming.from);
+  const assistantAt = priorId ? await latestAssistantAt(supabase, priorId) : null;
+  const late = isLateClientMessage(incoming.sentAt, assistantAt);
+
   const conversation = await upsertConversation(supabase, {
     userId: channel.userId,
     agentId: agent.id as string,
@@ -104,6 +110,7 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     externalChatId: incoming.from,
     contactName: incoming.contactName,
     preview: incoming.text,
+    touchPreview: !late,
   });
   const conversationId = conversation.id;
 
@@ -113,9 +120,11 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     content: incoming.text,
     status: "sent",
     external_message_id: incoming.messageId,
+    ...(incoming.sentAt ? { created_at: incoming.sentAt } : {}),
   });
 
   if (inboundError) throw new Error(inboundError.message);
+  if (late) return;
   await syncOpeningHistory(supabase, conversationId, incoming.from, channel.credentials);
   if (!conversation.botActive) return;
   if (!whatsappChannelEnabled(agent.active_channels)) return;
@@ -339,7 +348,7 @@ function readIncoming(body: unknown): ChatText | null {
     text,
     messageId: stringValue(record.idMessage) || null,
     contactName: stringValue(sender.senderName) || stringValue(sender.senderContactName) || null,
-    sentAt: null,
+    sentAt: readMessageTimestamp(record),
   };
 }
 
@@ -360,6 +369,55 @@ function readOutgoing(body: unknown): ChatText | null {
     contactName: stringValue(sender.chatName) || null,
     sentAt: timestampToIso(record.timestamp),
   };
+}
+
+function readMessageTimestamp(record: Record<string, unknown>) {
+  const message = asRecord(record.messageData);
+  return (
+    timestampToIso(record.timestamp) ||
+    timestampToIso(record.time) ||
+    timestampToIso(message.timestamp) ||
+    timestampToIso(message.time)
+  );
+}
+
+function isLateClientMessage(sentAt: string | null, assistantAt: string | null) {
+  if (!sentAt || !assistantAt) return false;
+  const writtenAt = Date.parse(sentAt);
+  const repliedAt = Date.parse(assistantAt);
+  if (!Number.isFinite(writtenAt) || !Number.isFinite(repliedAt)) return false;
+  return writtenAt < repliedAt;
+}
+
+async function findConversationId(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  integrationId: string,
+  externalChatId: string,
+) {
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("id")
+    .eq("integration_id", integrationId)
+    .eq("external_chat_id", externalChatId)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.id ? String(data.id) : null;
+}
+
+async function latestAssistantAt(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  conversationId: string,
+) {
+  const { data, error } = await supabase
+    .from("messages")
+    .select("created_at")
+    .eq("conversation_id", conversationId)
+    .eq("role", "assistant")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  return data?.created_at ? String(data.created_at) : null;
 }
 
 function readWebhookText(record: Record<string, unknown>) {
@@ -575,6 +633,7 @@ async function upsertConversation(
     externalChatId: string;
     contactName: string | null;
     preview: string;
+    touchPreview?: boolean;
   },
 ) {
   const { data: existing, error: lookupError } = await supabase
@@ -590,14 +649,16 @@ async function upsertConversation(
     user_id: string;
     agent_id: string | null;
     contact_name?: string;
-    last_message_preview: string;
-    last_message_at: string;
+    last_message_preview?: string;
+    last_message_at?: string;
   } = {
     user_id: input.userId,
     agent_id: input.agentId,
-    last_message_preview: input.preview.slice(0, 140),
-    last_message_at: new Date().toISOString(),
   };
+  if (input.touchPreview !== false) {
+    patch.last_message_preview = input.preview.slice(0, 140);
+    patch.last_message_at = new Date().toISOString();
+  }
 
   if (input.contactName) patch.contact_name = input.contactName;
 
