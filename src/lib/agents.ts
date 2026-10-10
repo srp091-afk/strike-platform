@@ -2,7 +2,7 @@ import "server-only";
 
 import { cache } from "react";
 
-import type { AgentRecord } from "@/lib/agent-models";
+import { readActiveChannels, type AgentRecord } from "@/lib/agent-models";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const WORKSPACE_EMAIL = "owner@strike.local";
@@ -72,17 +72,34 @@ export async function listAgents(): Promise<AgentRecord[]> {
   const supabase = createSupabaseAdminClient();
   const userId = await getExistingWorkspaceUserId();
   if (!userId) return [];
-  const { data, error } = await supabase
+  const withChannels = await supabase
     .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active, created_at")
+    .select("id, name, system_prompt, model, temperature, is_active, active_channels, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
-  if (error) {
-    throw new Error(error.message);
+  const rows = withChannels.error?.message.includes("active_channels")
+    ? await supabase
+        .from("agents")
+        .select("id, name, system_prompt, model, temperature, is_active, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+    : withChannels;
+
+  if (rows.error) {
+    throw new Error(rows.error.message);
   }
 
-  return (data ?? []) as AgentRecord[];
+  return (rows.data ?? []).map((row) => ({
+    id: row.id as string,
+    name: row.name as string,
+    system_prompt: row.system_prompt as string,
+    model: row.model as string,
+    temperature: Number(row.temperature),
+    is_active: Boolean(row.is_active),
+    created_at: row.created_at as string,
+    active_channels: readActiveChannels("active_channels" in row ? row.active_channels : undefined),
+  }));
 }
 
 export async function getDashboardCounts() {

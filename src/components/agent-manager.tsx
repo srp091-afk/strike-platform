@@ -6,8 +6,17 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { deleteAgent, saveAgent, type SaveState } from "@/app/agents/actions";
+import { ChannelIcon } from "@/components/channel-icons";
 import { Button } from "@/components/ui/button";
-import { AGENT_MODELS, type AgentRecord } from "@/lib/agent-models";
+import { DialogContent } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
+import {
+  AGENT_MODELS,
+  DEFAULT_ACTIVE_CHANNELS,
+  type ActiveChannels,
+  type AgentRecord,
+} from "@/lib/agent-models";
+import type { IntegrationProvider } from "@/lib/integration-catalog";
 
 const fieldClass =
   "w-full rounded-xl border border-transparent bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none transition-all duration-200 placeholder:text-zinc-400 hover:bg-zinc-100/80 focus:border-zinc-300 focus:bg-white";
@@ -153,74 +162,119 @@ function AgentDialog({
   }, [onClose]);
 
   return (
-    <div
-      className="fixed inset-0 z-[60] flex items-end justify-center bg-zinc-950/40 p-4 sm:items-center"
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="agent-dialog-title"
-        className="max-h-[90vh] w-full max-w-xl overflow-x-hidden overflow-y-auto rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.35)]"
-      >
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</p>
-        <h2 id="agent-dialog-title" className="mt-1 text-2xl font-semibold">
-          {editing ? "Правка агента" : "Новый агент"}
-        </h2>
-        <p className="mt-2 text-sm leading-6 text-zinc-500">
-          Имя, модель и системная инструкция задают голос агента.
-        </p>
+    <div className="fixed inset-0 z-[60]">
+      <DialogContent aria-labelledby="agent-dialog-title" className="flex flex-col overflow-hidden">
+        <form action={action} className="flex min-h-0 flex-1 flex-col">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200/80 bg-white px-6 py-4">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</p>
+              <h2 id="agent-dialog-title" className="text-2xl font-semibold">
+                {editing ? "Правка агента" : "Новый агент"}
+              </h2>
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="outline" onClick={onClose}>
+                Отмена
+              </Button>
+              <Button type="submit" disabled={pending}>
+                {pending ? "Сохранение" : "Сохранить"}
+              </Button>
+            </div>
+          </header>
 
-        <form action={action} className="mt-5 grid min-w-0 gap-4">
-          {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
+          <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="mx-auto grid max-w-6xl gap-6 p-6 lg:grid-cols-2">
+              <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+                {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
 
-          <label className="grid gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Имя</span>
-            <input className={fieldClass} name="name" required defaultValue={editing?.name ?? ""} placeholder="Квалификатор" />
-          </label>
+                <label className="grid gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Имя</span>
+                  <input className={fieldClass} name="name" required defaultValue={editing?.name ?? ""} placeholder="Квалификатор" />
+                </label>
 
-          <div className="grid min-w-0 gap-4">
-            <label className="grid min-w-0 gap-2">
-              <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Модель</span>
-              <select className={fieldClass} name="model" defaultValue={editing?.model ?? "gpt-4o-mini"}>
-                {AGENT_MODELS.map((model) => (
-                  <option key={model} value={model}>
-                    {model}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <CreativityField defaultValue={editing?.temperature ?? 0.7} />
-          </div>
+                <label className="grid min-w-0 gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Модель</span>
+                  <select className={fieldClass} name="model" defaultValue={editing?.model ?? "gpt-4o-mini"}>
+                    {AGENT_MODELS.map((model) => (
+                      <option key={model} value={model}>
+                        {model}
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-          <label className="grid gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-              Системная инструкция <span className="text-red-600">#ROLE</span>
-            </span>
-            <textarea
-              className={`${fieldClass} min-h-40 resize-y`}
-              name="system_prompt"
-              required
-              defaultValue={editing?.system_prompt ?? ""}
-              placeholder={"#ROLE\nТы оператор STRIKE. Отвечай коротко, по делу, без воды."}
-            />
-          </label>
+                <CreativityField defaultValue={editing?.temperature ?? 0.7} />
 
-          {error ? <p className="text-sm text-red-600">{error}</p> : null}
+                <label className="grid gap-2">
+                  <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+                    Системная инструкция <span className="text-red-600">#ROLE</span>
+                  </span>
+                  <textarea
+                    className={`${fieldClass} min-h-80 resize-y`}
+                    name="system_prompt"
+                    required
+                    defaultValue={editing?.system_prompt ?? ""}
+                    placeholder={"#ROLE\nТы оператор STRIKE. Отвечай коротко, по делу, без воды."}
+                  />
+                </label>
 
-          <div className="mt-2 flex justify-end gap-2">
-            <Button type="button" variant="outline" onClick={onClose}>
-              Отмена
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending ? "Сохранение" : "Сохранить"}
-            </Button>
+                {error ? <p className="text-sm text-red-600">{error}</p> : null}
+              </section>
+
+              <ChannelSettings initial={editing?.active_channels ?? DEFAULT_ACTIVE_CHANNELS} />
+            </div>
           </div>
         </form>
-      </div>
+      </DialogContent>
     </div>
+  );
+}
+
+const channelTone: Record<IntegrationProvider, string> = {
+  telegram: "bg-sky-50 text-sky-600",
+  whatsapp: "bg-emerald-50 text-emerald-600",
+  instagram: "bg-rose-50 text-rose-600",
+};
+
+const channelOptions: { id: IntegrationProvider; label: string }[] = [
+  { id: "whatsapp", label: "WhatsApp" },
+  { id: "telegram", label: "Telegram" },
+  { id: "instagram", label: "Instagram" },
+];
+
+function ChannelSettings({ initial }: { initial: ActiveChannels }) {
+  const [channels, setChannels] = useState<ActiveChannels>(initial);
+
+  return (
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+      <div>
+        <h3 className="font-heading text-lg font-semibold text-zinc-900">Активные каналы</h3>
+        <p className="mt-1 text-sm leading-6 text-zinc-500">
+          Агент отвечает только в включённых каналах. Выключенный WhatsApp не вызывает модель.
+        </p>
+      </div>
+      <input type="hidden" name="active_channels" value={JSON.stringify(channels)} />
+      <div className="grid gap-3">
+        {channelOptions.map((channel) => (
+          <label
+            key={channel.id}
+            className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-4 py-3"
+          >
+            <span className="flex items-center gap-3 text-sm font-medium text-zinc-800">
+              <span className={`grid size-9 place-items-center rounded-xl ${channelTone[channel.id]}`}>
+                <ChannelIcon provider={channel.id} className="size-4" />
+              </span>
+              {channel.label}
+            </span>
+            <Switch
+              checked={channels[channel.id]}
+              onCheckedChange={(checked) => setChannels((current) => ({ ...current, [channel.id]: checked }))}
+              aria-label={channel.label}
+            />
+          </label>
+        ))}
+      </div>
+    </section>
   );
 }
 

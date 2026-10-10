@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { isAgentModel } from "@/lib/agent-models";
+import { DEFAULT_ACTIVE_CHANNELS, isAgentModel, type ActiveChannels } from "@/lib/agent-models";
 import { getWorkspaceUserId } from "@/lib/agents";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -18,6 +18,7 @@ function readAgentFields(formData: FormData) {
   const model = String(formData.get("model") ?? "").trim();
   const temperature = Number(formData.get("temperature") ?? 0.7);
   const id = String(formData.get("id") ?? "").trim();
+  const activeChannels = readChannels(formData.get("active_channels"));
 
   if (!name) {
     return { ok: false as const, error: "Укажи имя агента." };
@@ -42,7 +43,22 @@ function readAgentFields(formData: FormData) {
     systemPrompt,
     model,
     temperature,
+    activeChannels,
   };
+}
+
+function readChannels(value: FormDataEntryValue | null): ActiveChannels {
+  if (typeof value !== "string" || !value.trim()) return { ...DEFAULT_ACTIVE_CHANNELS };
+  try {
+    const parsed = JSON.parse(value) as Record<string, unknown>;
+    return {
+      whatsapp: parsed.whatsapp === true,
+      telegram: parsed.telegram === true,
+      instagram: parsed.instagram === true,
+    };
+  } catch {
+    return { ...DEFAULT_ACTIVE_CHANNELS };
+  }
 }
 
 export async function saveAgent(_prev: SaveState, formData: FormData): Promise<SaveState> {
@@ -59,6 +75,7 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
       system_prompt: fields.systemPrompt,
       model: fields.model,
       temperature: fields.temperature,
+      active_channels: fields.activeChannels,
       user_id: userId,
     };
 

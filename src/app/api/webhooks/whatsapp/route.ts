@@ -36,11 +36,7 @@ async function handleIncoming(request: NextRequest) {
     if (existing && existing.length > 0) return;
   }
 
-  const { data: agent, error: agentError } = await supabase
-    .from("agents")
-    .select("id, system_prompt, model, temperature, is_active")
-    .eq("id", channel.agentId)
-    .maybeSingle();
+  const { data: agent, error: agentError } = await loadWhatsAppAgent(supabase, channel.agentId);
 
   if (agentError) throw new Error(agentError.message);
   if (!agent || !agent.is_active) {
@@ -67,6 +63,7 @@ async function handleIncoming(request: NextRequest) {
 
   if (inboundError) throw new Error(inboundError.message);
   if (!conversation.botActive) return;
+  if (!whatsappChannelEnabled(agent.active_channels)) return;
 
   const { data: history, error: historyError } = await supabase
     .from("messages")
@@ -159,6 +156,37 @@ function readIncoming(body: unknown): IncomingText | null {
     messageId: stringValue(record.idMessage) || null,
     contactName,
   };
+}
+
+async function loadWhatsAppAgent(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  agentId: string,
+) {
+  const withChannels = await supabase
+    .from("agents")
+    .select("id, system_prompt, model, temperature, is_active, active_channels")
+    .eq("id", agentId)
+    .maybeSingle();
+
+  if (!withChannels.error || !withChannels.error.message.includes("active_channels")) {
+    return withChannels;
+  }
+
+  const fallback = await supabase
+    .from("agents")
+    .select("id, system_prompt, model, temperature, is_active")
+    .eq("id", agentId)
+    .maybeSingle();
+
+  return {
+    data: fallback.data ? { ...fallback.data, active_channels: null } : null,
+    error: fallback.error,
+  };
+}
+
+function whatsappChannelEnabled(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return true;
+  return (value as { whatsapp?: unknown }).whatsapp !== false;
 }
 
 async function findWhatsAppChannel(supabase: ReturnType<typeof createSupabaseAdminClient>) {

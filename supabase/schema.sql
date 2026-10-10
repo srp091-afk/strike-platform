@@ -65,6 +65,7 @@ create table if not exists public.agents (
   model text not null default 'gpt-4o-mini',
   temperature numeric(3, 2) not null default 0.70,
   is_active boolean not null default true,
+  active_channels jsonb not null default '{"whatsapp": true, "telegram": false, "instagram": false}'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint agents_temperature_range check (temperature >= 0 and temperature <= 2)
