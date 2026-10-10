@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 import { io } from "next/cache";
-import { Bot, MessageSquare, MessagesSquare, Plug } from "lucide-react";
+import { Bot, MessageSquare, MessagesSquare } from "lucide-react";
 
 import { PageFrame } from "@/components/page-frame";
 import { getDashboardCounts } from "@/lib/agents";
@@ -14,15 +14,9 @@ export const metadata: Metadata = {
 const card = [
   {
     title: "Агенты",
-    text: "Системный промпт, модель и температура. Один агент — один стиль ответа.",
+    text: "Системный промпт, модель и каналы. У каждого агента свой номер и свой бот.",
     href: "/agents",
     icon: Bot,
-  },
-  {
-    title: "Интеграции",
-    text: "WhatsApp через GreenAPI, Instagram Direct и Telegram.",
-    href: "/integrations",
-    icon: Plug,
   },
   {
     title: "Чаты",
@@ -34,7 +28,6 @@ const card = [
 
 const metricIcons = {
   Агенты: Bot,
-  Интеграции: Plug,
   Чаты: MessagesSquare,
   Сообщения: MessageSquare,
 } as const;
@@ -47,7 +40,7 @@ export default function DashboardPage() {
     <PageFrame
       eyebrow="Портал"
       title="Дашборд"
-      description="Счётчики читаются из Supabase: агенты, интеграции, чаты и сообщения."
+      description="Счётчики читаются из Supabase: агенты, чаты и сообщения."
     >
       <Suspense fallback={<MetricsSkeleton />}>
         <LiveMetrics />
@@ -55,7 +48,7 @@ export default function DashboardPage() {
 
       <section className="mt-10">
         <h2 className="text-lg font-semibold">Разделы</h2>
-        <div className="mt-4 grid gap-6 md:grid-cols-3">
+        <div className="mt-4 grid gap-6 md:grid-cols-2">
           {card.map((item) => {
             const Icon = item.icon;
             return (
@@ -81,7 +74,6 @@ async function LiveMetrics() {
   const counts = await getDashboardCounts();
   const metrics = [
     { value: counts.agents, label: "Агенты" as const, href: "/agents" },
-    { value: counts.integrations, label: "Интеграции" as const, href: "/integrations" },
     { value: counts.chats, label: "Чаты" as const, href: "/chats" },
     { value: counts.messages, label: "Сообщения" as const, href: "/chats" },
   ];
@@ -93,7 +85,7 @@ async function LiveMetrics() {
           {counts.error}
         </p>
       ) : null}
-      <section className="grid grid-cols-1 gap-6 md:grid-cols-4">
+      <section className="grid grid-cols-1 gap-6 md:grid-cols-3">
         {metrics.map((metric) => {
           const Icon = metricIcons[metric.label];
           return (
@@ -117,8 +109,8 @@ async function LiveMetrics() {
 
 function MetricsSkeleton() {
   return (
-    <div className="grid grid-cols-1 gap-6 md:grid-cols-4">
-      {Array.from({ length: 4 }).map((_, index) => (
+    <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
+      {Array.from({ length: 3 }).map((_, index) => (
         <div key={index} className={cardClass}>
           <div className="h-10 w-10 rounded-xl bg-zinc-100" />
           <p className="mt-4 font-heading text-3xl font-bold tracking-tight text-zinc-200">0</p>

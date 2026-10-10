@@ -1,16 +1,28 @@
 "use client";
 
-import { Play } from "lucide-react";
-import { useActionState, useEffect, useState } from "react";
+import { Play, Trash } from "lucide-react";
+import { useActionState, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { deleteAgent, saveAgent, type SaveState } from "@/app/agents/actions";
-import { assignWhatsAppAccountAgent, unbindWhatsAppAccount } from "@/app/integrations/actions";
+import { connectTelegram, disconnectTelegram, disconnectWhatsApp } from "@/app/agents/channels";
 import { ChannelIcon } from "@/components/channel-icons";
 import { Button } from "@/components/ui/button";
 import { DialogContent } from "@/components/ui/dialog";
 import { Switch } from "@/components/ui/switch";
+import { WhatsAppConnectDialog } from "@/components/whatsapp-connect-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import {
   AGENT_MODELS,
   DEFAULT_ACTIVE_CHANNELS,
@@ -18,7 +30,11 @@ import {
   type AgentRecord,
 } from "@/lib/agent-models";
 import type { IntegrationProvider } from "@/lib/integration-catalog";
-import type { WhatsAppAccountView } from "@/lib/whatsapp-accounts";
+
+type GreenDefaults = {
+  instanceId: string;
+  apiToken: string;
+};
 
 const fieldClass =
   "w-full rounded-xl border border-transparent bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none transition-all duration-200 placeholder:text-zinc-400 hover:bg-zinc-100/80 focus:border-zinc-300 focus:bg-white";
@@ -27,11 +43,11 @@ const initialState: SaveState = { ok: false, error: null, savedId: null };
 
 export function AgentManager({
   agents,
-  whatsappAccounts,
+  greenDefaults,
   loadError,
 }: {
   agents: AgentRecord[];
-  whatsappAccounts: WhatsAppAccountView[];
+  greenDefaults: GreenDefaults;
   loadError: string | null;
 }) {
   const router = useRouter();
@@ -45,6 +61,23 @@ export function AgentManager({
     setDialogOpen(false);
     router.refresh();
   }, [state.savedId, router]);
+
+  useEffect(() => {
+    setEditing((current) => {
+      if (!current) return current;
+      const fresh = agents.find((agent) => agent.id === current.id);
+      if (!fresh) return current;
+      if (
+        fresh.waPhoneNumber === current.waPhoneNumber &&
+        fresh.tgBotUsername === current.tgBotUsername &&
+        fresh.waIsActive === current.waIsActive &&
+        fresh.tgIsActive === current.tgIsActive
+      ) {
+        return current;
+      }
+      return fresh;
+    });
+  }, [agents]);
 
   function openCreate() {
     setEditing(null);
@@ -132,7 +165,7 @@ export function AgentManager({
           action={action}
           pending={pending}
           error={state.error}
-          whatsappAccounts={whatsappAccounts}
+          greenDefaults={greenDefaults}
           onClose={closeDialog}
         />
       ) : null}
@@ -145,21 +178,21 @@ function AgentDialog({
   action,
   pending,
   error,
-  whatsappAccounts,
+  greenDefaults,
   onClose,
 }: {
   editing: AgentRecord | null;
   action: (payload: FormData) => void;
   pending: boolean;
   error: string | null;
-  whatsappAccounts: WhatsAppAccountView[];
+  greenDefaults: GreenDefaults;
   onClose: () => void;
 }) {
   useEffect(() => {
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
+      if (event.key === "Escape" && !document.querySelector("[data-channel-dialog]")) onClose();
     }
     window.addEventListener("keydown", onKey);
     return () => {
@@ -230,8 +263,8 @@ function AgentDialog({
 
               <div className="grid content-start gap-6">
                 <ChannelSettings
-                  agentId={editing?.id ?? null}
-                  accounts={whatsappAccounts}
+                  agent={editing}
+                  greenDefaults={greenDefaults}
                   initial={editing?.active_channels ?? DEFAULT_ACTIVE_CHANNELS}
                 />
                 <ResponseDelayField defaultValue={editing?.response_delay ?? 0} />
@@ -251,130 +284,265 @@ const channelTone: Record<IntegrationProvider, string> = {
   instagram: "bg-rose-50 text-rose-600",
 };
 
-const channelOptions: { id: IntegrationProvider; label: string }[] = [
-  { id: "whatsapp", label: "WhatsApp" },
-  { id: "telegram", label: "Telegram" },
-  { id: "instagram", label: "Instagram" },
-];
-
 function ChannelSettings({
-  agentId,
-  accounts,
+  agent,
+  greenDefaults,
   initial,
 }: {
-  agentId: string | null;
-  accounts: WhatsAppAccountView[];
+  agent: AgentRecord | null;
+  greenDefaults: GreenDefaults;
   initial: ActiveChannels;
 }) {
   const [channels, setChannels] = useState<ActiveChannels>(initial);
+  const [whatsappOpen, setWhatsappOpen] = useState(false);
+  const [telegramOpen, setTelegramOpen] = useState(false);
 
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
       <div>
         <h3 className="font-heading text-lg font-semibold text-zinc-900">Активные каналы</h3>
         <p className="mt-1 text-sm leading-6 text-zinc-500">
-          Агент отвечает только в включённых каналах. Выключенный WhatsApp не вызывает модель.
+          У агента один номер WhatsApp и один Telegram-бот. Выключенный канал не вызывает модель.
         </p>
       </div>
       <input type="hidden" name="active_channels" value={JSON.stringify(channels)} />
       <div className="grid gap-3">
-        {channelOptions.map((channel) =>
-          channel.id === "whatsapp" ? (
-            <div key={channel.id} className="grid gap-3 rounded-xl bg-zinc-50 px-4 py-3">
-              <label className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-3 text-sm font-medium text-zinc-800">
-                  <span className={`grid size-9 place-items-center rounded-xl ${channelTone.whatsapp}`}>
-                    <ChannelIcon provider="whatsapp" className="size-4" />
-                  </span>
-                  WhatsApp
-                </span>
-                <Switch
-                  checked={channels.whatsapp}
-                  onCheckedChange={(checked) => setChannels((current) => ({ ...current, whatsapp: checked }))}
-                  aria-label="WhatsApp"
-                />
-              </label>
-              <WhatsAppNumberSwitches agentId={agentId} accounts={accounts} />
-            </div>
-          ) : (
-            <label
-              key={channel.id}
-              className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-4 py-3"
-            >
-              <span className="flex items-center gap-3 text-sm font-medium text-zinc-800">
-                <span className={`grid size-9 place-items-center rounded-xl ${channelTone[channel.id]}`}>
-                  <ChannelIcon provider={channel.id} className="size-4" />
-                </span>
-                {channel.label}
+        <div className="grid gap-3 rounded-xl bg-zinc-50 px-4 py-3">
+          <label className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-3 text-sm font-medium text-zinc-800">
+              <span className={`grid size-9 place-items-center rounded-xl ${channelTone.whatsapp}`}>
+                <ChannelIcon provider="whatsapp" className="size-4" />
               </span>
-              <Switch
-                checked={channels[channel.id]}
-                onCheckedChange={(checked) => setChannels((current) => ({ ...current, [channel.id]: checked }))}
-                aria-label={channel.label}
-              />
-            </label>
-          ),
-        )}
+              WhatsApp
+            </span>
+            <Switch
+              checked={channels.whatsapp}
+              onCheckedChange={(checked) => setChannels((current) => ({ ...current, whatsapp: checked }))}
+              aria-label="WhatsApp"
+            />
+          </label>
+          <WhatsAppChannel agent={agent} onConnect={() => setWhatsappOpen(true)} />
+        </div>
+        <div className="grid gap-3 rounded-xl bg-zinc-50 px-4 py-3">
+          <label className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-3 text-sm font-medium text-zinc-800">
+              <span className={`grid size-9 place-items-center rounded-xl ${channelTone.telegram}`}>
+                <ChannelIcon provider="telegram" className="size-4" />
+              </span>
+              Telegram
+            </span>
+            <Switch
+              checked={channels.telegram}
+              onCheckedChange={(checked) => setChannels((current) => ({ ...current, telegram: checked }))}
+              aria-label="Telegram"
+            />
+          </label>
+          <TelegramChannel agent={agent} onConnect={() => setTelegramOpen(true)} />
+        </div>
+        <label className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-4 py-3">
+          <span className="flex items-center gap-3 text-sm font-medium text-zinc-800">
+            <span className={`grid size-9 place-items-center rounded-xl ${channelTone.instagram}`}>
+              <ChannelIcon provider="instagram" className="size-4" />
+            </span>
+            Instagram
+          </span>
+          <Switch
+            checked={channels.instagram}
+            onCheckedChange={(checked) => setChannels((current) => ({ ...current, instagram: checked }))}
+            aria-label="Instagram"
+          />
+        </label>
       </div>
+      {whatsappOpen && agent ? (
+        <WhatsAppConnectDialog agentId={agent.id} defaults={greenDefaults} onClose={() => setWhatsappOpen(false)} />
+      ) : null}
+      {telegramOpen && agent ? <TelegramConnectDialog agentId={agent.id} onClose={() => setTelegramOpen(false)} /> : null}
     </section>
   );
 }
 
-function WhatsAppNumberSwitches({
+function WhatsAppChannel({ agent, onConnect }: { agent: AgentRecord | null; onConnect: () => void }) {
+  if (!agent) {
+    return <p className="text-xs leading-5 text-zinc-500">Сохраните агента, чтобы подключить номер.</p>;
+  }
+  if (!agent.waPhoneNumber) {
+    return (
+      <button
+        type="button"
+        className="w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800"
+        onClick={onConnect}
+      >
+        + Подключить номер
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5">
+      <p className="truncate text-sm font-medium text-zinc-900">{agent.waPhoneNumber}</p>
+      <DisconnectButton agentId={agent.id} kind="whatsapp" label={`Отключить номер ${agent.waPhoneNumber}`} />
+    </div>
+  );
+}
+
+function TelegramChannel({ agent, onConnect }: { agent: AgentRecord | null; onConnect: () => void }) {
+  if (!agent) {
+    return <p className="text-xs leading-5 text-zinc-500">Сохраните агента, чтобы подключить бота.</p>;
+  }
+  if (!agent.tgBotUsername) {
+    return (
+      <button
+        type="button"
+        className="w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800"
+        onClick={onConnect}
+      >
+        Подключить
+      </button>
+    );
+  }
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5">
+      <p className="truncate text-sm font-medium text-zinc-900">@{agent.tgBotUsername}</p>
+      <DisconnectButton agentId={agent.id} kind="telegram" label={`Отключить бота @${agent.tgBotUsername}`} />
+    </div>
+  );
+}
+
+function DisconnectButton({
   agentId,
-  accounts,
+  kind,
+  label,
 }: {
-  agentId: string | null;
-  accounts: WhatsAppAccountView[];
+  agentId: string;
+  kind: "whatsapp" | "telegram";
+  label: string;
 }) {
   const router = useRouter();
-  const [pendingId, setPendingId] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
-  const boundIds = new Set(accounts.filter((account) => account.agentId === agentId).map((account) => account.id));
 
-  async function onToggle(accountId: string, enabled: boolean) {
-    if (!agentId) return;
+  function onDisconnect() {
     setError(null);
-    setPendingId(accountId);
-    const result = enabled
-      ? await assignWhatsAppAccountAgent(accountId, agentId)
-      : await unbindWhatsAppAccount(accountId);
-    setPendingId(null);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    router.refresh();
-  }
-
-  if (!agentId) {
-    return <p className="text-xs leading-5 text-zinc-500">Сохраните агента, чтобы привязать номер.</p>;
-  }
-
-  if (accounts.length === 0) {
-    return <p className="text-xs leading-5 text-zinc-500">Подключённых номеров пока нет.</p>;
+    startTransition(async () => {
+      const result = kind === "whatsapp" ? await disconnectWhatsApp(agentId) : await disconnectTelegram(agentId);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      router.refresh();
+    });
   }
 
   return (
-    <div className="grid gap-2">
-      {accounts.map((account) => {
-        const enabled = boundIds.has(account.id);
-        return (
-          <div key={account.id} className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5">
-            <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-zinc-900">{account.phoneNumber}</p>
-              <p className="text-xs text-zinc-500">{enabled ? "Включен для этого агента" : "Отключен"}</p>
-            </div>
-            <Switch
-              checked={enabled}
-              disabled={pendingId === account.id}
-              aria-label={`${account.phoneNumber}: ${enabled ? "Включен для этого агента" : "Отключен"}`}
-              onCheckedChange={(checked) => void onToggle(account.id, checked)}
-            />
-          </div>
-        );
-      })}
-      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+    <div className="flex items-center gap-2">
+      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+      <AlertDialog>
+        <AlertDialogTrigger type="button" className="text-red-500 transition-colors hover:text-red-600 disabled:opacity-40" disabled={pending} aria-label={label}>
+          <Trash className="size-4" />
+        </AlertDialogTrigger>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Отключить</AlertDialogTitle>
+            <AlertDialogDescription>
+              {kind === "whatsapp"
+                ? "Номер будет снят с этого агента. История чатов сохранится."
+                : "Токен бота будет снят с этого агента. История чатов сохранится."}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Отмена</AlertDialogCancel>
+            <AlertDialogAction type="button" className="bg-red-600 text-white hover:bg-red-700" onClick={onDisconnect}>
+              Отключить
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}
+
+function TelegramConnectDialog({ agentId, onClose }: { agentId: string; onClose: () => void }) {
+  const router = useRouter();
+  const [token, setToken] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  function onSubmit() {
+    setError(null);
+    startTransition(async () => {
+      const result = await connectTelegram(agentId, token);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      onClose();
+      router.refresh();
+    });
+  }
+
+  return (
+    <div
+      data-channel-dialog=""
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-zinc-950/40 p-4"
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.preventDefault();
+      }}
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="telegram-connect-title"
+        className="w-full max-w-md rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.35)]"
+      >
+        <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Telegram</p>
+        <h2 id="telegram-connect-title" className="mt-1 text-2xl font-semibold">
+          Подключить бота
+        </h2>
+        <label className="mt-5 grid gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Bot Token</span>
+          <input
+            className={fieldClass}
+            type="password"
+            value={token}
+            autoComplete="off"
+            placeholder="123456:ABC..."
+            onChange={(event) => setToken(event.target.value)}
+          />
+        </label>
+        {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
+        <div className="mt-5 flex justify-end gap-2">
+          <button
+            type="button"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700"
+            onClick={onClose}
+          >
+            Закрыть
+          </button>
+          <button
+            type="button"
+            className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+            disabled={pending || token.trim().length < 20}
+            onClick={onSubmit}
+          >
+            {pending ? "Подключение" : "Подключить"}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

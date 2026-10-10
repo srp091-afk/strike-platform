@@ -7,34 +7,30 @@ import {
   confirmWhatsAppAuthorization,
   requestWhatsAppLinkCode,
   requestWhatsAppQr,
-} from "@/app/integrations/actions";
+} from "@/app/agents/channels";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import type { WhatsAppCredentialDefaults } from "@/lib/whatsapp-accounts";
 
-type AgentOption = {
-  id: string;
-  name: string;
-  isActive: boolean;
+type GreenDefaults = {
+  instanceId: string;
+  apiToken: string;
 };
 
 const fieldClass =
   "w-full rounded-xl border border-transparent bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none transition-all duration-200 placeholder:text-zinc-400 hover:bg-zinc-100/80 focus:border-zinc-300 focus:bg-white";
 
 export function WhatsAppConnectDialog({
-  agents,
+  agentId,
   defaults,
   onClose,
 }: {
-  agents: AgentOption[];
-  defaults: WhatsAppCredentialDefaults;
+  agentId: string;
+  defaults: GreenDefaults;
   onClose: () => void;
 }) {
   const router = useRouter();
-  const activeAgents = agents.filter((agent) => agent.isActive);
   const [instanceId, setInstanceId] = useState(defaults.instanceId);
   const [apiToken, setApiToken] = useState(defaults.apiToken);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [agentId, setAgentId] = useState(activeAgents[0]?.id ?? "");
   const [phoneNumber, setPhoneNumber] = useState("");
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [linkCode, setLinkCode] = useState<string | null>(null);
@@ -103,7 +99,6 @@ export function WhatsAppConnectDialog({
   }
 
   function credentialsError() {
-    if (!agentId) return "Выберите агента.";
     if (!/^\d{4,}$/.test(instanceId.trim()) || apiToken.trim().length < 8) {
       setSettingsOpen(true);
       return "Укажите Instance ID и API Token в настройках инстанса.";
@@ -161,7 +156,11 @@ export function WhatsAppConnectDialog({
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-zinc-950/40 p-4"
+      data-channel-dialog=""
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-zinc-950/40 p-4"
+      onKeyDown={(event) => {
+        if (event.key === "Enter") event.preventDefault();
+      }}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -177,21 +176,6 @@ export function WhatsAppConnectDialog({
           Подключить номер
         </h2>
         <div className="mt-5 grid gap-4">
-          <label className="grid gap-2">
-            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</span>
-            <select
-              className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-all duration-200 focus:border-zinc-300"
-              value={agentId}
-              onChange={(event) => setAgentId(event.target.value)}
-            >
-              {activeAgents.map((agent) => (
-                <option key={agent.id} value={agent.id}>
-                  {agent.name}
-                </option>
-              ))}
-            </select>
-          </label>
-
           <Tabs
             defaultValue="qr"
             onValueChange={() => {
@@ -206,7 +190,7 @@ export function WhatsAppConnectDialog({
               <button
                 type="button"
                 className="rounded-xl bg-zinc-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800 disabled:opacity-50"
-                disabled={qrPending || activeAgents.length === 0}
+                disabled={qrPending}
                 onClick={() => void showQr()}
               >
                 {qrPending ? "Загрузка" : "Показать QR-код"}
@@ -233,7 +217,7 @@ export function WhatsAppConnectDialog({
               <button
                 type="button"
                 className="rounded-xl bg-zinc-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800 disabled:opacity-50"
-                disabled={codePending || activeAgents.length === 0}
+                disabled={codePending}
                 onClick={() => void showCode()}
               >
                 {codePending ? "Загрузка" : "Получить код"}

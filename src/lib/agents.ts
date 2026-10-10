@@ -74,7 +74,7 @@ export async function listAgents(): Promise<AgentRecord[]> {
   if (!userId) return [];
   const withDelay = await supabase
     .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages, created_at")
+    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -101,28 +101,25 @@ export async function listAgents(): Promise<AgentRecord[]> {
     active_channels: readActiveChannels("active_channels" in row ? row.active_channels : undefined),
     response_delay: readResponseDelay("response_delay" in row ? row.response_delay : 0),
     split_messages: readSplitMessages("split_messages" in row ? row.split_messages : false),
+    waPhoneNumber: "wa_phone_number" in row && row.wa_phone_number ? String(row.wa_phone_number) : null,
+    waIsActive: "wa_is_active" in row ? row.wa_is_active === true : false,
+    tgBotUsername: "tg_bot_username" in row && row.tg_bot_username ? String(row.tg_bot_username) : null,
+    tgIsActive: "tg_is_active" in row ? row.tg_is_active === true : false,
   }));
 }
 
 export async function getDashboardCounts() {
   const supabase = createSupabaseAdminClient();
-  const [agents, integrations, conversations, messages] = await Promise.all([
+  const [agents, conversations, messages] = await Promise.all([
     supabase.from("agents").select("id", { count: "exact", head: true }),
-    supabase.from("integrations").select("id", { count: "exact", head: true }),
     supabase.from("conversations").select("id", { count: "exact", head: true }),
     supabase.from("messages").select("id", { count: "exact", head: true }),
   ]);
 
-  const error =
-    agents.error?.message ??
-    integrations.error?.message ??
-    conversations.error?.message ??
-    messages.error?.message ??
-    null;
+  const error = agents.error?.message ?? conversations.error?.message ?? messages.error?.message ?? null;
 
   return {
     agents: agents.count ?? 0,
-    integrations: integrations.count ?? 0,
     chats: conversations.count ?? 0,
     messages: messages.count ?? 0,
     error,

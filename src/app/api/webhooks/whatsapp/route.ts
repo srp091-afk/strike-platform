@@ -1,6 +1,5 @@
 import type { NextRequest } from "next/server";
 
-import { getExistingWorkspaceUserId } from "@/lib/agents";
 import { readBotFlags } from "@/lib/bot-state";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
@@ -71,10 +70,10 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     if (existing && existing.length > 0) return;
   }
 
-  if (!channel.agentId) {
+  if (!channel.canReply) {
     const conversation = await upsertConversation(supabase, {
       userId: channel.userId,
-      agentId: null,
+      agentId: channel.agentId,
       integrationId: channel.integrationId,
       externalChatId: incoming.from,
       contactName: incoming.contactName,
@@ -414,46 +413,16 @@ async function resolveWhatsAppAccount(
   if (!instanceId) return null;
 
   const { data, error } = await supabase
-    .from("whatsapp_accounts")
-    .select("instance_id, api_token, agent_id, is_active")
-    .eq("instance_id", instanceId)
-    .eq("is_active", true)
+    .from("agents")
+    .select("id, user_id, wa_instance_id, wa_api_token, wa_is_active")
+    .eq("wa_instance_id", instanceId)
     .maybeSingle();
 
-  if (error) {
-    if (error.message.includes("whatsapp_accounts")) return null;
-    throw new Error(error.message);
-  }
-  if (!data || data.is_active === false || !data.api_token) return null;
+  if (error) throw new Error(error.message);
+  if (!data?.user_id || !data.wa_api_token) return null;
 
-  const agentId = data.agent_id ? String(data.agent_id) : null;
-  let userId = "";
-  if (agentId) {
-    const { data: agent, error: agentError } = await supabase
-      .from("agents")
-      .select("user_id")
-      .eq("id", agentId)
-      .maybeSingle();
-    if (agentError) throw new Error(agentError.message);
-    userId = agent?.user_id ? String(agent.user_id) : "";
-    if (!userId) return null;
-  }
-
-  if (!userId) {
-    const { data: integration, error: integrationError } = await supabase
-      .from("integrations")
-      .select("user_id")
-      .eq("provider", "whatsapp")
-      .eq("external_id", instanceId)
-      .limit(1)
-      .maybeSingle();
-    if (integrationError) throw new Error(integrationError.message);
-    userId = integration?.user_id ? String(integration.user_id) : "";
-  }
-
-  if (!userId) userId = (await getExistingWorkspaceUserId()) ?? "";
-  if (!userId) return null;
-
+  const agentId = String(data.id);
+  const userId = String(data.user_id);
   const integration = await ensureWhatsAppIntegration(supabase, {
     userId,
     agentId,
@@ -464,9 +433,10 @@ async function resolveWhatsAppAccount(
     integrationId: integration.id,
     userId,
     agentId,
+    canReply: data.wa_is_active === true,
     credentials: {
-      idInstance: String(data.instance_id),
-      apiToken: String(data.api_token),
+      idInstance: String(data.wa_instance_id),
+      apiToken: String(data.wa_api_token),
     } satisfies GreenCredentials,
   };
 }

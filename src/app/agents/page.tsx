@@ -5,7 +5,7 @@ import { io } from "next/cache";
 import { AgentManager } from "@/components/agent-manager";
 import { PageFrame } from "@/components/page-frame";
 import { listAgents } from "@/lib/agents";
-import { listWhatsAppAccounts } from "@/lib/whatsapp-accounts";
+import { readOptionalGreenCredentials } from "@/lib/green-api";
 
 export const metadata: Metadata = {
   title: "Агенты",
@@ -31,13 +31,13 @@ async function AgentsData() {
   await io();
 
   try {
-    const [agents, whatsappAccounts] = await Promise.all([listAgents(), listWhatsAppAccounts()]);
-    return <AgentManager agents={agents} whatsappAccounts={whatsappAccounts} loadError={null} />;
+    const agents = await listAgents();
+    return <AgentManager agents={agents} greenDefaults={readOptionalGreenCredentials()} loadError={null} />;
   } catch (error) {
     return (
       <AgentManager
         agents={[]}
-        whatsappAccounts={[]}
+        greenDefaults={readOptionalGreenCredentials()}
         loadError={error instanceof Error ? error.message : "Не удалось загрузить агентов."}
       />
     );

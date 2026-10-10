@@ -68,6 +68,13 @@ create table if not exists public.agents (
   active_channels jsonb not null default '{"whatsapp": true, "telegram": false, "instagram": false}'::jsonb,
   response_delay integer not null default 0,
   split_messages boolean not null default false,
+  wa_instance_id text,
+  wa_api_token text,
+  wa_phone_number text,
+  wa_is_active boolean not null default false,
+  tg_bot_token text,
+  tg_bot_username text,
+  tg_is_active boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint agents_temperature_range check (temperature >= 0 and temperature <= 2),
@@ -75,6 +82,12 @@ create table if not exists public.agents (
 );
 
 create index if not exists agents_user_id_idx on public.agents (user_id);
+create unique index if not exists agents_wa_instance_id_key
+  on public.agents (wa_instance_id)
+  where wa_instance_id is not null;
+create unique index if not exists agents_tg_bot_token_key
+  on public.agents (tg_bot_token)
+  where tg_bot_token is not null;
 
 drop trigger if exists agents_set_updated_at on public.agents;
 create trigger agents_set_updated_at
@@ -123,22 +136,6 @@ create table if not exists public.integration_secrets (
   credentials jsonb not null default '{}'::jsonb,
   updated_at timestamptz not null default now()
 );
-
--- Несколько номеров Green API. Токен не отдаётся в браузер.
-create table if not exists public.whatsapp_accounts (
-  id uuid primary key default gen_random_uuid(),
-  phone_number text not null,
-  instance_id text not null,
-  api_token text not null,
-  agent_id uuid references public.agents (id) on delete set null,
-  is_active boolean not null default true,
-  created_at timestamptz not null default now(),
-  constraint whatsapp_accounts_instance_unique unique (instance_id)
-);
-
-create index if not exists whatsapp_accounts_agent_id_idx on public.whatsapp_accounts (agent_id);
-
-alter table public.whatsapp_accounts enable row level security;
 
 drop trigger if exists integration_secrets_set_updated_at on public.integration_secrets;
 create trigger integration_secrets_set_updated_at

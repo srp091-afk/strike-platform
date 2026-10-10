@@ -7,6 +7,13 @@ export type GreenCredentials = {
   apiToken: string;
 };
 
+export function readOptionalGreenCredentials(): { instanceId: string; apiToken: string } {
+  const instanceId = process.env.GREEN_API_ID_INSTANCE?.trim() ?? "";
+  const apiToken = process.env.GREEN_API_TOKEN_INSTANCE?.trim() ?? "";
+  if (!/^\d{4,}$/.test(instanceId) || apiToken.length < 8) return { instanceId: "", apiToken: "" };
+  return { instanceId, apiToken };
+}
+
 export function greenApiCredentials(): GreenCredentials {
   const idInstance = process.env.GREEN_API_ID_INSTANCE?.trim() ?? "";
   const apiToken = process.env.GREEN_API_TOKEN_INSTANCE?.trim() ?? "";

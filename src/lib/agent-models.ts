@@ -42,6 +42,10 @@ export type AgentRecord = {
   active_channels: ActiveChannels;
   response_delay: number;
   split_messages: boolean;
+  waPhoneNumber: string | null;
+  waIsActive: boolean;
+  tgBotUsername: string | null;
+  tgIsActive: boolean;
   created_at: string;
 };
 
