@@ -93,6 +93,7 @@ async function handleIncoming(request: NextRequest, body: unknown) {
   }
 
   if (!channel.canReply) {
+    console.log("Остановка: ответы WhatsApp выключены");
     const conversation = await upsertConversation(supabase, {
       userId: channel.userId,
       agentId: channel.agentId,
@@ -122,6 +123,20 @@ async function handleIncoming(request: NextRequest, body: unknown) {
   }
 
   const priorId = await findConversationId(supabase, channel.integrationId, incoming.from);
+  if (priorId && (await processingLockIsFresh(supabase, priorId))) {
+    console.log("Остановка: is_processing = true");
+    const { error: queuedError } = await supabase.from("messages").insert({
+      conversation_id: priorId,
+      role: "user",
+      content: incoming.text,
+      status: "sent",
+      external_message_id: incoming.messageId,
+      ...(incoming.sentAt ? { created_at: incoming.sentAt } : {}),
+    });
+    if (queuedError) throw new Error(queuedError.message);
+    return;
+  }
+
   const assistantAt = priorId ? await latestAssistantAt(supabase, priorId) : null;
   const late = isLateClientMessage(incoming.sentAt, assistantAt);
 
@@ -148,16 +163,28 @@ async function handleIncoming(request: NextRequest, body: unknown) {
   if (inboundError) throw new Error(inboundError.message);
   if (late) return;
   await syncOpeningHistory(supabase, conversationId, incoming.from, channel.credentials);
-  if (!conversation.botActive) return;
+  if (!conversation.botActive) {
+    await logChatPause(supabase, conversationId);
+    return;
+  }
   if (!whatsappChannelEnabled(agent.active_channels)) return;
 
   const locked = await acquireProcessingLock(supabase, conversationId);
-  if (!locked) return;
+  if (!locked) {
+    console.log("Остановка: is_processing = true");
+    return;
+  }
 
   try {
     await new Promise((resolve) => setTimeout(resolve, readDebounceMs(agent.response_delay)));
-    if (!(await readBotActive(supabase, conversationId))) return;
-    if (await dialogueOverLimit(supabase, conversationId, agent)) return;
+    if (!(await readBotActive(supabase, conversationId))) {
+      await logChatPause(supabase, conversationId);
+      return;
+    }
+    if (await dialogueOverLimit(supabase, conversationId, agent)) {
+      console.log("Остановка: превышен лимит сообщений");
+      return;
+    }
 
     const { data: history, error: historyError } = await supabase
       .from("messages")
@@ -542,6 +569,39 @@ async function loadWhatsAppAgent(
       : null,
     error: fallback.error,
   };
+}
+
+async function processingLockIsFresh(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  conversationId: string,
+) {
+  const current = await supabase
+    .from("conversations")
+    .select("is_processing, updated_at")
+    .eq("id", conversationId)
+    .maybeSingle();
+  if (current.error) throw new Error(current.error.message);
+  if (current.data?.is_processing !== true) return false;
+
+  const updatedAt = Date.parse(String(current.data.updated_at ?? ""));
+  const fresh = Number.isFinite(updatedAt) && Date.now() - updatedAt <= 3 * 60 * 1000;
+  if (fresh) return true;
+
+  await releaseProcessingLock(supabase, conversationId);
+  return false;
+}
+
+async function logChatPause(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  conversationId: string,
+) {
+  const { data } = await supabase
+    .from("conversations")
+    .select("bot_paused_until")
+    .eq("id", conversationId)
+    .maybeSingle();
+  const until = data?.bot_paused_until ? String(data.bot_paused_until) : "неизвестно";
+  console.log(`Остановка: чат на паузе до ${until}`);
 }
 
 async function acquireProcessingLock(

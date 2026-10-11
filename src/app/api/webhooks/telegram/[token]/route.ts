@@ -73,7 +73,17 @@ async function handleUpdate(token: string, body: unknown) {
     Array.isArray(agent.active_channels) ||
     (agent.active_channels as { telegram?: unknown }).telegram !== false;
 
-  if (agent.tg_is_active !== true || agent.is_active !== true || !conversation.botActive || !channelOn) return;
+  if (agent.tg_is_active !== true || agent.is_active !== true || !channelOn) return;
+  if (!conversation.botActive) {
+    const { data: pause } = await supabase
+      .from("conversations")
+      .select("bot_paused_until")
+      .eq("id", conversation.id)
+      .maybeSingle();
+    const until = pause?.bot_paused_until ? String(pause.bot_paused_until) : "неизвестно";
+    console.log(`Остановка: чат на паузе до ${until}`);
+    return;
+  }
   if (
     await pauseIfDialogueOverLimit(supabase, conversation.id, {
       agent: readMessageLimit(agent.limit_agent_messages),
@@ -81,6 +91,7 @@ async function handleUpdate(token: string, body: unknown) {
       total: readMessageLimit(agent.limit_total_messages),
     })
   ) {
+    console.log("Остановка: превышен лимит сообщений");
     return;
   }
 

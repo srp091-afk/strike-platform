@@ -125,15 +125,20 @@ export async function writeBotFlag(
   return { ok: true as const };
 }
 
+function positiveLimit(value: number) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return 0;
+  return Math.floor(value);
+}
+
 export async function pauseIfDialogueOverLimit(
   supabase: SupabaseClient,
   conversationId: string,
   limits: { agent: number; client: number; total: number },
 ) {
-  const agentLimit = limits.agent;
-  const clientLimit = limits.client;
-  const totalLimit = limits.total;
-  if (agentLimit <= 0 && clientLimit <= 0 && totalLimit <= 0) return false;
+  const agentLimit = positiveLimit(limits.agent);
+  const clientLimit = positiveLimit(limits.client);
+  const totalLimit = positiveLimit(limits.total);
+  if (agentLimit === 0 && clientLimit === 0 && totalLimit === 0) return false;
 
   const needAgent = agentLimit > 0 || (totalLimit > 0 && clientLimit > 0);
   const needClient = clientLimit > 0 || (totalLimit > 0 && agentLimit > 0);
