@@ -19,6 +19,7 @@ export type SaveState = {
   ok: boolean;
   error: string | null;
   savedId: string | null;
+  attemptId: string | null;
 };
 
 function readAgentFields(formData: FormData) {
@@ -111,7 +112,7 @@ function readChannels(value: FormDataEntryValue | null): ActiveChannels {
 export async function saveAgent(_prev: SaveState, formData: FormData): Promise<SaveState> {
   const fields = readAgentFields(formData);
   if (!fields.ok) {
-    return { ok: false, error: fields.error, savedId: null };
+    return failedSave(fields.error);
   }
 
   try {
@@ -142,29 +143,29 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
         .maybeSingle();
 
       if (error) {
-        return { ok: false, error: error.message, savedId: null };
+        return failedSave(error.message);
       }
 
       if (!data) {
-        return { ok: false, error: "Агент не найден.", savedId: null };
+        return failedSave("Агент не найден.");
       }
     } else {
       const { error } = await supabase.from("agents").insert(payload);
       if (error) {
-        return { ok: false, error: error.message, savedId: null };
+        return failedSave(error.message);
       }
     }
 
     revalidatePath("/");
     revalidatePath("/agents");
-    return { ok: true, error: null, savedId: crypto.randomUUID() };
+    return { ok: true, error: null, savedId: crypto.randomUUID(), attemptId: crypto.randomUUID() };
   } catch (error) {
-    return {
-      ok: false,
-      error: error instanceof Error ? error.message : "Не удалось сохранить агента.",
-      savedId: null,
-    };
+    return failedSave(error instanceof Error ? error.message : "Не удалось сохранить агента.");
   }
+}
+
+function failedSave(error: string): SaveState {
+  return { ok: false, error, savedId: null, attemptId: crypto.randomUUID() };
 }
 
 export async function deleteAgent(formData: FormData) {

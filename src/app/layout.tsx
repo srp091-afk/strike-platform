@@ -4,6 +4,7 @@ import { Suspense } from "react";
 
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { Toaster } from "@/components/ui/toaster";
 
 import "./globals.css";
 
@@ -42,6 +43,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Suspense fallback={<div className="mt-auto h-14 border-t border-zinc-200 bg-white" />}>
           <SiteFooter />
         </Suspense>
+        <Toaster />
       </body>
     </html>
   );

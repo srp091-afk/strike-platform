@@ -1,10 +1,9 @@
 "use client";
 
 import { Maximize, Play, Trash } from "lucide-react";
-import { useActionState, useEffect, useState, useTransition } from "react";
+import { startTransition, useActionState, useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-
 import { deleteAgent, saveAgent, type SaveState } from "@/app/agents/actions";
 import { connectTelegram, disconnectTelegram, disconnectWhatsApp } from "@/app/agents/channels";
 import { ChannelIcon } from "@/components/channel-icons";
@@ -41,7 +40,7 @@ type GreenDefaults = {
 const fieldClass =
   "w-full rounded-xl border border-transparent bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none transition-all duration-200 placeholder:text-zinc-400 hover:bg-zinc-100/80 focus:border-zinc-300 focus:bg-white";
 
-const initialState: SaveState = { ok: false, error: null, savedId: null };
+const initialState: SaveState = { ok: false, error: null, savedId: null, attemptId: null };
 
 export function AgentManager({
   agents,
@@ -56,6 +55,25 @@ export function AgentManager({
   const [editing, setEditing] = useState<AgentRecord | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [state, action, pending] = useActionState(saveAgent, initialState);
+
+  useEffect(() => {
+    if (!state.attemptId) return;
+    const host = window as Window & {
+      __strikeToasts?: Array<{ id: string; kind: "success" | "error"; message: string; expiresAt: number }>;
+    };
+    const item = {
+      id: crypto.randomUUID(),
+      kind: state.ok ? ("success" as const) : ("error" as const),
+      message: state.ok ? "Настройки агента сохранены" : "Ошибка при сохранении",
+      expiresAt: Date.now() + 4000,
+    };
+    host.__strikeToasts = [...(host.__strikeToasts ?? []), item];
+    window.dispatchEvent(new CustomEvent("strike-toast"));
+    window.setTimeout(() => {
+      host.__strikeToasts = (host.__strikeToasts ?? []).filter((entry) => entry.id !== item.id);
+      window.dispatchEvent(new CustomEvent("strike-toast"));
+    }, 4000);
+  }, [state.attemptId, state.ok]);
 
   useEffect(() => {
     if (!state.savedId) return;
@@ -190,6 +208,10 @@ function AgentDialog({
   greenDefaults: GreenDefaults;
   onClose: () => void;
 }) {
+  const [initialDraft] = useState(() => draftFromAgent(editing));
+  const [draft, setDraft] = useState(initialDraft);
+  const dirty = !sameDraft(draft, initialDraft);
+
   useEffect(() => {
     const previous = document.body.style.overflow;
     document.body.style.overflow = "hidden";
@@ -203,10 +225,24 @@ function AgentDialog({
     };
   }, [onClose]);
 
+  function patchDraft(patch: Partial<AgentDraft>) {
+    setDraft((current) => ({ ...current, ...patch }));
+  }
+
   return (
     <div className="fixed inset-0 z-[60]">
       <DialogContent aria-labelledby="agent-dialog-title" className="flex flex-col overflow-hidden">
-        <form action={action} className="flex min-h-0 flex-1 flex-col">
+        <form
+          className="flex min-h-0 flex-1 flex-col"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!dirty || pending) return;
+            const data = new FormData(event.currentTarget);
+            startTransition(() => {
+              action(data);
+            });
+          }}
+        >
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200/80 bg-white px-6 py-4">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</p>
@@ -218,7 +254,11 @@ function AgentDialog({
               <Button type="button" variant="outline" onClick={onClose}>
                 Отмена
               </Button>
-              <Button type="submit" disabled={pending}>
+              <Button
+                type="submit"
+                disabled={!dirty || pending}
+                className="disabled:pointer-events-auto disabled:cursor-not-allowed disabled:opacity-50"
+              >
                 {pending ? "Сохранение" : "Сохранить"}
               </Button>
             </div>
@@ -231,12 +271,24 @@ function AgentDialog({
 
                 <label className="grid gap-2">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Имя</span>
-                  <input className={fieldClass} name="name" required defaultValue={editing?.name ?? ""} placeholder="Квалификатор" />
+                  <input
+                    className={fieldClass}
+                    name="name"
+                    required
+                    value={draft.name}
+                    placeholder="Квалификатор"
+                    onChange={(event) => patchDraft({ name: event.target.value })}
+                  />
                 </label>
 
                 <label className="grid min-w-0 gap-2">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Модель</span>
-                  <select className={fieldClass} name="model" defaultValue={editing?.model ?? "gpt-4o-mini"}>
+                  <select
+                    className={fieldClass}
+                    name="model"
+                    value={draft.model}
+                    onChange={(event) => patchDraft({ model: event.target.value })}
+                  >
                     {AGENT_MODELS.map((model) => (
                       <option key={model.value} value={model.value}>
                         {model.value} ({model.label})
@@ -245,9 +297,15 @@ function AgentDialog({
                   </select>
                 </label>
 
-                <CreativityField defaultValue={editing?.temperature ?? 0.7} />
+                <CreativityField
+                  value={draft.temperature}
+                  onChange={(temperature) => patchDraft({ temperature })}
+                />
 
-                <SystemPromptField defaultValue={editing?.system_prompt ?? ""} />
+                <SystemPromptField
+                  value={draft.system_prompt}
+                  onChange={(system_prompt) => patchDraft({ system_prompt })}
+                />
 
                 {error ? <p className="text-sm text-red-600">{error}</p> : null}
               </section>
@@ -256,16 +314,27 @@ function AgentDialog({
                 <ChannelSettings
                   agent={editing}
                   greenDefaults={greenDefaults}
-                  initial={editing?.active_channels ?? DEFAULT_ACTIVE_CHANNELS}
+                  channels={draft.active_channels}
+                  onChannelsChange={(active_channels) => patchDraft({ active_channels })}
                 />
-                <ResponseDelayField defaultValue={editing?.response_delay ?? 0} />
-                <HumanHandoffField defaultValue={editing?.human_handoff_duration ?? "1_hour"} />
+                <ResponseDelayField
+                  value={draft.response_delay}
+                  onChange={(response_delay) => patchDraft({ response_delay })}
+                />
+                <HumanHandoffField
+                  value={draft.human_handoff_duration}
+                  onChange={(human_handoff_duration) => patchDraft({ human_handoff_duration })}
+                />
                 <MessageLimitsField
-                  agentLimit={editing?.limit_agent_messages ?? 0}
-                  clientLimit={editing?.limit_client_messages ?? 0}
-                  totalLimit={editing?.limit_total_messages ?? 0}
+                  agentLimit={draft.limit_agent_messages}
+                  clientLimit={draft.limit_client_messages}
+                  totalLimit={draft.limit_total_messages}
+                  onChange={patchDraft}
                 />
-                <SplitMessagesField defaultValue={editing?.split_messages ?? false} />
+                <SplitMessagesField
+                  enabled={draft.split_messages}
+                  onChange={(split_messages) => patchDraft({ split_messages })}
+                />
               </div>
             </div>
           </div>
@@ -275,10 +344,65 @@ function AgentDialog({
   );
 }
 
+type AgentDraft = {
+  name: string;
+  model: string;
+  temperature: string;
+  system_prompt: string;
+  active_channels: ActiveChannels;
+  response_delay: string;
+  human_handoff_duration: HandoffDuration;
+  limit_agent_messages: string;
+  limit_client_messages: string;
+  limit_total_messages: string;
+  split_messages: boolean;
+};
+
+function draftFromAgent(agent: AgentRecord | null): AgentDraft {
+  return {
+    name: agent?.name ?? "",
+    model: agent?.model ?? "gpt-4o-mini",
+    temperature: String(agent?.temperature ?? 0.7),
+    system_prompt: agent?.system_prompt ?? "",
+    active_channels: { ...(agent?.active_channels ?? DEFAULT_ACTIVE_CHANNELS) },
+    response_delay: String(agent?.response_delay ?? 0),
+    human_handoff_duration: agent?.human_handoff_duration ?? "1_hour",
+    limit_agent_messages: String(agent?.limit_agent_messages ?? 0),
+    limit_client_messages: String(agent?.limit_client_messages ?? 0),
+    limit_total_messages: String(agent?.limit_total_messages ?? 0),
+    split_messages: agent?.split_messages ?? false,
+  };
+}
+
+function sameDraft(left: AgentDraft, right: AgentDraft) {
+  return (
+    left.name === right.name &&
+    left.model === right.model &&
+    left.system_prompt === right.system_prompt &&
+    left.human_handoff_duration === right.human_handoff_duration &&
+    left.split_messages === right.split_messages &&
+    sameNumber(left.temperature, right.temperature) &&
+    sameNumber(left.response_delay, right.response_delay) &&
+    sameNumber(left.limit_agent_messages, right.limit_agent_messages) &&
+    sameNumber(left.limit_client_messages, right.limit_client_messages) &&
+    sameNumber(left.limit_total_messages, right.limit_total_messages) &&
+    left.active_channels.whatsapp === right.active_channels.whatsapp &&
+    left.active_channels.telegram === right.active_channels.telegram &&
+    left.active_channels.instagram === right.active_channels.instagram
+  );
+}
+
+function sameNumber(left: string, right: string) {
+  if (!left.trim() || !right.trim()) return left.trim() === right.trim();
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) return leftNumber === rightNumber;
+  return left === right;
+}
+
 const promptPlaceholder = "#ROLE\nТы оператор STRIKE. Отвечай коротко, по делу, без воды.";
 
-function SystemPromptField({ defaultValue }: { defaultValue: string }) {
-  const [prompt, setPrompt] = useState(defaultValue);
+function SystemPromptField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -301,12 +425,12 @@ function SystemPromptField({ defaultValue }: { defaultValue: string }) {
         className={`${fieldClass} min-h-80 resize-y`}
         name="system_prompt"
         required
-        value={prompt}
+        value={value}
         placeholder={promptPlaceholder}
-        onChange={(event) => setPrompt(event.target.value)}
+        onChange={(event) => onChange(event.target.value)}
       />
       {open ? (
-        <SystemPromptDialog value={prompt} onChange={setPrompt} onClose={() => setOpen(false)} />
+        <SystemPromptDialog value={value} onChange={onChange} onClose={() => setOpen(false)} />
       ) : null}
     </div>
   );
@@ -375,13 +499,14 @@ const channelTone: Record<IntegrationProvider, string> = {
 function ChannelSettings({
   agent,
   greenDefaults,
-  initial,
+  channels,
+  onChannelsChange,
 }: {
   agent: AgentRecord | null;
   greenDefaults: GreenDefaults;
-  initial: ActiveChannels;
+  channels: ActiveChannels;
+  onChannelsChange: (channels: ActiveChannels) => void;
 }) {
-  const [channels, setChannels] = useState<ActiveChannels>(initial);
   const [whatsappOpen, setWhatsappOpen] = useState(false);
   const [telegramOpen, setTelegramOpen] = useState(false);
 
@@ -405,7 +530,7 @@ function ChannelSettings({
             </span>
             <Switch
               checked={channels.whatsapp}
-              onCheckedChange={(checked) => setChannels((current) => ({ ...current, whatsapp: checked }))}
+              onCheckedChange={(checked) => onChannelsChange({ ...channels, whatsapp: checked })}
               aria-label="WhatsApp"
             />
           </label>
@@ -421,7 +546,7 @@ function ChannelSettings({
             </span>
             <Switch
               checked={channels.telegram}
-              onCheckedChange={(checked) => setChannels((current) => ({ ...current, telegram: checked }))}
+              onCheckedChange={(checked) => onChannelsChange({ ...channels, telegram: checked })}
               aria-label="Telegram"
             />
           </label>
@@ -436,7 +561,7 @@ function ChannelSettings({
           </span>
           <Switch
             checked={channels.instagram}
-            onCheckedChange={(checked) => setChannels((current) => ({ ...current, instagram: checked }))}
+            onCheckedChange={(checked) => onChannelsChange({ ...channels, instagram: checked })}
             aria-label="Instagram"
           />
         </label>
@@ -637,10 +762,9 @@ function TelegramConnectDialog({ agentId, onClose }: { agentId: string; onClose:
 
 const responseDelayPresets = [0, 10, 20, 30, 60];
 
-function ResponseDelayField({ defaultValue }: { defaultValue: number }) {
-  const [seconds, setSeconds] = useState(String(defaultValue));
+function ResponseDelayField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false);
-  const selected = Number(seconds);
+  const selected = Number(value);
 
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
@@ -675,8 +799,8 @@ function ResponseDelayField({ defaultValue }: { defaultValue: number }) {
           type="number"
           min={0}
           step={1}
-          value={seconds}
-          onChange={(event) => setSeconds(event.target.value)}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
         />
       </label>
       <div className="flex flex-wrap gap-2">
@@ -686,7 +810,7 @@ function ResponseDelayField({ defaultValue }: { defaultValue: number }) {
             type="button"
             size="sm"
             variant={selected === preset ? "dark" : "outline"}
-            onClick={() => setSeconds(String(preset))}
+            onClick={() => onChange(String(preset))}
           >
             {preset} сек
           </Button>
@@ -696,7 +820,13 @@ function ResponseDelayField({ defaultValue }: { defaultValue: number }) {
   );
 }
 
-function HumanHandoffField({ defaultValue }: { defaultValue: HandoffDuration }) {
+function HumanHandoffField({
+  value,
+  onChange,
+}: {
+  value: HandoffDuration;
+  onChange: (value: HandoffDuration) => void;
+}) {
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
       <div className="grid gap-2">
@@ -707,7 +837,12 @@ function HumanHandoffField({ defaultValue }: { defaultValue: HandoffDuration }) 
       </div>
       <label className="grid gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Пауза</span>
-        <select className={fieldClass} name="human_handoff_duration" defaultValue={defaultValue}>
+        <select
+          className={fieldClass}
+          name="human_handoff_duration"
+          value={value}
+          onChange={(event) => onChange(event.target.value as HandoffDuration)}
+        >
           {HANDOFF_DURATIONS.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -723,10 +858,12 @@ function MessageLimitsField({
   agentLimit,
   clientLimit,
   totalLimit,
+  onChange,
 }: {
-  agentLimit: number;
-  clientLimit: number;
-  totalLimit: number;
+  agentLimit: string;
+  clientLimit: string;
+  totalLimit: string;
+  onChange: (patch: Partial<AgentDraft>) => void;
 }) {
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
@@ -737,24 +874,56 @@ function MessageLimitsField({
           этого диалога.
         </p>
       </div>
-      <LimitInput label="Лимит сообщений от агента" name="limit_agent_messages" defaultValue={agentLimit} />
-      <LimitInput label="Лимит сообщений от клиента" name="limit_client_messages" defaultValue={clientLimit} />
-      <LimitInput label="Общий лимит сообщений в диалоге" name="limit_total_messages" defaultValue={totalLimit} />
+      <LimitInput
+        label="Лимит сообщений от агента"
+        name="limit_agent_messages"
+        value={agentLimit}
+        onChange={(limit_agent_messages) => onChange({ limit_agent_messages })}
+      />
+      <LimitInput
+        label="Лимит сообщений от клиента"
+        name="limit_client_messages"
+        value={clientLimit}
+        onChange={(limit_client_messages) => onChange({ limit_client_messages })}
+      />
+      <LimitInput
+        label="Общий лимит сообщений в диалоге"
+        name="limit_total_messages"
+        value={totalLimit}
+        onChange={(limit_total_messages) => onChange({ limit_total_messages })}
+      />
     </section>
   );
 }
 
-function LimitInput({ label, name, defaultValue }: { label: string; name: string; defaultValue: number }) {
+function LimitInput({
+  label,
+  name,
+  value,
+  onChange,
+}: {
+  label: string;
+  name: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
   return (
     <label className="grid gap-2">
       <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">{label}</span>
-      <input className={fieldClass} name={name} type="number" min={0} step={1} defaultValue={defaultValue} />
+      <input
+        className={fieldClass}
+        name={name}
+        type="number"
+        min={0}
+        step={1}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+      />
     </label>
   );
 }
 
-function SplitMessagesField({ defaultValue }: { defaultValue: boolean }) {
-  const [enabled, setEnabled] = useState(defaultValue);
+function SplitMessagesField({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) {
 
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
@@ -762,7 +931,7 @@ function SplitMessagesField({ defaultValue }: { defaultValue: boolean }) {
       <input type="hidden" name="split_messages" value={enabled ? "true" : "false"} />
       <label className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-4 py-3">
         <span className="text-sm font-medium text-zinc-800">Дробить текст на отдельные сообщения</span>
-        <Switch checked={enabled} onCheckedChange={setEnabled} aria-label="Дробить текст на отдельные сообщения" />
+        <Switch checked={enabled} onCheckedChange={onChange} aria-label="Дробить текст на отдельные сообщения" />
       </label>
       <p className="text-sm leading-6 text-zinc-500">
         Если включено, абзацы будут отправляться отдельными сообщениями (пузырями) с учетом задержки между ними
@@ -771,7 +940,7 @@ function SplitMessagesField({ defaultValue }: { defaultValue: boolean }) {
   );
 }
 
-function CreativityField({ defaultValue }: { defaultValue: number }) {
+function CreativityField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false);
 
   return (
@@ -810,7 +979,8 @@ function CreativityField({ defaultValue }: { defaultValue: number }) {
         min={0}
         max={2}
         step={0.1}
-        defaultValue={defaultValue}
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
       />
     </label>
   );
