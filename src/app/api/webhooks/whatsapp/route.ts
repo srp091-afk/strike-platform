@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
-import { readBotFlags } from "@/lib/bot-state";
+import { readHandoffDuration } from "@/lib/agent-models";
+import { pauseBotForHandoff, readBotFlags } from "@/lib/bot-state";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -11,10 +12,10 @@ export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const type = stringValue(asRecord(body).typeWebhook);
-    if (type === "outgoingMessageReceived" || type === "outgoingAPIMessageReceived") {
-      await handleOutgoing(request, body);
-    } else if (type === "incomingMessageReceived") {
+    if (type === "incomingMessageReceived") {
       await handleIncoming(request, body);
+    } else if (readOutgoing(body)) {
+      await handleOutgoing(request, body);
     }
   } catch (error) {
     console.error("[whatsapp webhook]", error instanceof Error ? error.message : error);
@@ -28,27 +29,48 @@ async function handleOutgoing(request: NextRequest, body: unknown) {
   if (!outgoing) return;
 
   const supabase = createSupabaseAdminClient();
-  if (await messageExists(supabase, outgoing.messageId)) return;
-
+  const duplicate = outgoing.messageId ? await messageExists(supabase, outgoing.messageId) : false;
   const channel = await resolveWhatsAppAccount(request, body, supabase);
   if (!channel) return;
-  const conversation = await upsertConversation(supabase, {
-    userId: channel.userId,
-    agentId: channel.agentId,
-    integrationId: channel.integrationId,
-    externalChatId: outgoing.from,
-    contactName: outgoing.contactName,
-    preview: outgoing.text,
-  });
 
-  await insertMessage(supabase, {
-    conversation_id: conversation.id,
-    role: "assistant",
-    content: outgoing.text,
-    status: "sent",
-    external_message_id: outgoing.messageId,
-    created_at: outgoing.sentAt,
-  });
+  let conversationId: string | null = null;
+  if (!duplicate && outgoing.text) {
+    const conversation = await upsertConversation(supabase, {
+      userId: channel.userId,
+      agentId: channel.agentId,
+      integrationId: channel.integrationId,
+      externalChatId: outgoing.from,
+      contactName: outgoing.contactName,
+      preview: outgoing.text,
+    });
+    conversationId = conversation.id;
+    await insertMessage(supabase, {
+      conversation_id: conversation.id,
+      role: "assistant",
+      content: outgoing.text,
+      status: "sent",
+      external_message_id: outgoing.messageId,
+      created_at: outgoing.sentAt,
+    });
+  } else {
+    conversationId = await findConversationId(supabase, channel.integrationId, outgoing.from);
+  }
+
+  if (!outgoing.operator) return;
+  if (!conversationId) {
+    const conversation = await upsertConversation(supabase, {
+      userId: channel.userId,
+      agentId: channel.agentId,
+      integrationId: channel.integrationId,
+      externalChatId: outgoing.from,
+      contactName: outgoing.contactName,
+      preview: outgoing.text || "Сообщение оператора",
+      touchPreview: Boolean(outgoing.text),
+    });
+    conversationId = conversation.id;
+  }
+
+  await pauseBotForHandoff(supabase, conversationId, await readAgentHandoffDuration(supabase, channel.agentId));
 }
 
 async function handleIncoming(request: NextRequest, body: unknown) {
@@ -147,6 +169,7 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     const dialogue = collapseTrailingUserMessages(history ?? []);
     const latest = dialogue[dialogue.length - 1];
     if (!latest || latest.role !== "user" || !latest.content.trim()) return;
+    if (!(await readBotActive(supabase, conversationId))) return;
 
     const model = (agent.model as string) || "gpt-4o-mini";
     const completion = await getOpenAI().chat.completions.create({
@@ -163,6 +186,7 @@ async function handleIncoming(request: NextRequest, body: unknown) {
 
     const reply = completion.choices[0]?.message?.content?.trim() ?? "";
     if (!reply) throw new Error("Модель вернула пустой ответ.");
+    if (!(await readBotActive(supabase, conversationId))) return;
 
     const responseDelay = Number(agent.response_delay);
     const chunks =
@@ -352,22 +376,32 @@ function readIncoming(body: unknown): ChatText | null {
   };
 }
 
-function readOutgoing(body: unknown): ChatText | null {
+function readOutgoing(body: unknown): (ChatText & { operator: boolean }) | null {
   const record = asRecord(body);
-  const type = record.typeWebhook;
-  if (type !== "outgoingMessageReceived" && type !== "outgoingAPIMessageReceived") return null;
+  const type = stringValue(record.typeWebhook);
+  if (type.toLowerCase().includes("status")) return null;
+
+  const kind = stringValue(record.type).toLowerCase();
+  const apiEcho = type === "outgoingAPIMessageReceived" || record.sendByApi === true;
+  const message = asRecord(record.messageData);
+  const hasMessage = Boolean(readWebhookText(record)) || Boolean(stringValue(message.typeMessage));
+  const operator =
+    type === "outgoingMessageReceived" ||
+    (!apiEcho && hasMessage && (record.fromMe === true || kind === "outgoing"));
+  if (!apiEcho && !operator) return null;
 
   const sender = asRecord(record.senderData);
   const text = readWebhookText(record).slice(0, 8000);
-  const from = stringValue(sender.chatId);
-  if (!text || !from) return null;
+  const from = stringValue(sender.chatId) || stringValue(record.chatId) || stringValue(sender.sender);
+  if (!from || (!text && !operator)) return null;
 
   return {
     from,
     text,
     messageId: stringValue(record.idMessage) || null,
-    contactName: stringValue(sender.chatName) || null,
-    sentAt: timestampToIso(record.timestamp),
+    contactName: stringValue(sender.chatName) || stringValue(sender.senderName) || null,
+    sentAt: readMessageTimestamp(record),
+    operator,
   };
 }
 
@@ -434,6 +468,25 @@ function timestampToIso(value: unknown) {
   const date = new Date(millis);
   if (Number.isNaN(date.getTime())) return null;
   return date.toISOString();
+}
+
+async function readAgentHandoffDuration(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  agentId: string,
+) {
+  const { data, error } = await supabase
+    .from("agents")
+    .select("human_handoff_duration")
+    .eq("id", agentId)
+    .maybeSingle();
+  if (error) {
+    const missing =
+      error.message.includes("human_handoff_duration") &&
+      (error.message.includes("does not exist") || error.message.includes("schema cache"));
+    if (missing) return readHandoffDuration(null);
+    throw new Error(error.message);
+  }
+  return readHandoffDuration(data?.human_handoff_duration);
 }
 
 async function loadWhatsAppAgent(

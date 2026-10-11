@@ -5,9 +5,11 @@ import { revalidatePath } from "next/cache";
 import {
   DEFAULT_ACTIVE_CHANNELS,
   isAgentModel,
+  readHandoffDuration,
   readResponseDelay,
   readSplitMessages,
   type ActiveChannels,
+  type HandoffDuration,
 } from "@/lib/agent-models";
 import { getWorkspaceUserId } from "@/lib/agents";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -24,6 +26,7 @@ function readAgentFields(formData: FormData) {
   const model = String(formData.get("model") ?? "").trim();
   const temperature = Number(formData.get("temperature") ?? 0.7);
   const responseDelay = readDelay(formData.get("response_delay"));
+  const humanHandoff = readHandoff(formData.get("human_handoff_duration"));
   const splitMessages = readSplitMessages(formData.get("split_messages"));
   const id = String(formData.get("id") ?? "").trim();
   const activeChannels = readChannels(formData.get("active_channels"));
@@ -56,9 +59,14 @@ function readAgentFields(formData: FormData) {
     model,
     temperature,
     responseDelay,
+    humanHandoff,
     splitMessages,
     activeChannels,
   };
+}
+
+function readHandoff(value: FormDataEntryValue | null): HandoffDuration {
+  return readHandoffDuration(value);
 }
 
 function readDelay(value: FormDataEntryValue | null) {
@@ -97,6 +105,7 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
       model: fields.model,
       temperature: fields.temperature,
       response_delay: fields.responseDelay,
+      human_handoff_duration: fields.humanHandoff,
       split_messages: fields.splitMessages,
       active_channels: fields.activeChannels,
       user_id: userId,

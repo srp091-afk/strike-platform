@@ -41,6 +41,7 @@ export type AgentRecord = {
   is_active: boolean;
   active_channels: ActiveChannels;
   response_delay: number;
+  human_handoff_duration: HandoffDuration;
   split_messages: boolean;
   waPhoneNumber: string | null;
   waIsActive: boolean;
@@ -48,6 +49,38 @@ export type AgentRecord = {
   tgIsActive: boolean;
   created_at: string;
 };
+
+export const HANDOFF_DURATIONS = [
+  { value: "1_hour", label: "1 час" },
+  { value: "3_hours", label: "3 часа" },
+  { value: "24_hours", label: "24 часа" },
+  { value: "forever", label: "Бессрочно, до ручного включения" },
+] as const;
+
+export type HandoffDuration = (typeof HANDOFF_DURATIONS)[number]["value"];
+
+export function readHandoffDuration(value: unknown): HandoffDuration {
+  if (value === "1_hour" || value === "3_hours" || value === "24_hours" || value === "forever") {
+    return value;
+  }
+  return "1_hour";
+}
+
+export function handoffPauseUntil(duration: HandoffDuration, now = Date.now()) {
+  if (duration === "forever") {
+    const date = new Date(now);
+    date.setUTCFullYear(date.getUTCFullYear() + 100);
+    return date.toISOString();
+  }
+  const hours = duration === "1_hour" ? 1 : duration === "3_hours" ? 3 : 24;
+  return new Date(now + hours * 60 * 60 * 1000).toISOString();
+}
+
+export function isBotPauseActive(until: unknown, now = Date.now()) {
+  if (until == null || until === "") return false;
+  const time = Date.parse(String(until));
+  return Number.isFinite(time) && time > now;
+}
 
 export function readResponseDelay(value: unknown) {
   const delay = Number(value);

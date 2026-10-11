@@ -2,6 +2,8 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 
+import { handoffPauseUntil, isBotPauseActive, type HandoffDuration } from "@/lib/agent-models";
+
 const MARKER_ON = "strike:bot:on";
 const MARKER_OFF = "strike:bot:off";
 
@@ -13,6 +15,18 @@ export async function readBotFlags(supabase: SupabaseClient, conversationIds: st
   const flags = new Map<string, boolean>();
   if (conversationIds.length === 0) return flags;
 
+  const paused = await supabase.from("conversations").select("id, bot_paused_until").in("id", conversationIds);
+  if (!paused.error) {
+    for (const row of paused.data ?? []) {
+      flags.set(row.id as string, !isBotPauseActive(row.bot_paused_until));
+    }
+    return flags;
+  }
+
+  if (!isMissingColumn(paused.error.message, "bot_paused_until")) {
+    throw new Error(paused.error.message);
+  }
+
   const column = await supabase.from("conversations").select("id, is_bot_active").in("id", conversationIds);
   if (!column.error) {
     for (const row of column.data ?? []) {
@@ -21,7 +35,7 @@ export async function readBotFlags(supabase: SupabaseClient, conversationIds: st
     return flags;
   }
 
-  if (!isMissingBotColumn(column.error.message)) {
+  if (!isMissingColumn(column.error.message, "is_bot_active")) {
     throw new Error(column.error.message);
   }
 
@@ -50,9 +64,10 @@ export async function writeBotFlag(
   userId: string,
   active: boolean,
 ) {
+  const until = active ? null : handoffPauseUntil("forever");
   const update = await supabase
     .from("conversations")
-    .update({ is_bot_active: active })
+    .update({ bot_paused_until: until })
     .eq("id", conversationId)
     .eq("user_id", userId)
     .select("id")
@@ -60,11 +75,33 @@ export async function writeBotFlag(
 
   if (!update.error) {
     if (!update.data) return { ok: false as const, error: "Диалог не найден." };
+    await supabase
+      .from("conversations")
+      .update({ is_bot_active: active })
+      .eq("id", conversationId)
+      .eq("user_id", userId);
     return { ok: true as const };
   }
 
-  if (!isMissingBotColumn(update.error.message)) {
+  if (!isMissingColumn(update.error.message, "bot_paused_until")) {
     return { ok: false as const, error: update.error.message };
+  }
+
+  const legacy = await supabase
+    .from("conversations")
+    .update({ is_bot_active: active })
+    .eq("id", conversationId)
+    .eq("user_id", userId)
+    .select("id")
+    .maybeSingle();
+
+  if (!legacy.error) {
+    if (!legacy.data) return { ok: false as const, error: "Диалог не найден." };
+    return { ok: true as const };
+  }
+
+  if (!isMissingColumn(legacy.error.message, "is_bot_active")) {
+    return { ok: false as const, error: legacy.error.message };
   }
 
   const owned = await supabase
@@ -88,6 +125,31 @@ export async function writeBotFlag(
   return { ok: true as const };
 }
 
-function isMissingBotColumn(message: string) {
-  return message.includes("is_bot_active") && (message.includes("does not exist") || message.includes("schema cache"));
+export async function pauseBotForHandoff(
+  supabase: SupabaseClient,
+  conversationId: string,
+  duration: HandoffDuration,
+) {
+  const update = await supabase
+    .from("conversations")
+    .update({ bot_paused_until: handoffPauseUntil(duration), is_bot_active: false })
+    .eq("id", conversationId);
+
+  if (!update.error) return;
+  if (!isMissingColumn(update.error.message, "is_bot_active")) {
+    if (isMissingColumn(update.error.message, "bot_paused_until")) return;
+    throw new Error(update.error.message);
+  }
+
+  const retry = await supabase
+    .from("conversations")
+    .update({ bot_paused_until: handoffPauseUntil(duration) })
+    .eq("id", conversationId);
+  if (retry.error && !isMissingColumn(retry.error.message, "bot_paused_until")) {
+    throw new Error(retry.error.message);
+  }
+}
+
+function isMissingColumn(message: string, column: string) {
+  return message.includes(column) && (message.includes("does not exist") || message.includes("schema cache"));
 }

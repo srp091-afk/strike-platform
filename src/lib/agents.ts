@@ -2,7 +2,13 @@ import "server-only";
 
 import { cache } from "react";
 
-import { readActiveChannels, readResponseDelay, readSplitMessages, type AgentRecord } from "@/lib/agent-models";
+import {
+  readActiveChannels,
+  readHandoffDuration,
+  readResponseDelay,
+  readSplitMessages,
+  type AgentRecord,
+} from "@/lib/agent-models";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const WORKSPACE_EMAIL = "owner@strike.local";
@@ -74,23 +80,32 @@ export async function listAgents(): Promise<AgentRecord[]> {
   if (!userId) return [];
   const withDelay = await supabase
     .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
+    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, split_messages, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
-  const rows = withDelay.error?.message.includes("split_messages")
+  const rows =
+    withDelay.error?.message.includes("human_handoff_duration") || withDelay.error?.message.includes("split_messages")
+      ? await supabase
+          .from("agents")
+          .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+      : withDelay;
+
+  const listed = rows.error?.message?.includes("split_messages")
     ? await supabase
         .from("agents")
         .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, created_at")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
-    : withDelay;
+    : rows;
 
-  if (rows.error) {
-    throw new Error(rows.error.message);
+  if (listed.error) {
+    throw new Error(listed.error.message);
   }
 
-  return (rows.data ?? []).map((row) => ({
+  return (listed.data ?? []).map((row) => ({
     id: row.id as string,
     name: row.name as string,
     system_prompt: row.system_prompt as string,
@@ -100,6 +115,9 @@ export async function listAgents(): Promise<AgentRecord[]> {
     created_at: row.created_at as string,
     active_channels: readActiveChannels("active_channels" in row ? row.active_channels : undefined),
     response_delay: readResponseDelay("response_delay" in row ? row.response_delay : 0),
+    human_handoff_duration: readHandoffDuration(
+      "human_handoff_duration" in row ? row.human_handoff_duration : "1_hour",
+    ),
     split_messages: readSplitMessages("split_messages" in row ? row.split_messages : false),
     waPhoneNumber: "wa_phone_number" in row && row.wa_phone_number ? String(row.wa_phone_number) : null,
     waIsActive: "wa_is_active" in row ? row.wa_is_active === true : false,

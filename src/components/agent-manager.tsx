@@ -26,8 +26,10 @@ import {
 import {
   AGENT_MODELS,
   DEFAULT_ACTIVE_CHANNELS,
+  HANDOFF_DURATIONS,
   type ActiveChannels,
   type AgentRecord,
+  type HandoffDuration,
 } from "@/lib/agent-models";
 import type { IntegrationProvider } from "@/lib/integration-catalog";
 
@@ -257,6 +259,7 @@ function AgentDialog({
                   initial={editing?.active_channels ?? DEFAULT_ACTIVE_CHANNELS}
                 />
                 <ResponseDelayField defaultValue={editing?.response_delay ?? 0} />
+                <HumanHandoffField defaultValue={editing?.human_handoff_duration ?? "1_hour"} />
                 <SplitMessagesField defaultValue={editing?.split_messages ?? false} />
               </div>
             </div>
@@ -684,6 +687,29 @@ function ResponseDelayField({ defaultValue }: { defaultValue: number }) {
           </Button>
         ))}
       </div>
+    </section>
+  );
+}
+
+function HumanHandoffField({ defaultValue }: { defaultValue: HandoffDuration }) {
+  return (
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+      <div className="grid gap-2">
+        <h3 className="font-heading text-lg font-semibold text-zinc-900">Вмешательство оператора</h3>
+        <p className="text-sm leading-6 text-zinc-500">
+          На какое время бот замолчит, если вы ответите клиенту вручную с телефона или ПК.
+        </p>
+      </div>
+      <label className="grid gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Пауза</span>
+        <select className={fieldClass} name="human_handoff_duration" defaultValue={defaultValue}>
+          {HANDOFF_DURATIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
     </section>
   );
 }

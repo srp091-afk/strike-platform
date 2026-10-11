@@ -67,6 +67,7 @@ create table if not exists public.agents (
   is_active boolean not null default true,
   active_channels jsonb not null default '{"whatsapp": true, "telegram": false, "instagram": false}'::jsonb,
   response_delay integer not null default 0,
+  human_handoff_duration text not null default '1_hour',
   split_messages boolean not null default false,
   wa_instance_id text,
   wa_api_token text,
@@ -78,7 +79,9 @@ create table if not exists public.agents (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint agents_temperature_range check (temperature >= 0 and temperature <= 2),
-  constraint agents_response_delay_nonnegative check (response_delay >= 0)
+  constraint agents_response_delay_nonnegative check (response_delay >= 0),
+  constraint agents_human_handoff_duration_check
+    check (human_handoff_duration in ('1_hour', '3_hours', '24_hours', 'forever'))
 );
 
 create index if not exists agents_user_id_idx on public.agents (user_id);
@@ -159,6 +162,7 @@ create table if not exists public.conversations (
   last_message_at timestamptz,
   unread_count integer not null default 0,
   is_bot_active boolean not null default true,
+  bot_paused_until timestamptz,
   is_processing boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
