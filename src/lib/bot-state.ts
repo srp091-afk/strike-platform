@@ -125,6 +125,52 @@ export async function writeBotFlag(
   return { ok: true as const };
 }
 
+export async function pauseIfDialogueOverLimit(
+  supabase: SupabaseClient,
+  conversationId: string,
+  limits: { agent: number; client: number; total: number },
+) {
+  const agentLimit = limits.agent;
+  const clientLimit = limits.client;
+  const totalLimit = limits.total;
+  if (agentLimit <= 0 && clientLimit <= 0 && totalLimit <= 0) return false;
+
+  const needAgent = agentLimit > 0 || (totalLimit > 0 && clientLimit > 0);
+  const needClient = clientLimit > 0 || (totalLimit > 0 && agentLimit > 0);
+  const [agentCount, clientCount, totalCount] = await Promise.all([
+    needAgent ? countMessages(supabase, conversationId, "assistant") : Promise.resolve(0),
+    needClient ? countMessages(supabase, conversationId, "user") : Promise.resolve(0),
+    !needAgent && !needClient && totalLimit > 0
+      ? countMessages(supabase, conversationId, null)
+      : Promise.resolve(0),
+  ]);
+  const total = needAgent || needClient ? agentCount + clientCount : totalCount;
+
+  const overLimit =
+    (agentLimit > 0 && agentCount >= agentLimit) ||
+    (clientLimit > 0 && clientCount >= clientLimit) ||
+    (totalLimit > 0 && total >= totalLimit);
+  if (!overLimit) return false;
+
+  await pauseBotForHandoff(supabase, conversationId, "forever");
+  return true;
+}
+
+async function countMessages(
+  supabase: SupabaseClient,
+  conversationId: string,
+  role: "user" | "assistant" | null,
+) {
+  let query = supabase
+    .from("messages")
+    .select("id", { count: "exact", head: true })
+    .eq("conversation_id", conversationId);
+  query = role ? query.eq("role", role) : query.in("role", ["user", "assistant"]);
+  const { count, error } = await query;
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
 export async function pauseBotForHandoff(
   supabase: SupabaseClient,
   conversationId: string,

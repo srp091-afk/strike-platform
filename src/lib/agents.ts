@@ -5,6 +5,7 @@ import { cache } from "react";
 import {
   readActiveChannels,
   readHandoffDuration,
+  readMessageLimit,
   readResponseDelay,
   readSplitMessages,
   type AgentRecord,
@@ -80,12 +81,14 @@ export async function listAgents(): Promise<AgentRecord[]> {
   if (!userId) return [];
   const withDelay = await supabase
     .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, split_messages, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
+    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   const rows =
-    withDelay.error?.message.includes("human_handoff_duration") || withDelay.error?.message.includes("split_messages")
+    withDelay.error?.message.includes("limit_agent_messages") ||
+    withDelay.error?.message.includes("human_handoff_duration") ||
+    withDelay.error?.message.includes("split_messages")
       ? await supabase
           .from("agents")
           .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
@@ -118,6 +121,9 @@ export async function listAgents(): Promise<AgentRecord[]> {
     human_handoff_duration: readHandoffDuration(
       "human_handoff_duration" in row ? row.human_handoff_duration : "1_hour",
     ),
+    limit_agent_messages: readMessageLimit("limit_agent_messages" in row ? row.limit_agent_messages : 0),
+    limit_client_messages: readMessageLimit("limit_client_messages" in row ? row.limit_client_messages : 0),
+    limit_total_messages: readMessageLimit("limit_total_messages" in row ? row.limit_total_messages : 0),
     split_messages: readSplitMessages("split_messages" in row ? row.split_messages : false),
     waPhoneNumber: "wa_phone_number" in row && row.wa_phone_number ? String(row.wa_phone_number) : null,
     waIsActive: "wa_is_active" in row ? row.wa_is_active === true : false,

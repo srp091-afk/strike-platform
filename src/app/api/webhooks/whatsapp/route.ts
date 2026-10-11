@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
-import { readHandoffDuration } from "@/lib/agent-models";
-import { pauseBotForHandoff, readBotFlags } from "@/lib/bot-state";
+import { readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
+import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -156,6 +156,8 @@ async function handleIncoming(request: NextRequest, body: unknown) {
 
   try {
     await new Promise((resolve) => setTimeout(resolve, readDebounceMs(agent.response_delay)));
+    if (!(await readBotActive(supabase, conversationId))) return;
+    if (await dialogueOverLimit(supabase, conversationId, agent)) return;
 
     const { data: history, error: historyError } = await supabase
       .from("messages")
@@ -169,7 +171,6 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     const dialogue = collapseTrailingUserMessages(history ?? []);
     const latest = dialogue[dialogue.length - 1];
     if (!latest || latest.role !== "user" || !latest.content.trim()) return;
-    if (!(await readBotActive(supabase, conversationId))) return;
 
     const model = (agent.model as string) || "gpt-4o-mini";
     const completion = await getOpenAI().chat.completions.create({
@@ -470,6 +471,22 @@ function timestampToIso(value: unknown) {
   return date.toISOString();
 }
 
+async function dialogueOverLimit(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  conversationId: string,
+  agent: {
+    limit_agent_messages?: unknown;
+    limit_client_messages?: unknown;
+    limit_total_messages?: unknown;
+  },
+) {
+  return pauseIfDialogueOverLimit(supabase, conversationId, {
+    agent: readMessageLimit(agent.limit_agent_messages),
+    client: readMessageLimit(agent.limit_client_messages),
+    total: readMessageLimit(agent.limit_total_messages),
+  });
+}
+
 async function readAgentHandoffDuration(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   agentId: string,
@@ -495,11 +512,15 @@ async function loadWhatsAppAgent(
 ) {
   const withChannels = await supabase
     .from("agents")
-    .select("id, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages")
+    .select("id, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages, limit_agent_messages, limit_client_messages, limit_total_messages")
     .eq("id", agentId)
     .maybeSingle();
 
-  if (!withChannels.error || !withChannels.error.message.includes("split_messages")) {
+  if (
+    !withChannels.error ||
+    (!withChannels.error.message.includes("split_messages") &&
+      !withChannels.error.message.includes("limit_agent_messages"))
+  ) {
     return withChannels;
   }
 
@@ -510,7 +531,15 @@ async function loadWhatsAppAgent(
     .maybeSingle();
 
   return {
-    data: fallback.data ? { ...fallback.data, split_messages: false } : null,
+    data: fallback.data
+      ? {
+          ...fallback.data,
+          split_messages: false,
+          limit_agent_messages: 0,
+          limit_client_messages: 0,
+          limit_total_messages: 0,
+        }
+      : null,
     error: fallback.error,
   };
 }

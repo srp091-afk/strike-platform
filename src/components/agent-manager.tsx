@@ -260,6 +260,11 @@ function AgentDialog({
                 />
                 <ResponseDelayField defaultValue={editing?.response_delay ?? 0} />
                 <HumanHandoffField defaultValue={editing?.human_handoff_duration ?? "1_hour"} />
+                <MessageLimitsField
+                  agentLimit={editing?.limit_agent_messages ?? 0}
+                  clientLimit={editing?.limit_client_messages ?? 0}
+                  totalLimit={editing?.limit_total_messages ?? 0}
+                />
                 <SplitMessagesField defaultValue={editing?.split_messages ?? false} />
               </div>
             </div>
@@ -711,6 +716,40 @@ function HumanHandoffField({ defaultValue }: { defaultValue: HandoffDuration }) 
         </select>
       </label>
     </section>
+  );
+}
+
+function MessageLimitsField({
+  agentLimit,
+  clientLimit,
+  totalLimit,
+}: {
+  agentLimit: number;
+  clientLimit: number;
+  totalLimit: number;
+}) {
+  return (
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+      <div className="grid gap-2">
+        <h3 className="font-heading text-lg font-semibold text-zinc-900">Защита от зацикливания (Лимиты)</h3>
+        <p className="text-sm leading-6 text-zinc-500">
+          Если указан 0, лимит отключен. При превышении лимита бот автоматически перейдет в статус &apos;На паузе&apos; для
+          этого диалога.
+        </p>
+      </div>
+      <LimitInput label="Лимит сообщений от агента" name="limit_agent_messages" defaultValue={agentLimit} />
+      <LimitInput label="Лимит сообщений от клиента" name="limit_client_messages" defaultValue={clientLimit} />
+      <LimitInput label="Общий лимит сообщений в диалоге" name="limit_total_messages" defaultValue={totalLimit} />
+    </section>
+  );
+}
+
+function LimitInput({ label, name, defaultValue }: { label: string; name: string; defaultValue: number }) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">{label}</span>
+      <input className={fieldClass} name={name} type="number" min={0} step={1} defaultValue={defaultValue} />
+    </label>
   );
 }
 

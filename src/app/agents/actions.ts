@@ -6,6 +6,7 @@ import {
   DEFAULT_ACTIVE_CHANNELS,
   isAgentModel,
   readHandoffDuration,
+  readMessageLimit,
   readResponseDelay,
   readSplitMessages,
   type ActiveChannels,
@@ -27,6 +28,9 @@ function readAgentFields(formData: FormData) {
   const temperature = Number(formData.get("temperature") ?? 0.7);
   const responseDelay = readDelay(formData.get("response_delay"));
   const humanHandoff = readHandoff(formData.get("human_handoff_duration"));
+  const agentMessageLimit = readLimit(formData.get("limit_agent_messages"));
+  const clientMessageLimit = readLimit(formData.get("limit_client_messages"));
+  const totalMessageLimit = readLimit(formData.get("limit_total_messages"));
   const splitMessages = readSplitMessages(formData.get("split_messages"));
   const id = String(formData.get("id") ?? "").trim();
   const activeChannels = readChannels(formData.get("active_channels"));
@@ -51,6 +55,10 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "Задержка должна быть не меньше 0 секунд." };
   }
 
+  if (agentMessageLimit === null || clientMessageLimit === null || totalMessageLimit === null) {
+    return { ok: false as const, error: "Лимит сообщений должен быть целым числом от 0." };
+  }
+
   return {
     ok: true as const,
     id,
@@ -60,9 +68,19 @@ function readAgentFields(formData: FormData) {
     temperature,
     responseDelay,
     humanHandoff,
+    agentMessageLimit,
+    clientMessageLimit,
+    totalMessageLimit,
     splitMessages,
     activeChannels,
   };
+}
+
+function readLimit(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value.trim()) return 0;
+  const limit = Number(value);
+  if (!Number.isFinite(limit) || limit < 0 || !Number.isInteger(limit)) return null;
+  return readMessageLimit(limit);
 }
 
 function readHandoff(value: FormDataEntryValue | null): HandoffDuration {
@@ -106,6 +124,9 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
       temperature: fields.temperature,
       response_delay: fields.responseDelay,
       human_handoff_duration: fields.humanHandoff,
+      limit_agent_messages: fields.agentMessageLimit,
+      limit_client_messages: fields.clientMessageLimit,
+      limit_total_messages: fields.totalMessageLimit,
       split_messages: fields.splitMessages,
       active_channels: fields.activeChannels,
       user_id: userId,

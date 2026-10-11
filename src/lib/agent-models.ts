@@ -42,6 +42,9 @@ export type AgentRecord = {
   active_channels: ActiveChannels;
   response_delay: number;
   human_handoff_duration: HandoffDuration;
+  limit_agent_messages: number;
+  limit_client_messages: number;
+  limit_total_messages: number;
   split_messages: boolean;
   waPhoneNumber: string | null;
   waIsActive: boolean;
@@ -80,6 +83,12 @@ export function isBotPauseActive(until: unknown, now = Date.now()) {
   if (until == null || until === "") return false;
   const time = Date.parse(String(until));
   return Number.isFinite(time) && time > now;
+}
+
+export function readMessageLimit(value: unknown) {
+  const limit = Number(value);
+  if (!Number.isFinite(limit) || limit < 0) return 0;
+  return Math.round(limit);
 }
 
 export function readResponseDelay(value: unknown) {

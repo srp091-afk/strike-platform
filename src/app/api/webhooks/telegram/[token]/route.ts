@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
-import { readBotFlags } from "@/lib/bot-state";
+import { readMessageLimit } from "@/lib/agent-models";
+import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -27,7 +28,7 @@ async function handleUpdate(token: string, body: unknown) {
   const { data: agent, error } = await supabase
     .from("agents")
     .select(
-      "id, user_id, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages, tg_bot_token, tg_is_active",
+      "id, user_id, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages, limit_agent_messages, limit_client_messages, limit_total_messages, tg_bot_token, tg_is_active",
     )
     .eq("tg_bot_token", token)
     .maybeSingle();
@@ -73,6 +74,15 @@ async function handleUpdate(token: string, body: unknown) {
     (agent.active_channels as { telegram?: unknown }).telegram !== false;
 
   if (agent.tg_is_active !== true || agent.is_active !== true || !conversation.botActive || !channelOn) return;
+  if (
+    await pauseIfDialogueOverLimit(supabase, conversation.id, {
+      agent: readMessageLimit(agent.limit_agent_messages),
+      client: readMessageLimit(agent.limit_client_messages),
+      total: readMessageLimit(agent.limit_total_messages),
+    })
+  ) {
+    return;
+  }
 
   const { data: history, error: historyError } = await supabase
     .from("messages")

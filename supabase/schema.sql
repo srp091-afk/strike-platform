@@ -68,6 +68,9 @@ create table if not exists public.agents (
   active_channels jsonb not null default '{"whatsapp": true, "telegram": false, "instagram": false}'::jsonb,
   response_delay integer not null default 0,
   human_handoff_duration text not null default '1_hour',
+  limit_agent_messages integer not null default 0,
+  limit_client_messages integer not null default 0,
+  limit_total_messages integer not null default 0,
   split_messages boolean not null default false,
   wa_instance_id text,
   wa_api_token text,
@@ -80,6 +83,11 @@ create table if not exists public.agents (
   updated_at timestamptz not null default now(),
   constraint agents_temperature_range check (temperature >= 0 and temperature <= 2),
   constraint agents_response_delay_nonnegative check (response_delay >= 0),
+  constraint agents_message_limits_nonnegative check (
+    limit_agent_messages >= 0
+    and limit_client_messages >= 0
+    and limit_total_messages >= 0
+  ),
   constraint agents_human_handoff_duration_check
     check (human_handoff_duration in ('1_hour', '3_hours', '24_hours', 'forever'))
 );
@@ -195,6 +203,8 @@ create table if not exists public.messages (
 
 create index if not exists messages_conversation_created_idx
   on public.messages (conversation_id, created_at);
+create index if not exists messages_conversation_role_idx
+  on public.messages (conversation_id, role);
 create index if not exists messages_chunk_group_idx
   on public.messages (chunk_group_id);
 
