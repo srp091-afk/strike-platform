@@ -6,18 +6,23 @@ import type { ChatMessage, ChatProvider, ChatThread } from "@/lib/chat-types";
 import { integrationProviders } from "@/lib/integration-catalog";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export async function listConversations(): Promise<ChatThread[]> {
+export async function listConversations(agentId?: string | null): Promise<ChatThread[]> {
   const userId = await getExistingWorkspaceUserId();
   if (!userId) return [];
 
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
+  let query = supabase
     .from("conversations")
     .select(
-      "id, contact_name, contact_handle, external_chat_id, last_message_preview, last_message_at, integrations(provider)",
+      "id, agent_id, contact_name, contact_handle, external_chat_id, last_message_preview, last_message_at, integrations(provider)",
     )
-    .eq("user_id", userId)
-    .order("last_message_at", { ascending: false, nullsFirst: false });
+    .eq("user_id", userId);
+
+  if (agentId && isUuid(agentId)) {
+    query = query.eq("agent_id", agentId);
+  }
+
+  const { data, error } = await query.order("last_message_at", { ascending: false, nullsFirst: false });
 
   if (error) throw new Error(error.message);
 
@@ -33,6 +38,7 @@ export async function listConversations(): Promise<ChatThread[]> {
     const id = row.id as string;
     return {
       id,
+      agentId: typeof row.agent_id === "string" ? row.agent_id : null,
       title: name || handle || "Без имени",
       handle,
       provider: readProvider(row.integrations),

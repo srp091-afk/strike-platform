@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
-import { MessagesSquare, Trash } from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { ChevronDown, MessagesSquare, Trash } from "lucide-react";
 
 import { deleteChat, setChatBotActive } from "@/app/chats/actions";
 import { ChannelIcon } from "@/components/channel-icons";
@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
-import type { ChatMessage, ChatProvider, ChatThread } from "@/lib/chat-types";
+import type { ChatAgentOption, ChatMessage, ChatProvider, ChatThread } from "@/lib/chat-types";
 import type { IntegrationProvider } from "@/lib/integration-catalog";
 import { cn } from "@/lib/utils";
 
@@ -36,16 +36,21 @@ const providerLabel: Record<ChatProvider, string> = {
 };
 
 export function ChatInbox({
+  agents,
+  initialAgentId,
   initialThreads,
   initialMessages,
   initialSelectedId,
   loadError,
 }: {
+  agents: ChatAgentOption[];
+  initialAgentId: string;
   initialThreads: ChatThread[];
   initialMessages: ChatMessage[];
   initialSelectedId: string | null;
   loadError: string | null;
 }) {
+  const [agentId, setAgentId] = useState(initialAgentId);
   const [threads, setThreads] = useState(initialThreads);
   const [messages, setMessages] = useState(initialMessages);
   const [selectedId, setSelectedId] = useState(initialSelectedId);
@@ -54,27 +59,26 @@ export function ChatInbox({
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const removedRef = useRef(new Set<string>());
+  const agentIdRef = useRef(agentId);
+  agentIdRef.current = agentId;
 
   const selected = threads.find((thread) => thread.id === selectedId) ?? null;
 
   useEffect(() => {
-    if (!selectedId) return;
+    if (initialSelectedId) return;
+    const url = new URL(window.location.href);
+    if (!url.searchParams.get("chat")) return;
+    url.searchParams.delete("chat");
+    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+  }, [initialSelectedId]);
 
+  useEffect(() => {
     let cancelled = false;
     async function refresh() {
       try {
-        const response = await fetch(`/api/chats?conversation=${selectedId}`, { cache: "no-store" });
-        const payload = (await response.json()) as {
-          conversations?: ChatThread[];
-          messages?: ChatMessage[];
-          error?: string;
-        };
-        if (!response.ok) throw new Error(payload.error || "Не удалось обновить чат.");
+        const payload = await fetchInbox(agentId, selectedId);
         if (cancelled) return;
-        if (payload.conversations) {
-          setThreads(payload.conversations.filter((thread) => !removedRef.current.has(thread.id)));
-        }
-        if (payload.messages) setMessages(payload.messages);
+        applyInbox(payload, selectedId);
         setError(null);
       } catch (failure) {
         if (!cancelled) {
@@ -90,26 +94,59 @@ export function ChatInbox({
       cancelled = true;
       window.clearInterval(timer);
     };
-  }, [selectedId]);
+  }, [agentId, selectedId]);
+
+  function applyInbox(payload: InboxPayload, conversationId: string | null) {
+    const nextThreads = payload.conversations
+      ? payload.conversations.filter((thread) => !removedRef.current.has(thread.id))
+      : null;
+    if (nextThreads) setThreads(nextThreads);
+    const visible = conversationId && nextThreads ? nextThreads.some((thread) => thread.id === conversationId) : Boolean(conversationId);
+    if (conversationId && !visible) {
+      setSelectedId(null);
+      setMessages([]);
+      writeChatUrl(agentIdRef.current, null);
+      return;
+    }
+    if (conversationId && payload.messages) setMessages(payload.messages);
+  }
+
+  async function selectAgent(nextAgentId: string) {
+    if (nextAgentId === agentId) return;
+    const current = threads.find((thread) => thread.id === selectedId) ?? null;
+    const keep = Boolean(current && (nextAgentId === "all" || current.agentId === nextAgentId));
+    const nextSelected = keep ? selectedId : null;
+    setAgentId(nextAgentId);
+    if (!keep) {
+      setSelectedId(null);
+      setMessages([]);
+    }
+    writeChatUrl(nextAgentId, nextSelected);
+
+    try {
+      const payload = await fetchInbox(nextAgentId, nextSelected);
+      const nextThreads = (payload.conversations ?? []).filter((thread) => !removedRef.current.has(thread.id));
+      setThreads(nextThreads);
+      if (nextSelected && nextThreads.some((thread) => thread.id === nextSelected)) {
+        setMessages(payload.messages ?? []);
+      } else if (nextSelected) {
+        setSelectedId(null);
+        setMessages([]);
+        writeChatUrl(nextAgentId, null);
+      }
+      setError(null);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Не удалось загрузить диалоги.");
+    }
+  }
 
   async function openThread(id: string) {
     setSelectedId(id);
-    const url = new URL(window.location.href);
-    url.searchParams.set("chat", id);
-    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+    writeChatUrl(agentId, id);
 
     try {
-      const response = await fetch(`/api/chats?conversation=${id}`, { cache: "no-store" });
-      const payload = (await response.json()) as {
-        conversations?: ChatThread[];
-        messages?: ChatMessage[];
-        error?: string;
-      };
-      if (!response.ok) throw new Error(payload.error || "Не удалось открыть диалог.");
-      if (payload.conversations) {
-        setThreads(payload.conversations.filter((thread) => !removedRef.current.has(thread.id)));
-      }
-      setMessages(payload.messages ?? []);
+      const payload = await fetchInbox(agentId, id);
+      applyInbox(payload, id);
       setError(null);
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Не удалось открыть диалог.");
@@ -149,9 +186,7 @@ export function ChatInbox({
     setMessages([]);
     setSelectedId(null);
     setConfirmOpen(false);
-    const url = new URL(window.location.href);
-    url.searchParams.delete("chat");
-    window.history.replaceState(null, "", `${url.pathname}${url.search}`);
+    writeChatUrl(agentId, null);
   }
 
   return (
@@ -162,7 +197,8 @@ export function ChatInbox({
 
       <div className="grid overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-sm lg:h-[min(42rem,calc(100dvh-16rem))] lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <aside className="flex min-h-80 min-w-0 flex-col border-b border-zinc-200/80 lg:border-r lg:border-b-0">
-          <p className="px-5 py-4 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Входящие</p>
+          <AgentFilter agents={agents} value={agentId} onChange={(next) => void selectAgent(next)} />
+          <p className="px-5 py-3 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Входящие</p>
           {threads.length === 0 ? (
             <p className="px-5 pb-6 text-sm leading-6 text-zinc-500">
               Диалогов пока нет. Они появятся, когда клиент напишет в подключённый канал.
@@ -294,6 +330,149 @@ export function ChatInbox({
       </div>
     </div>
   );
+}
+
+function AgentFilter({
+  agents,
+  value,
+  onChange,
+}: {
+  agents: ChatAgentOption[];
+  value: string;
+  onChange: (agentId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const selected = agents.find((agent) => agent.id === value) ?? null;
+
+  useEffect(() => {
+    if (!open) return;
+    function onPointer(event: PointerEvent) {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    }
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") setOpen(false);
+    }
+    window.addEventListener("pointerdown", onPointer);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("pointerdown", onPointer);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  function choose(next: string) {
+    setOpen(false);
+    onChange(next);
+  }
+
+  return (
+    <div className="border-b border-zinc-100 px-4 py-3">
+      <span id="chat-agent-filter-label" className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+        Агент
+      </span>
+      <div ref={rootRef} className="relative">
+        <button
+          type="button"
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          onClick={() => setOpen((current) => !current)}
+          className="flex w-full items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-left text-sm text-zinc-900 outline-none transition-colors hover:border-zinc-300 focus:border-zinc-300"
+        >
+          <span className="min-w-0 flex-1">
+            {selected ? <AgentOptionLabel agent={selected} /> : <span className="font-medium">Все агенты</span>}
+          </span>
+          <ChevronDown className={cn("size-4 shrink-0 text-zinc-400 transition-transform", open && "rotate-180")} />
+        </button>
+        {open ? (
+          <ul
+            role="listbox"
+            aria-labelledby="chat-agent-filter-label"
+            className="absolute top-full right-0 left-0 z-20 mt-1 max-h-64 overflow-y-auto rounded-xl border border-zinc-200 bg-white py-1 shadow-lg"
+          >
+            <li>
+              <FilterOption selected={value === "all"} onClick={() => choose("all")}>
+                Все агенты
+              </FilterOption>
+            </li>
+            {agents.map((agent) => (
+              <li key={agent.id}>
+                <FilterOption selected={value === agent.id} onClick={() => choose(agent.id)}>
+                  <AgentOptionLabel agent={agent} />
+                </FilterOption>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function FilterOption({
+  selected,
+  onClick,
+  children,
+}: {
+  selected: boolean;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      role="option"
+      aria-selected={selected}
+      onClick={onClick}
+      className={cn(
+        "flex w-full px-3 py-2.5 text-left text-sm text-zinc-900",
+        selected ? "bg-zinc-50 font-medium" : "hover:bg-zinc-50",
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function AgentOptionLabel({ agent }: { agent: ChatAgentOption }) {
+  return (
+    <span className="flex min-w-0 flex-1 items-center gap-2">
+      <span className="truncate font-medium">{agent.name}</span>
+      {agent.channels.length > 0 ? (
+        <span className="ml-auto flex shrink-0 items-center gap-2">
+          {agent.channels.map((channel) => (
+            <span key={channel.provider} className="inline-flex max-w-28 items-center gap-1 text-[11px] text-zinc-500">
+              <ChannelIcon provider={channel.provider} className="size-3.5 shrink-0" />
+              {channel.label ? <span className="truncate">{channel.label}</span> : null}
+            </span>
+          ))}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+type InboxPayload = {
+  conversations?: ChatThread[];
+  messages?: ChatMessage[];
+  error?: string;
+};
+
+async function fetchInbox(agentId: string, conversationId: string | null) {
+  const params = new URLSearchParams({ agentId });
+  if (conversationId) params.set("conversation", conversationId);
+  const response = await fetch(`/api/chats?${params}`, { cache: "no-store" });
+  const payload = (await response.json()) as InboxPayload;
+  if (!response.ok) throw new Error(payload.error || "Не удалось загрузить чаты.");
+  return payload;
+}
+
+function writeChatUrl(agentId: string, conversationId: string | null) {
+  const url = new URL(window.location.href);
+  url.searchParams.set("agentId", agentId);
+  if (conversationId) url.searchParams.set("chat", conversationId);
+  else url.searchParams.delete("chat");
+  window.history.replaceState(null, "", `${url.pathname}${url.search}`);
 }
 
 function ProviderMark({ provider }: { provider: ChatProvider }) {

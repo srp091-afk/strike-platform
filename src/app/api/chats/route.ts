@@ -4,10 +4,11 @@ import { listConversations, listMessages } from "@/lib/chats";
 
 export async function GET(request: NextRequest) {
   const conversationId = request.nextUrl.searchParams.get("conversation") ?? "";
+  const agentId = readAgentFilter(request.nextUrl.searchParams.get("agentId"));
 
   try {
     const [conversations, messages] = await Promise.all([
-      listConversations(),
+      listConversations(agentId),
       conversationId ? listMessages(conversationId) : Promise.resolve([]),
     ]);
 
@@ -21,4 +22,9 @@ export async function GET(request: NextRequest) {
       { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }
+}
+
+function readAgentFilter(value: string | null) {
+  if (!value || value === "all") return null;
+  return value;
 }

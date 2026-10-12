@@ -4,6 +4,8 @@ import { io } from "next/cache";
 
 import { ChatInbox } from "@/components/chat-inbox";
 import { PageFrame } from "@/components/page-frame";
+import { listAgents } from "@/lib/agents";
+import type { ChatAgentOption } from "@/lib/chat-types";
 import { listConversations, listMessages } from "@/lib/chats";
 
 export const metadata: Metadata = {
@@ -13,7 +15,7 @@ export const metadata: Metadata = {
 export default function ChatsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ chat?: string | string[] }>;
+  searchParams: Promise<{ chat?: string | string[]; agentId?: string | string[] }>;
 }) {
   return (
     <PageFrame
@@ -31,18 +33,24 @@ export default function ChatsPage({
 async function ChatsData({
   searchParams,
 }: {
-  searchParams: Promise<{ chat?: string | string[] }>;
+  searchParams: Promise<{ chat?: string | string[]; agentId?: string | string[] }>;
 }) {
   await io();
   const params = await searchParams;
-  const requested = Array.isArray(params.chat) ? params.chat[0] : params.chat;
+  const requestedChat = firstParam(params.chat);
+  const requestedAgent = firstParam(params.agentId);
 
   try {
-    const threads = await listConversations();
-    const selectedId = threads.some((thread) => thread.id === requested) ? requested! : (threads[0]?.id ?? null);
+    const agents = (await listAgents()).map(toChatAgentOption);
+    const agentId = agents.some((agent) => agent.id === requestedAgent) ? requestedAgent! : "all";
+    const threads = await listConversations(agentId === "all" ? null : agentId);
+    const chatBelongs = Boolean(requestedChat && threads.some((thread) => thread.id === requestedChat));
+    const selectedId = chatBelongs ? requestedChat! : requestedChat ? null : (threads[0]?.id ?? null);
     const messages = selectedId ? await listMessages(selectedId) : [];
     return (
       <ChatInbox
+        agents={agents}
+        initialAgentId={agentId}
         initialThreads={threads}
         initialMessages={messages}
         initialSelectedId={selectedId}
@@ -52,6 +60,8 @@ async function ChatsData({
   } catch (error) {
     return (
       <ChatInbox
+        agents={[]}
+        initialAgentId="all"
         initialThreads={[]}
         initialMessages={[]}
         initialSelectedId={null}
@@ -59,4 +69,23 @@ async function ChatsData({
       />
     );
   }
+}
+
+function firstParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
+
+function toChatAgentOption(agent: Awaited<ReturnType<typeof listAgents>>[number]): ChatAgentOption {
+  const channels: ChatAgentOption["channels"] = [];
+  if (agent.waIsActive) {
+    channels.push({ provider: "whatsapp", label: agent.waPhoneNumber ?? "" });
+  }
+  if (agent.tgIsActive) {
+    const username = agent.tgBotUsername ?? "";
+    channels.push({
+      provider: "telegram",
+      label: username && !username.startsWith("@") ? `@${username}` : username,
+    });
+  }
+  return { id: agent.id, name: agent.name, channels };
 }
