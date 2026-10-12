@@ -4,7 +4,7 @@ import { readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
 import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
-import { replyChunks } from "@/lib/reply";
+import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 180;
@@ -207,7 +207,10 @@ async function handleIncoming(request: NextRequest, body: unknown) {
       messages: [
         {
           role: "system",
-          content: (agent.system_prompt as string) || "You are a STRIKE agent.",
+          content: systemPromptWithSplit(
+            (agent.system_prompt as string) || "You are a STRIKE agent.",
+            agent.split_messages,
+          ),
         },
         ...dialogue,
       ],

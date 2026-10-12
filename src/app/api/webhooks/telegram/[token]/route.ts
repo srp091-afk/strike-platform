@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { readMessageLimit } from "@/lib/agent-models";
 import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { getOpenAI } from "@/lib/openai";
-import { replyChunks } from "@/lib/reply";
+import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 120;
@@ -117,7 +117,13 @@ async function handleUpdate(token: string, body: unknown) {
     model,
     temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
     messages: [
-      { role: "system", content: (agent.system_prompt as string) || "You are a STRIKE agent." },
+      {
+        role: "system",
+        content: systemPromptWithSplit(
+          (agent.system_prompt as string) || "You are a STRIKE agent.",
+          agent.split_messages,
+        ),
+      },
       ...dialogue,
     ],
   });

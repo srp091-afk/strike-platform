@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { readBotFlags } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
 import { getOpenAI } from "@/lib/openai";
-import { replyChunks, sleep } from "@/lib/reply";
+import { replyChunks, sleep, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 60;
@@ -138,7 +138,10 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "system",
-          content: (agent.system_prompt as string) || "You are a STRIKE agent.",
+          content: systemPromptWithSplit(
+            (agent.system_prompt as string) || "You are a STRIKE agent.",
+            agent.split_messages,
+          ),
         },
         ...dialogue,
       ],
