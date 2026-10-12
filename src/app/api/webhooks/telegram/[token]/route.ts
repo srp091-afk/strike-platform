@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { readMessageLimit } from "@/lib/agent-models";
 import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { getOpenAI } from "@/lib/openai";
+import { replyChunks } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 120;
@@ -125,7 +126,7 @@ async function handleUpdate(token: string, body: unknown) {
   if (!reply) return;
 
   const responseDelay = Number(agent.response_delay);
-  const chunks = agent.split_messages === true ? reply.split("\n\n").filter((chunk) => chunk.trim() !== "") : [reply];
+  const chunks = replyChunks(reply, agent.split_messages);
   let preview = chunks[0] ?? reply;
 
   for (const chunk of chunks) {

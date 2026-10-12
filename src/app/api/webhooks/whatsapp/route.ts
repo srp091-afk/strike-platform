@@ -4,6 +4,7 @@ import { readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
 import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
+import { replyChunks } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 180;
@@ -217,10 +218,7 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     if (!(await readBotActive(supabase, conversationId))) return;
 
     const responseDelay = Number(agent.response_delay);
-    const chunks =
-      agent.split_messages === true
-        ? reply.split("\n\n").filter((chunk) => chunk.trim() !== "")
-        : [reply];
+    const chunks = replyChunks(reply, agent.split_messages);
     if (chunks.length === 0) throw new Error("Модель вернула пустой ответ.");
 
     let preview = chunks[0];

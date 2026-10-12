@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { getOpenAI } from "@/lib/openai";
-import { splitReply } from "@/lib/reply";
+import { replyChunks } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 60;
@@ -37,11 +37,7 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const { data: agent, error } = await supabase
-    .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active")
-    .eq("id", agentId)
-    .maybeSingle();
+  const { data: agent, error } = await loadPlaygroundAgent(supabase, agentId);
 
   if (error) {
     return Response.json({ error: error.message }, { status: 500 });
@@ -74,7 +70,7 @@ export async function POST(request: NextRequest) {
         });
 
         const reply = completion.choices[0]?.message?.content?.trim() ?? "";
-        const chunks = splitReply(reply);
+        const chunks = replyChunks(reply, agent.split_messages);
         if (chunks.length === 0) {
           send({ type: "error", message: "Модель вернула пустой ответ." });
           return;
@@ -102,6 +98,32 @@ export async function POST(request: NextRequest) {
       Connection: "keep-alive",
     },
   });
+}
+
+async function loadPlaygroundAgent(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  agentId: string,
+) {
+  const withSplit = await supabase
+    .from("agents")
+    .select("id, name, system_prompt, model, temperature, is_active, split_messages")
+    .eq("id", agentId)
+    .maybeSingle();
+
+  if (!withSplit.error || !withSplit.error.message.includes("split_messages")) {
+    return withSplit;
+  }
+
+  const fallback = await supabase
+    .from("agents")
+    .select("id, name, system_prompt, model, temperature, is_active")
+    .eq("id", agentId)
+    .maybeSingle();
+
+  return {
+    data: fallback.data ? { ...fallback.data, split_messages: null } : null,
+    error: fallback.error,
+  };
 }
 
 function sanitizeHistory(value: unknown): HistoryMessage[] {

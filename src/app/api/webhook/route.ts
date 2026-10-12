@@ -3,7 +3,7 @@ import type { NextRequest } from "next/server";
 import { readBotFlags } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
 import { getOpenAI } from "@/lib/openai";
-import { sleep, splitReply } from "@/lib/reply";
+import { replyChunks, sleep } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 60;
@@ -62,11 +62,10 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "К интеграции не привязан агент." }, { status: 409 });
   }
 
-  const { data: agent, error: agentError } = await supabase
-    .from("agents")
-    .select("id, system_prompt, model, temperature, is_active")
-    .eq("id", integration.agent_id)
-    .maybeSingle();
+  const { data: agent, error: agentError } = await loadWebhookAgent(
+    supabase,
+    integration.agent_id as string,
+  );
 
   if (agentError) {
     return Response.json({ error: agentError.message }, { status: 500 });
@@ -156,7 +155,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Модель вернула пустой ответ." }, { status: 502 });
   }
 
-  const chunks = splitReply(reply);
+  const chunks = replyChunks(reply, agent.split_messages);
   const chunkGroupId = crypto.randomUUID();
   const { data: secrets } = await supabase
     .from("integration_secrets")
@@ -331,6 +330,32 @@ async function upsertConversation(
   }
 
   return { id: data.id as string, botActive: true };
+}
+
+async function loadWebhookAgent(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  agentId: string,
+) {
+  const withSplit = await supabase
+    .from("agents")
+    .select("id, system_prompt, model, temperature, is_active, split_messages")
+    .eq("id", agentId)
+    .maybeSingle();
+
+  if (!withSplit.error || !withSplit.error.message.includes("split_messages")) {
+    return withSplit;
+  }
+
+  const fallback = await supabase
+    .from("agents")
+    .select("id, system_prompt, model, temperature, is_active")
+    .eq("id", agentId)
+    .maybeSingle();
+
+  return {
+    data: fallback.data ? { ...fallback.data, split_messages: null } : null,
+    error: fallback.error,
+  };
 }
 
 function clampTemperature(value: unknown) {
