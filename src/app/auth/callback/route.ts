@@ -1,19 +1,29 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { isSecureRequest, supabaseCookieOptions } from "@/lib/supabase-cookies";
+
 function publicOrigin(request: NextRequest) {
-  const forwardedHost = request.headers.get("x-forwarded-host");
-  const forwardedProto = request.headers.get("x-forwarded-proto") ?? "https";
-  if (process.env.NODE_ENV !== "development" && forwardedHost) {
+  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
+  if (forwardedHost) {
     return `${forwardedProto}://${forwardedHost}`;
   }
   return request.nextUrl.origin;
 }
 
+function nextPath(value: string | null) {
+  if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/login")) {
+    return "/agents";
+  }
+  return value;
+}
+
 export async function GET(request: NextRequest) {
   const origin = publicOrigin(request);
   const code = request.nextUrl.searchParams.get("code");
-  const successUrl = new URL("/agents", origin);
+  const flowId = request.nextUrl.searchParams.get("sb_flow_id")?.trim() || undefined;
+  const successUrl = new URL(nextPath(request.nextUrl.searchParams.get("next")), origin);
   const failureUrl = new URL("/login", origin);
 
   if (!code) {
@@ -28,6 +38,7 @@ export async function GET(request: NextRequest) {
 
   const response = NextResponse.redirect(successUrl);
   const supabase = createServerClient(url, anonKey, {
+    cookieOptions: supabaseCookieOptions(isSecureRequest(request)),
     cookies: {
       getAll() {
         return request.cookies.getAll();
@@ -36,14 +47,14 @@ export async function GET(request: NextRequest) {
         cookiesToSet.forEach(({ name, value, options }) => {
           response.cookies.set(name, value, options);
         });
-        Object.entries(headers).forEach(([key, value]) => {
+        Object.entries(headers ?? {}).forEach(([key, value]) => {
           response.headers.set(key, value);
         });
       },
     },
   });
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
+  const { error } = await supabase.auth.exchangeCodeForSession(code, flowId ? { flowId } : undefined);
   if (error) {
     return NextResponse.redirect(failureUrl);
   }

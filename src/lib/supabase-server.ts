@@ -1,8 +1,9 @@
 import "server-only";
 
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
+import { supabaseCookieOptions } from "@/lib/supabase-cookies";
 import { getSupabaseUrl } from "@/lib/supabase";
 
 function anonKey() {
@@ -15,8 +16,12 @@ function anonKey() {
 
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
+  const headerStore = await headers();
+  const forwarded = headerStore.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  const secure = forwarded ? forwarded === "https" : process.env.NODE_ENV === "production";
 
   return createServerClient(getSupabaseUrl(), anonKey(), {
+    cookieOptions: supabaseCookieOptions(secure),
     cookies: {
       getAll() {
         return cookieStore.getAll();
