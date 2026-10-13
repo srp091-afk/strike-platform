@@ -1,63 +1,47 @@
 import { createServerClient } from "@supabase/ssr";
+import { cookies } from "next/headers";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { isSecureRequest, supabaseCookieOptions } from "@/lib/supabase-cookies";
-
-function publicOrigin(request: NextRequest) {
-  const forwardedHost = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
-  const forwardedProto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim() || "https";
-  if (forwardedHost) {
-    return `${forwardedProto}://${forwardedHost}`;
-  }
-  return request.nextUrl.origin;
-}
-
-function nextPath(value: string | null) {
-  if (!value || !value.startsWith("/") || value.startsWith("//") || value.startsWith("/login")) {
-    return "/agents";
-  }
-  return value;
-}
-
 export async function GET(request: NextRequest) {
-  const origin = publicOrigin(request);
-  const code = request.nextUrl.searchParams.get("code");
-  const flowId = request.nextUrl.searchParams.get("sb_flow_id")?.trim() || undefined;
-  const successUrl = new URL(nextPath(request.nextUrl.searchParams.get("next")), origin);
-  const failureUrl = new URL("/login", origin);
+  const requestUrl = new URL(request.url);
+  const code = requestUrl.searchParams.get("code");
+  const origin = requestUrl.origin;
+  const next = requestUrl.searchParams.get("next") || "/agents";
 
   if (!code) {
-    return NextResponse.redirect(failureUrl);
+    return NextResponse.redirect(new URL("/login?error=no_code", origin));
   }
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) {
-    return NextResponse.redirect(failureUrl);
-  }
-
-  const response = NextResponse.redirect(successUrl);
-  const supabase = createServerClient(url, anonKey, {
-    cookieOptions: supabaseCookieOptions(isSecureRequest(request)),
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
+  const cookieStore = await cookies();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll();
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) => {
+              cookieStore.set(name, value, options);
+            });
+          } catch {
+            // Игнорируем, если вызвано из Server Action / Route Handler при уже зафиксированном ответе
+          }
+        },
       },
-      setAll(cookiesToSet, headers) {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          response.cookies.set(name, value, options);
-        });
-        Object.entries(headers ?? {}).forEach(([key, value]) => {
-          response.headers.set(key, value);
-        });
-      },
-    },
-  });
+    }
+  );
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code, flowId ? { flowId } : undefined);
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
+
   if (error) {
-    return NextResponse.redirect(failureUrl);
+    console.error("Auth error:", error.message);
+    return NextResponse.redirect(
+      new URL(`/login?error=${encodeURIComponent(error.message)}`, origin)
+    );
   }
 
-  return response;
+  return NextResponse.redirect(new URL(next, origin));
 }
