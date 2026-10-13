@@ -16,12 +16,12 @@ export function getSupabaseUrl() {
 }
 
 export function createSupabaseBrowserClient(): SupabaseClient {
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !anonKey) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!supabaseUrl || !supabaseAnonKey) {
     throw new Error("NEXT_PUBLIC_SUPABASE_URL и NEXT_PUBLIC_SUPABASE_ANON_KEY должны быть заданы");
   }
-  return createBrowserClient(url, anonKey, {
+  return createBrowserClient(supabaseUrl, supabaseAnonKey, {
     cookieOptions: supabaseCookieOptions(
       typeof window !== "undefined" && window.location.protocol === "https:",
     ),
