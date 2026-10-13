@@ -9,6 +9,7 @@ import {
   getGreenPhone,
   getGreenQr,
   getGreenState,
+  greenInstanceAlreadyLogged,
   type GreenCredentials,
 } from "@/lib/green-api";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -44,16 +45,28 @@ export async function requestWhatsAppQr(instanceId: string, apiToken: string) {
 
   try {
     const qr = await getGreenQr(credentials);
-    if (qr.type === "alreadyLogged") {
+    if (qr.type === "alreadyLogged" || greenInstanceAlreadyLogged(qr.type, qr.message)) {
       return { ok: true as const, image: null, alreadyAuthorized: true, error: null };
     }
     if (qr.type === "qrCode" && qr.message) {
       return { ok: true as const, image: qr.message, alreadyAuthorized: false, error: null };
     }
-    return { ok: false as const, image: null, alreadyAuthorized: false, error: "Не удалось получить QR-код." };
+    return await qrFailure(credentials);
   } catch {
-    return { ok: false as const, image: null, alreadyAuthorized: false, error: "Не удалось получить QR-код." };
+    return qrFailure(credentials);
   }
+}
+
+async function qrFailure(credentials: GreenCredentials) {
+  try {
+    const state = await getGreenState(credentials);
+    if (state === "authorized") {
+      return { ok: true as const, image: null, alreadyAuthorized: true, error: null };
+    }
+  } catch {
+    // The QR request already failed; the state check only distinguishes an authorized instance.
+  }
+  return { ok: false as const, image: null, alreadyAuthorized: false, error: "Не удалось получить QR-код." };
 }
 
 export async function requestWhatsAppLinkCode(instanceId: string, apiToken: string, phoneNumber: string) {

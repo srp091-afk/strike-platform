@@ -78,18 +78,26 @@ export async function sendGreenMessage(chatId: string, message: string, credenti
   return typeof payload?.idMessage === "string" ? payload.idMessage : null;
 }
 
+export function greenInstanceAlreadyLogged(type: string, message: string) {
+  const haystack = `${type} ${message}`.toLowerCase();
+  return type === "alreadyLogged" || haystack.includes("already logged") || haystack.includes("already authorized");
+}
+
 export async function getGreenQr(credentials?: GreenCredentials) {
   const response = await fetch(endpoint("qr", credentials), {
     signal: AbortSignal.timeout(20000),
     cache: "no-store",
   });
   const payload = (await response.json().catch(() => null)) as { type?: string; message?: string } | null;
+  const type = payload?.type ?? "error";
+  let message = typeof payload?.message === "string" ? payload.message : "";
+  if (greenInstanceAlreadyLogged(type, message)) {
+    return { type: "alreadyLogged", message };
+  }
   if (!response.ok) {
     throw new Error(`Green API qr ${response.status}`);
   }
 
-  const type = payload?.type ?? "error";
-  let message = typeof payload?.message === "string" ? payload.message : "";
   if (type === "qrCode" && message && !message.startsWith("data:image/")) {
     message = `data:image/png;base64,${message}`;
   }

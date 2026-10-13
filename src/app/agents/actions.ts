@@ -35,6 +35,8 @@ function readAgentFields(formData: FormData) {
   const splitMessages = readSplitMessages(formData.get("split_messages"));
   const id = String(formData.get("id") ?? "").trim();
   const activeChannels = readChannels(formData.get("active_channels"));
+  const waInstanceId = String(formData.get("wa_instance_id") ?? "").trim();
+  const waApiToken = String(formData.get("wa_api_token") ?? "").trim();
 
   if (!name) {
     return { ok: false as const, error: "Укажи имя агента." };
@@ -60,6 +62,10 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "Лимит сообщений должен быть целым числом от 0." };
   }
 
+  if ((waInstanceId || waApiToken) && (!/^\d{4,}$/.test(waInstanceId) || waApiToken.length < 8)) {
+    return { ok: false as const, error: "Укажите Instance ID и API Token WhatsApp." };
+  }
+
   return {
     ok: true as const,
     id,
@@ -74,6 +80,8 @@ function readAgentFields(formData: FormData) {
     totalMessageLimit,
     splitMessages,
     activeChannels,
+    waInstanceId,
+    waApiToken,
   };
 }
 
@@ -131,6 +139,13 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
       split_messages: fields.splitMessages,
       active_channels: fields.activeChannels,
       user_id: userId,
+      ...(fields.waInstanceId && fields.waApiToken
+        ? {
+            wa_instance_id: fields.waInstanceId,
+            wa_api_token: fields.waApiToken,
+            wa_is_active: true,
+          }
+        : {}),
     };
 
     if (fields.id) {

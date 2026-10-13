@@ -81,7 +81,7 @@ export async function listAgents(): Promise<AgentRecord[]> {
   if (!userId) return [];
   const withDelay = await supabase
     .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
+    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -125,6 +125,8 @@ export async function listAgents(): Promise<AgentRecord[]> {
     limit_client_messages: readMessageLimit("limit_client_messages" in row ? row.limit_client_messages : 0),
     limit_total_messages: readMessageLimit("limit_total_messages" in row ? row.limit_total_messages : 0),
     split_messages: readSplitMessages("split_messages" in row ? row.split_messages : false),
+    waInstanceId: "wa_instance_id" in row && row.wa_instance_id ? String(row.wa_instance_id) : null,
+    waApiToken: "wa_api_token" in row && row.wa_api_token ? String(row.wa_api_token) : null,
     waPhoneNumber: "wa_phone_number" in row && row.wa_phone_number ? String(row.wa_phone_number) : null,
     waIsActive: "wa_is_active" in row ? row.wa_is_active === true : false,
     tgBotUsername: "tg_bot_username" in row && row.tg_bot_username ? String(row.tg_bot_username) : null,

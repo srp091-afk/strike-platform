@@ -46,6 +46,8 @@ export type AgentRecord = {
   limit_client_messages: number;
   limit_total_messages: number;
   split_messages: boolean;
+  waInstanceId: string | null;
+  waApiToken: string | null;
   waPhoneNumber: string | null;
   waIsActive: boolean;
   tgBotUsername: string | null;

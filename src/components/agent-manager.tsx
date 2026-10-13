@@ -313,9 +313,16 @@ function AgentDialog({
               <div className="grid content-start gap-6">
                 <ChannelSettings
                   agent={editing}
+                  credentials={{ instanceId: draft.wa_instance_id, apiToken: draft.wa_api_token }}
                   greenDefaults={greenDefaults}
                   channels={draft.active_channels}
                   onChannelsChange={(active_channels) => patchDraft({ active_channels })}
+                  onWhatsAppCredentials={(credentials) =>
+                    patchDraft({
+                      wa_instance_id: credentials.instanceId,
+                      wa_api_token: credentials.apiToken,
+                    })
+                  }
                 />
                 <ResponseDelayField
                   value={draft.response_delay}
@@ -356,6 +363,8 @@ type AgentDraft = {
   limit_client_messages: string;
   limit_total_messages: string;
   split_messages: boolean;
+  wa_instance_id: string;
+  wa_api_token: string;
 };
 
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
@@ -371,6 +380,8 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     limit_client_messages: String(agent?.limit_client_messages ?? 0),
     limit_total_messages: String(agent?.limit_total_messages ?? 0),
     split_messages: agent?.split_messages ?? false,
+    wa_instance_id: agent?.waInstanceId ?? "",
+    wa_api_token: agent?.waApiToken ?? "",
   };
 }
 
@@ -388,7 +399,9 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     sameNumber(left.limit_total_messages, right.limit_total_messages) &&
     left.active_channels.whatsapp === right.active_channels.whatsapp &&
     left.active_channels.telegram === right.active_channels.telegram &&
-    left.active_channels.instagram === right.active_channels.instagram
+    left.active_channels.instagram === right.active_channels.instagram &&
+    left.wa_instance_id === right.wa_instance_id &&
+    left.wa_api_token === right.wa_api_token
   );
 }
 
@@ -498,14 +511,18 @@ const channelTone: Record<IntegrationProvider, string> = {
 
 function ChannelSettings({
   agent,
+  credentials,
   greenDefaults,
   channels,
   onChannelsChange,
+  onWhatsAppCredentials,
 }: {
   agent: AgentRecord | null;
+  credentials: GreenDefaults;
   greenDefaults: GreenDefaults;
   channels: ActiveChannels;
   onChannelsChange: (channels: ActiveChannels) => void;
+  onWhatsAppCredentials: (credentials: GreenDefaults) => void;
 }) {
   const [whatsappOpen, setWhatsappOpen] = useState(false);
   const [telegramOpen, setTelegramOpen] = useState(false);
@@ -519,6 +536,8 @@ function ChannelSettings({
         </p>
       </div>
       <input type="hidden" name="active_channels" value={JSON.stringify(channels)} />
+      <input type="hidden" name="wa_instance_id" value={credentials.instanceId} />
+      <input type="hidden" name="wa_api_token" value={credentials.apiToken} />
       <div className="grid gap-3">
         <div className="grid gap-3 rounded-xl bg-zinc-50 px-4 py-3">
           <label className="flex items-center justify-between gap-3">
@@ -566,8 +585,16 @@ function ChannelSettings({
           />
         </label>
       </div>
-      {whatsappOpen && agent ? (
-        <WhatsAppConnectDialog agentId={agent.id} defaults={greenDefaults} onClose={() => setWhatsappOpen(false)} />
+      {whatsappOpen ? (
+        <WhatsAppConnectDialog
+          agentId={agent?.id ?? ""}
+          defaults={{
+            instanceId: credentials.instanceId || greenDefaults.instanceId,
+            apiToken: credentials.apiToken || greenDefaults.apiToken,
+          }}
+          onApply={onWhatsAppCredentials}
+          onClose={() => setWhatsappOpen(false)}
+        />
       ) : null}
       {telegramOpen && agent ? <TelegramConnectDialog agentId={agent.id} onClose={() => setTelegramOpen(false)} /> : null}
     </section>
@@ -575,10 +602,7 @@ function ChannelSettings({
 }
 
 function WhatsAppChannel({ agent, onConnect }: { agent: AgentRecord | null; onConnect: () => void }) {
-  if (!agent) {
-    return <p className="text-xs leading-5 text-zinc-500">Сохраните агента, чтобы подключить номер.</p>;
-  }
-  if (!agent.waPhoneNumber) {
+  if (!agent?.waPhoneNumber) {
     return (
       <button
         type="button"

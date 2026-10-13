@@ -21,10 +21,12 @@ const fieldClass =
 export function WhatsAppConnectDialog({
   agentId,
   defaults,
+  onApply,
   onClose,
 }: {
   agentId: string;
   defaults: GreenDefaults;
+  onApply: (credentials: GreenDefaults) => void;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -35,6 +37,7 @@ export function WhatsAppConnectDialog({
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [linkCode, setLinkCode] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [alreadyAuthorized, setAlreadyAuthorized] = useState(false);
   const [watching, setWatching] = useState(false);
   const [qrPending, setQrPending] = useState(false);
   const [codePending, setCodePending] = useState(false);
@@ -94,6 +97,7 @@ export function WhatsAppConnectDialog({
     setQrImage(null);
     setLinkCode(null);
     setMessage(null);
+    setAlreadyAuthorized(false);
     setQrPending(false);
     setCodePending(false);
   }
@@ -114,17 +118,40 @@ export function WhatsAppConnectDialog({
     }
     const id = ++requestId.current;
     setMessage(null);
+    setAlreadyAuthorized(false);
     setQrImage(null);
     setQrPending(true);
-    const result = await requestWhatsAppQr(instanceId, apiToken);
-    if (id !== requestId.current) return;
-    setQrPending(false);
-    if (!result.ok) {
-      setMessage(result.error);
+    try {
+      const result = await requestWhatsAppQr(instanceId, apiToken);
+      if (id !== requestId.current) return;
+      setQrPending(false);
+      if (result.alreadyAuthorized) {
+        setAlreadyAuthorized(true);
+        setWatching(false);
+        return;
+      }
+      if (!result.ok || !result.image) {
+        setMessage(result.error ?? "Не удалось получить QR-код.");
+        return;
+      }
+      setQrImage(result.image);
+      setWatching(true);
+    } catch {
+      if (id !== requestId.current) return;
+      setQrPending(false);
+      setWatching(false);
+      setMessage("Не удалось получить QR-код.");
+    }
+  }
+
+  function applyKeys() {
+    const invalid = credentialsError();
+    if (invalid) {
+      setMessage(invalid);
       return;
     }
-    setQrImage(result.image);
-    setWatching(true);
+    onApply({ instanceId: instanceId.trim(), apiToken: apiToken.trim() });
+    onClose();
   }
 
   async function showCode() {
@@ -230,6 +257,7 @@ export function WhatsAppConnectDialog({
           </Tabs>
 
           {watching ? <p className="text-sm text-zinc-500">Проверяем подключение…</p> : null}
+          {alreadyAuthorized ? <p className="text-sm font-medium text-emerald-700">Уже авторизован</p> : null}
           {message ? <p className="text-sm text-red-600">{message}</p> : null}
 
           <button
@@ -249,7 +277,10 @@ export function WhatsAppConnectDialog({
                   value={instanceId}
                   autoComplete="off"
                   inputMode="numeric"
-                  onChange={(event) => setInstanceId(event.target.value)}
+                  onChange={(event) => {
+                    setInstanceId(event.target.value);
+                    setAlreadyAuthorized(false);
+                  }}
                 />
               </label>
               <label className="grid gap-2">
@@ -259,19 +290,29 @@ export function WhatsAppConnectDialog({
                   type="password"
                   value={apiToken}
                   autoComplete="off"
-                  onChange={(event) => setApiToken(event.target.value)}
+                  onChange={(event) => {
+                    setApiToken(event.target.value);
+                    setAlreadyAuthorized(false);
+                  }}
                 />
               </label>
             </div>
           ) : null}
 
-          <div className="flex justify-end">
+          <div className="flex justify-end gap-2">
             <button
               type="button"
               className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-all duration-200 hover:bg-zinc-50"
               onClick={onClose}
             >
               Закрыть
+            </button>
+            <button
+              type="button"
+              className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800"
+              onClick={applyKeys}
+            >
+              Применить ключи
             </button>
           </div>
         </div>
