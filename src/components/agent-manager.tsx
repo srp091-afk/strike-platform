@@ -5,7 +5,7 @@ import { startTransition, useActionState, useEffect, useRef, useState, useTransi
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { deleteAgent, saveAgent, type SaveState } from "@/app/agents/actions";
-import { connectTelegram, disconnectTelegram, disconnectWhatsApp } from "@/app/agents/channels";
+import { connectTelegram, disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
 import { ChannelIcon } from "@/components/channel-icons";
 import { Button } from "@/components/ui/button";
 import { DialogContent } from "@/components/ui/dialog";
@@ -358,6 +358,10 @@ function AgentDialog({
                       wa_api_token: credentials.apiToken,
                     })
                   }
+                  onWhatsAppPhone={(wa_phone_number) => {
+                    setDraft((current) => ({ ...current, wa_phone_number }));
+                    setBaseline((current) => ({ ...current, wa_phone_number }));
+                  }}
                   onWhatsAppCleared={() => {
                     const cleared = { wa_instance_id: "", wa_api_token: "", wa_phone_number: "" };
                     setDraft((current) => ({ ...current, ...cleared }));
@@ -561,6 +565,7 @@ function ChannelSettings({
   channels,
   onChannelsChange,
   onWhatsAppCredentials,
+  onWhatsAppPhone,
   onWhatsAppCleared,
 }: {
   agent: AgentRecord | null;
@@ -571,6 +576,7 @@ function ChannelSettings({
   channels: ActiveChannels;
   onChannelsChange: (channels: ActiveChannels) => void;
   onWhatsAppCredentials: (credentials: GreenDefaults) => void;
+  onWhatsAppPhone: (phone: string) => void;
   onWhatsAppCleared: () => void;
 }) {
   const [whatsappOpen, setWhatsappOpen] = useState(false);
@@ -587,6 +593,7 @@ function ChannelSettings({
       <input type="hidden" name="active_channels" value={JSON.stringify(channels)} />
       <input type="hidden" name="wa_instance_id" value={credentials.instanceId} />
       <input type="hidden" name="wa_api_token" value={credentials.apiToken} />
+      <input type="hidden" name="wa_phone_number" value={phone} />
       <div className="grid gap-3">
         <div className="grid gap-3 rounded-xl bg-zinc-50 px-4 py-3">
           <label className="flex items-center justify-between gap-3">
@@ -607,6 +614,7 @@ function ChannelSettings({
             instanceId={credentials.instanceId}
             phone={phone}
             onConnect={() => setWhatsappOpen(true)}
+            onPhoneSaved={onWhatsAppPhone}
             onCleared={onWhatsAppCleared}
           />
         </div>
@@ -661,16 +669,18 @@ function WhatsAppChannel({
   instanceId,
   phone,
   onConnect,
+  onPhoneSaved,
   onCleared,
 }: {
   agentId: string;
   instanceId: string;
   phone: string;
   onConnect: () => void;
+  onPhoneSaved: (phone: string) => void;
   onCleared: () => void;
 }) {
-  const label = phone || instanceId;
-  if (!label) {
+  const savedPhone = phone && phone !== instanceId ? phone : "";
+  if (!instanceId && !savedPhone) {
     return (
       <button
         type="button"
@@ -681,15 +691,75 @@ function WhatsAppChannel({
       </button>
     );
   }
+  if (!savedPhone) {
+    return <WhatsAppPhoneField agentId={agentId} onSaved={onPhoneSaved} />;
+  }
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5">
-      <p className="truncate text-sm font-medium text-zinc-900">{label}</p>
+      <p className="truncate text-sm font-medium text-zinc-900">{savedPhone}</p>
       <DisconnectButton
         agentId={agentId}
         kind="whatsapp"
-        label={`Отключить номер ${label}`}
+        label={`Отключить номер ${savedPhone}`}
         onDisconnected={onCleared}
       />
+    </div>
+  );
+}
+
+function WhatsAppPhoneField({ agentId, onSaved }: { agentId: string; onSaved: (phone: string) => void }) {
+  const [value, setValue] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function savePhone() {
+    const digits = value.replace(/@c\.us$/i, "").replace(/\D/g, "");
+    if (!/^\d{8,15}$/.test(digits)) {
+      setError("Введите номер в международном формате, например 79991234567.");
+      return;
+    }
+    setError(null);
+    if (!agentId) {
+      onSaved(digits);
+      return;
+    }
+    startTransition(async () => {
+      const result = await saveWhatsAppPhone(agentId, digits);
+      if (!result.ok || !result.phone) {
+        setError(result.error ?? "Не удалось сохранить номер.");
+        return;
+      }
+      onSaved(result.phone);
+    });
+  }
+
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2">
+        <input
+          className="min-w-0 flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
+          value={value}
+          inputMode="numeric"
+          autoComplete="tel"
+          placeholder="79991234567"
+          aria-label="Номер WhatsApp"
+          onChange={(event) => setValue(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key !== "Enter") return;
+            event.preventDefault();
+            savePhone();
+          }}
+        />
+        <button
+          type="button"
+          className="shrink-0 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          disabled={pending}
+          onClick={savePhone}
+        >
+          {pending ? "Сохранение" : "Сохранить"}
+        </button>
+      </div>
+      {error ? <p className="text-xs text-red-600">{error}</p> : null}
     </div>
   );
 }

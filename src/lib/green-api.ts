@@ -1,6 +1,6 @@
 import "server-only";
 
-const API_URL = "https://7103.api.greenapi.com";
+const API_URL = "https://api.green-api.com";
 
 export type GreenCredentials = {
   idInstance: string;
@@ -25,9 +25,14 @@ export function greenApiCredentials(): GreenCredentials {
 
 function endpoint(method: string, credentials?: GreenCredentials) {
   const { idInstance, apiToken } = credentials ?? greenApiCredentials();
-  const prefix = idInstance.slice(0, 4);
-  const host = /^\d{4}$/.test(prefix) ? `https://${prefix}.api.greenapi.com` : API_URL;
+  const prefix = idInstance.substring(0, 4);
+  const host = /^\d{4}$/.test(prefix) ? `https://${prefix}.api.green-api.com` : API_URL;
   return `${host}/waInstance${idInstance}/${method}/${apiToken}`;
+}
+
+function phoneDigits(value: string) {
+  const local = value.trim().replace(/@c\.us$/i, "").split("@")[0] ?? "";
+  return local.replace(/\D/g, "");
 }
 
 export async function getGreenChatHistory(chatId: string, count = 10, credentials?: GreenCredentials) {
@@ -114,11 +119,10 @@ export async function getGreenPhone(credentials: GreenCredentials) {
     throw new Error(`Green API getSettings ${response.status}`);
   }
 
-  const wid = typeof payload?.wid === "string" ? payload.wid.split("@")[0] ?? "" : "";
-  const fromWid = wid.replace(/\D/g, "");
+  const fromWid = typeof payload?.wid === "string" ? phoneDigits(payload.wid) : "";
   if (fromWid) return fromWid;
-  if (typeof payload?.phone === "number" && Number.isFinite(payload.phone)) return String(payload.phone);
-  if (typeof payload?.phone === "string") return payload.phone.replace(/\D/g, "");
+  if (typeof payload?.phone === "number" && Number.isFinite(payload.phone)) return phoneDigits(String(payload.phone));
+  if (typeof payload?.phone === "string") return phoneDigits(payload.phone);
   return "";
 }
 

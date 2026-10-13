@@ -133,6 +133,29 @@ export async function confirmWhatsAppAuthorization(input: {
   }
 }
 
+export async function saveWhatsAppPhone(agentId: string, phoneNumber: string) {
+  if (!UUID_PATTERN.test(agentId)) return { ok: false as const, phone: null, error: "Сначала сохраните агента." };
+  const digits = phoneNumber.replace(/@c\.us$/i, "").replace(/\D/g, "");
+  if (!/^\d{8,15}$/.test(digits)) {
+    return { ok: false as const, phone: null, error: "Введите номер в международном формате, например 79991234567." };
+  }
+
+  try {
+    if (!(await agentInWorkspace(agentId))) return { ok: false as const, phone: null, error: "Агент не найден." };
+    const supabase = createSupabaseAdminClient();
+    const { error } = await supabase.from("agents").update({ wa_phone_number: digits }).eq("id", agentId);
+    if (error) return { ok: false as const, phone: null, error: error.message };
+    revalidatePath("/agents");
+    return { ok: true as const, phone: digits, error: null };
+  } catch (error) {
+    return {
+      ok: false as const,
+      phone: null,
+      error: error instanceof Error ? error.message : "Не удалось сохранить номер.",
+    };
+  }
+}
+
 export async function disconnectWhatsApp(agentId: string) {
   if (!UUID_PATTERN.test(agentId)) return { ok: false as const, error: "Агент не найден." };
   try {

@@ -40,6 +40,7 @@ function readAgentFields(formData: FormData) {
   const activeChannels = readChannels(formData.get("active_channels"));
   const waInstanceId = String(formData.get("wa_instance_id") ?? "").trim();
   const waApiToken = String(formData.get("wa_api_token") ?? "").trim();
+  const waPhoneNumber = String(formData.get("wa_phone_number") ?? "").replace(/@c\.us$/i, "").replace(/\D/g, "");
 
   if (!name) {
     return { ok: false as const, error: "Укажи имя агента." };
@@ -85,6 +86,7 @@ function readAgentFields(formData: FormData) {
     activeChannels,
     waInstanceId,
     waApiToken,
+    waPhoneNumber,
   };
 }
 
@@ -129,7 +131,8 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
   try {
     const supabase = createSupabaseAdminClient();
     const userId = await getWorkspaceUserId();
-    const waPhoneNumber = await readWhatsAppPhone(fields.waInstanceId, fields.waApiToken);
+    const manualPhone = /^\d{8,15}$/.test(fields.waPhoneNumber) ? fields.waPhoneNumber : null;
+    const waPhoneNumber = (await readWhatsAppPhone(fields.waInstanceId, fields.waApiToken)) || manualPhone;
     const payload = {
       name: fields.name,
       system_prompt: fields.systemPrompt,
