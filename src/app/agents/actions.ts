@@ -12,7 +12,7 @@ import {
   type ActiveChannels,
   type HandoffDuration,
 } from "@/lib/agent-models";
-import { getWorkspaceUserId } from "@/lib/agents";
+import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { getGreenPhone } from "@/lib/green-api";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -130,7 +130,7 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
 
   try {
     const supabase = createSupabaseAdminClient();
-    const userId = await getWorkspaceUserId();
+    const userId = await getAuthenticatedUserId();
     const manualPhone = /^\d{8,15}$/.test(fields.waPhoneNumber) ? fields.waPhoneNumber : null;
     const waPhoneNumber = (await readWhatsAppPhone(fields.waInstanceId, fields.waApiToken)) || manualPhone;
     const payload = {
@@ -218,7 +218,7 @@ export async function deleteAgent(formData: FormData) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const userId = await getWorkspaceUserId();
+  const userId = await getAuthenticatedUserId();
   const { error } = await supabase.from("agents").delete().eq("id", id).eq("user_id", userId);
 
   if (error) {

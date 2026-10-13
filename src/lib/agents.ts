@@ -10,6 +10,7 @@ import {
   readSplitMessages,
   type AgentRecord,
 } from "@/lib/agent-models";
+import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const WORKSPACE_EMAIL = "owner@strike.local";
@@ -77,8 +78,7 @@ async function createWorkspaceUser(
 
 export async function listAgents(): Promise<AgentRecord[]> {
   const supabase = createSupabaseAdminClient();
-  const userId = await getExistingWorkspaceUserId();
-  if (!userId) return [];
+  const userId = await getAuthenticatedUserId();
   const withDelay = await supabase
     .from("agents")
     .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
