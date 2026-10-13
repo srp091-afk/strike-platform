@@ -13,6 +13,7 @@ import {
   type HandoffDuration,
 } from "@/lib/agent-models";
 import { getWorkspaceUserId } from "@/lib/agents";
+import { getGreenPhone } from "@/lib/green-api";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export type SaveState = {
@@ -20,6 +21,8 @@ export type SaveState = {
   error: string | null;
   savedId: string | null;
   attemptId: string | null;
+  agentId: string | null;
+  waPhoneNumber: string | null;
 };
 
 function readAgentFields(formData: FormData) {
@@ -126,6 +129,7 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
   try {
     const supabase = createSupabaseAdminClient();
     const userId = await getWorkspaceUserId();
+    const waPhoneNumber = await readWhatsAppPhone(fields.waInstanceId, fields.waApiToken);
     const payload = {
       name: fields.name,
       system_prompt: fields.systemPrompt,
@@ -144,10 +148,12 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
             wa_instance_id: fields.waInstanceId,
             wa_api_token: fields.waApiToken,
             wa_is_active: true,
+            ...(waPhoneNumber ? { wa_phone_number: waPhoneNumber } : {}),
           }
         : {}),
     };
 
+    let agentId = fields.id;
     if (fields.id) {
       const { data, error } = await supabase
         .from("agents")
@@ -165,22 +171,41 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
         return failedSave("Агент не найден.");
       }
     } else {
-      const { error } = await supabase.from("agents").insert(payload);
-      if (error) {
-        return failedSave(error.message);
+      const { data, error } = await supabase.from("agents").insert(payload).select("id").single();
+      if (error || !data) {
+        return failedSave(error?.message ?? "Не удалось сохранить агента.");
       }
+      agentId = String(data.id);
     }
 
     revalidatePath("/");
     revalidatePath("/agents");
-    return { ok: true, error: null, savedId: crypto.randomUUID(), attemptId: crypto.randomUUID() };
+    return {
+      ok: true,
+      error: null,
+      savedId: crypto.randomUUID(),
+      attemptId: crypto.randomUUID(),
+      agentId,
+      waPhoneNumber,
+    };
   } catch (error) {
     return failedSave(error instanceof Error ? error.message : "Не удалось сохранить агента.");
   }
 }
 
+async function readWhatsAppPhone(instanceId: string, apiToken: string) {
+  if (!instanceId || !apiToken) return null;
+  try {
+    const phone = await getGreenPhone({ idInstance: instanceId, apiToken });
+    const digits = phone.replace(/\D/g, "");
+    return digits ? digits.slice(0, 40) : null;
+  } catch {
+    return null;
+  }
+}
+
 function failedSave(error: string): SaveState {
-  return { ok: false, error, savedId: null, attemptId: crypto.randomUUID() };
+  return { ok: false, error, savedId: null, attemptId: crypto.randomUUID(), agentId: null, waPhoneNumber: null };
 }
 
 export async function deleteAgent(formData: FormData) {

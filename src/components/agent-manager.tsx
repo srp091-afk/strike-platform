@@ -1,7 +1,7 @@
 "use client";
 
 import { Maximize, Play, Trash } from "lucide-react";
-import { startTransition, useActionState, useEffect, useState, useTransition } from "react";
+import { startTransition, useActionState, useEffect, useRef, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { deleteAgent, saveAgent, type SaveState } from "@/app/agents/actions";
@@ -40,7 +40,14 @@ type GreenDefaults = {
 const fieldClass =
   "w-full rounded-xl border border-transparent bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none transition-all duration-200 placeholder:text-zinc-400 hover:bg-zinc-100/80 focus:border-zinc-300 focus:bg-white";
 
-const initialState: SaveState = { ok: false, error: null, savedId: null, attemptId: null };
+const initialState: SaveState = {
+  ok: false,
+  error: null,
+  savedId: null,
+  attemptId: null,
+  agentId: null,
+  waPhoneNumber: null,
+};
 
 export function AgentManager({
   agents,
@@ -54,6 +61,7 @@ export function AgentManager({
   const router = useRouter();
   const [editing, setEditing] = useState<AgentRecord | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [sessionKey, setSessionKey] = useState("closed");
   const [state, action, pending] = useActionState(saveAgent, initialState);
 
   useEffect(() => {
@@ -77,8 +85,6 @@ export function AgentManager({
 
   useEffect(() => {
     if (!state.savedId) return;
-    setEditing(null);
-    setDialogOpen(false);
     router.refresh();
   }, [state.savedId, router]);
 
@@ -101,11 +107,13 @@ export function AgentManager({
 
   function openCreate() {
     setEditing(null);
+    setSessionKey("new");
     setDialogOpen(true);
   }
 
   function openEdit(agent: AgentRecord) {
     setEditing(agent);
+    setSessionKey(agent.id);
     setDialogOpen(true);
   }
 
@@ -180,11 +188,16 @@ export function AgentManager({
 
       {dialogOpen ? (
         <AgentDialog
-          key={editing?.id ?? "new"}
+          key={sessionKey}
           editing={editing}
           action={action}
           pending={pending}
           error={state.error}
+          saved={
+            state.ok && state.attemptId && state.agentId
+              ? { attemptId: state.attemptId, agentId: state.agentId, waPhoneNumber: state.waPhoneNumber ?? "" }
+              : null
+          }
           greenDefaults={greenDefaults}
           onClose={closeDialog}
         />
@@ -198,6 +211,7 @@ function AgentDialog({
   action,
   pending,
   error,
+  saved,
   greenDefaults,
   onClose,
 }: {
@@ -205,12 +219,31 @@ function AgentDialog({
   action: (payload: FormData) => void;
   pending: boolean;
   error: string | null;
+  saved: { attemptId: string; agentId: string; waPhoneNumber: string } | null;
   greenDefaults: GreenDefaults;
   onClose: () => void;
 }) {
   const [initialDraft] = useState(() => draftFromAgent(editing));
   const [draft, setDraft] = useState(initialDraft);
-  const dirty = !sameDraft(draft, initialDraft);
+  const [baseline, setBaseline] = useState(initialDraft);
+  const [persistedId, setPersistedId] = useState(editing?.id ?? "");
+  const dirty = !sameDraft(draft, baseline);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const ignoredSave = useRef(saved?.attemptId ?? null);
+  const appliedSave = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!saved || saved.attemptId === ignoredSave.current || appliedSave.current === saved.attemptId) return;
+    appliedSave.current = saved.attemptId;
+    const next = {
+      ...draftRef.current,
+      wa_phone_number: saved.waPhoneNumber || draftRef.current.wa_phone_number,
+    };
+    setDraft(next);
+    setBaseline(next);
+    setPersistedId(saved.agentId);
+  }, [saved]);
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -247,7 +280,7 @@ function AgentDialog({
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</p>
               <h2 id="agent-dialog-title" className="text-2xl font-semibold">
-                {editing ? "Правка агента" : "Новый агент"}
+                {persistedId ? "Правка агента" : "Новый агент"}
               </h2>
             </div>
             <div className="flex gap-2">
@@ -267,7 +300,7 @@ function AgentDialog({
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto grid max-w-6xl gap-6 p-6 lg:grid-cols-2">
               <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
-                {editing ? <input type="hidden" name="id" value={editing.id} /> : null}
+                {persistedId ? <input type="hidden" name="id" value={persistedId} /> : null}
 
                 <label className="grid gap-2">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Имя</span>
@@ -313,7 +346,9 @@ function AgentDialog({
               <div className="grid content-start gap-6">
                 <ChannelSettings
                   agent={editing}
+                  agentId={persistedId}
                   credentials={{ instanceId: draft.wa_instance_id, apiToken: draft.wa_api_token }}
+                  phone={draft.wa_phone_number}
                   greenDefaults={greenDefaults}
                   channels={draft.active_channels}
                   onChannelsChange={(active_channels) => patchDraft({ active_channels })}
@@ -323,6 +358,11 @@ function AgentDialog({
                       wa_api_token: credentials.apiToken,
                     })
                   }
+                  onWhatsAppCleared={() => {
+                    const cleared = { wa_instance_id: "", wa_api_token: "", wa_phone_number: "" };
+                    setDraft((current) => ({ ...current, ...cleared }));
+                    setBaseline((current) => ({ ...current, ...cleared }));
+                  }}
                 />
                 <ResponseDelayField
                   value={draft.response_delay}
@@ -365,6 +405,7 @@ type AgentDraft = {
   split_messages: boolean;
   wa_instance_id: string;
   wa_api_token: string;
+  wa_phone_number: string;
 };
 
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
@@ -382,6 +423,7 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     split_messages: agent?.split_messages ?? false,
     wa_instance_id: agent?.waInstanceId ?? "",
     wa_api_token: agent?.waApiToken ?? "",
+    wa_phone_number: agent?.waPhoneNumber ?? "",
   };
 }
 
@@ -401,7 +443,8 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.active_channels.telegram === right.active_channels.telegram &&
     left.active_channels.instagram === right.active_channels.instagram &&
     left.wa_instance_id === right.wa_instance_id &&
-    left.wa_api_token === right.wa_api_token
+    left.wa_api_token === right.wa_api_token &&
+    left.wa_phone_number === right.wa_phone_number
   );
 }
 
@@ -511,18 +554,24 @@ const channelTone: Record<IntegrationProvider, string> = {
 
 function ChannelSettings({
   agent,
+  agentId,
   credentials,
+  phone,
   greenDefaults,
   channels,
   onChannelsChange,
   onWhatsAppCredentials,
+  onWhatsAppCleared,
 }: {
   agent: AgentRecord | null;
+  agentId: string;
   credentials: GreenDefaults;
+  phone: string;
   greenDefaults: GreenDefaults;
   channels: ActiveChannels;
   onChannelsChange: (channels: ActiveChannels) => void;
   onWhatsAppCredentials: (credentials: GreenDefaults) => void;
+  onWhatsAppCleared: () => void;
 }) {
   const [whatsappOpen, setWhatsappOpen] = useState(false);
   const [telegramOpen, setTelegramOpen] = useState(false);
@@ -553,7 +602,13 @@ function ChannelSettings({
               aria-label="WhatsApp"
             />
           </label>
-          <WhatsAppChannel agent={agent} onConnect={() => setWhatsappOpen(true)} />
+          <WhatsAppChannel
+            agentId={agentId}
+            instanceId={credentials.instanceId}
+            phone={phone}
+            onConnect={() => setWhatsappOpen(true)}
+            onCleared={onWhatsAppCleared}
+          />
         </div>
         <div className="grid gap-3 rounded-xl bg-zinc-50 px-4 py-3">
           <label className="flex items-center justify-between gap-3">
@@ -601,8 +656,21 @@ function ChannelSettings({
   );
 }
 
-function WhatsAppChannel({ agent, onConnect }: { agent: AgentRecord | null; onConnect: () => void }) {
-  if (!agent?.waPhoneNumber) {
+function WhatsAppChannel({
+  agentId,
+  instanceId,
+  phone,
+  onConnect,
+  onCleared,
+}: {
+  agentId: string;
+  instanceId: string;
+  phone: string;
+  onConnect: () => void;
+  onCleared: () => void;
+}) {
+  const label = phone || instanceId;
+  if (!label) {
     return (
       <button
         type="button"
@@ -615,8 +683,13 @@ function WhatsAppChannel({ agent, onConnect }: { agent: AgentRecord | null; onCo
   }
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5">
-      <p className="truncate text-sm font-medium text-zinc-900">{agent.waPhoneNumber}</p>
-      <DisconnectButton agentId={agent.id} kind="whatsapp" label={`Отключить номер ${agent.waPhoneNumber}`} />
+      <p className="truncate text-sm font-medium text-zinc-900">{label}</p>
+      <DisconnectButton
+        agentId={agentId}
+        kind="whatsapp"
+        label={`Отключить номер ${label}`}
+        onDisconnected={onCleared}
+      />
     </div>
   );
 }
@@ -648,10 +721,12 @@ function DisconnectButton({
   agentId,
   kind,
   label,
+  onDisconnected,
 }: {
   agentId: string;
   kind: "whatsapp" | "telegram";
   label: string;
+  onDisconnected?: () => void;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -660,12 +735,15 @@ function DisconnectButton({
   function onDisconnect() {
     setError(null);
     startTransition(async () => {
-      const result = kind === "whatsapp" ? await disconnectWhatsApp(agentId) : await disconnectTelegram(agentId);
-      if (!result.ok) {
-        setError(result.error);
-        return;
+      if (agentId) {
+        const result = kind === "whatsapp" ? await disconnectWhatsApp(agentId) : await disconnectTelegram(agentId);
+        if (!result.ok) {
+          setError(result.error);
+          return;
+        }
+        router.refresh();
       }
-      router.refresh();
+      onDisconnected?.();
     });
   }
 
