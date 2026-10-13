@@ -1,11 +1,13 @@
 import type { NextRequest } from "next/server";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
 import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
 import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
-import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+
+type AdminClient = SupabaseClient;
 
 export const maxDuration = 180;
 
@@ -19,7 +21,7 @@ export async function POST(request: NextRequest) {
       await handleOutgoing(request, body);
     }
   } catch (error) {
-    console.error("[whatsapp webhook]", error instanceof Error ? error.message : error);
+    console.error("[whatsapp webhook]", error);
   }
 
   return Response.json({ ok: true });
@@ -29,7 +31,7 @@ async function handleOutgoing(request: NextRequest, body: unknown) {
   const outgoing = readOutgoing(body);
   if (!outgoing) return;
 
-  const supabase = createSupabaseAdminClient();
+  const supabase = createWebhookAdmin();
   const duplicate = outgoing.messageId ? await messageExists(supabase, outgoing.messageId) : false;
   const channel = await resolveWhatsAppAccount(request, body, supabase);
   if (!channel) return;
@@ -46,12 +48,13 @@ async function handleOutgoing(request: NextRequest, body: unknown) {
     });
     conversationId = conversation.id;
     await insertMessage(supabase, {
-      conversation_id: conversation.id,
+      userId: channel.userId,
+      conversationId: conversation.id,
       role: "assistant",
       content: outgoing.text,
       status: "sent",
-      external_message_id: outgoing.messageId,
-      created_at: outgoing.sentAt,
+      externalMessageId: outgoing.messageId,
+      createdAt: outgoing.sentAt,
     });
   } else {
     conversationId = await findConversationId(supabase, channel.integrationId, outgoing.from);
@@ -78,7 +81,7 @@ async function handleIncoming(request: NextRequest, body: unknown) {
   const incoming = readIncoming(body);
   if (!incoming) return;
 
-  const supabase = createSupabaseAdminClient();
+  const supabase = createWebhookAdmin();
   const channel = await resolveWhatsAppAccount(request, body, supabase);
   if (!channel) return;
 
@@ -103,16 +106,15 @@ async function handleIncoming(request: NextRequest, body: unknown) {
       contactName: incoming.contactName,
       preview: incoming.text,
     });
-    const stored = await supabase.from("messages").insert({
-      conversation_id: conversation.id,
+    await insertMessage(supabase, {
+      userId: channel.userId,
+      conversationId: conversation.id,
       role: "user",
       content: incoming.text,
       status: "sent",
-      external_message_id: incoming.messageId,
-      ...(incoming.sentAt ? { created_at: incoming.sentAt } : {}),
+      externalMessageId: incoming.messageId,
+      createdAt: incoming.sentAt,
     });
-    const storedError = stored.error;
-    if (storedError) throw new Error(storedError.message);
     return;
   }
 
@@ -127,15 +129,15 @@ async function handleIncoming(request: NextRequest, body: unknown) {
   if (priorId && (await processingLockIsFresh(supabase, priorId))) {
     console.log("Остановка: is_processing = true");
     await bindConversationAgent(supabase, priorId, channel.agentId);
-    const { error: queuedError } = await supabase.from("messages").insert({
-      conversation_id: priorId,
+    await insertMessage(supabase, {
+      userId: channel.userId,
+      conversationId: priorId,
       role: "user",
       content: incoming.text,
       status: "sent",
-      external_message_id: incoming.messageId,
-      ...(incoming.sentAt ? { created_at: incoming.sentAt } : {}),
+      externalMessageId: incoming.messageId,
+      createdAt: incoming.sentAt,
     });
-    if (queuedError) throw new Error(queuedError.message);
     return;
   }
 
@@ -153,18 +155,17 @@ async function handleIncoming(request: NextRequest, body: unknown) {
   });
   const conversationId = conversation.id;
 
-  const { error: inboundError } = await supabase.from("messages").insert({
-    conversation_id: conversationId,
+  await insertMessage(supabase, {
+    userId: channel.userId,
+    conversationId,
     role: "user",
     content: incoming.text,
     status: "sent",
-    external_message_id: incoming.messageId,
-    ...(incoming.sentAt ? { created_at: incoming.sentAt } : {}),
+    externalMessageId: incoming.messageId,
+    createdAt: incoming.sentAt,
   });
-
-  if (inboundError) throw new Error(inboundError.message);
   if (late) return;
-  await syncOpeningHistory(supabase, conversationId, incoming.from, channel.credentials);
+  await syncOpeningHistory(supabase, conversationId, channel.userId, incoming.from, channel.credentials);
   if (!conversation.botActive) {
     await logChatPause(supabase, conversationId);
     return;
@@ -240,12 +241,13 @@ async function handleIncoming(request: NextRequest, body: unknown) {
       }
 
       await insertMessage(supabase, {
-        conversation_id: conversationId,
+        userId: channel.userId,
+        conversationId,
         role: "assistant",
         content: chunk,
         status: delivered ? "sent" : "failed",
-        external_message_id: outboundId,
-        created_at: null,
+        externalMessageId: outboundId,
+        createdAt: null,
       });
       preview = chunk;
       if (!delivered) break;
@@ -254,13 +256,17 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     const { error: previewError } = await supabase
       .from("conversations")
       .update({
+        user_id: channel.userId,
         last_message_preview: preview.slice(0, 140),
         last_message_at: new Date().toISOString(),
         agent_id: agent.id,
       })
       .eq("id", conversationId);
 
-    if (previewError) throw new Error(previewError.message);
+    if (previewError) {
+      console.error("[whatsapp webhook] conversations update", previewError);
+      throw new Error(previewError.message);
+    }
   } finally {
     await releaseProcessingLock(supabase, conversationId);
   }
@@ -275,8 +281,9 @@ type ChatText = {
 };
 
 async function syncOpeningHistory(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   conversationId: string,
+  userId: string,
   chatId: string,
   credentials: GreenCredentials,
 ) {
@@ -286,7 +293,10 @@ async function syncOpeningHistory(
     .eq("conversation_id", conversationId)
     .eq("role", "assistant");
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("[whatsapp webhook] messages count", error);
+    throw new Error(error.message);
+  }
   if ((count ?? 0) > 0) return;
 
   let journal: unknown[] = [];
@@ -308,12 +318,13 @@ async function syncOpeningHistory(
 
   for (const [index, item] of outgoing.entries()) {
     await insertMessage(supabase, {
-      conversation_id: conversationId,
+      userId,
+      conversationId,
       role: "assistant",
       content: item.text,
       status: "sent",
-      external_message_id: item.messageId,
-      created_at: item.sentAt ?? new Date(fallbackBase + index * 1000).toISOString(),
+      externalMessageId: item.messageId,
+      createdAt: item.sentAt ?? new Date(fallbackBase + index * 1000).toISOString(),
     });
   }
 }
@@ -340,7 +351,7 @@ function readHistoryOutgoing(value: unknown): HistoryOutgoing | null {
 }
 
 async function messageExists(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   messageId: string | null,
 ) {
   if (!messageId) return false;
@@ -350,41 +361,53 @@ async function messageExists(
     .eq("external_message_id", messageId)
     .limit(1);
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("[whatsapp webhook] messages lookup", error);
+    throw new Error(error.message);
+  }
   return Boolean(data && data.length > 0);
 }
 
 async function insertMessage(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   row: {
-    conversation_id: string;
-    role: "assistant";
+    userId: string;
+    conversationId: string;
+    role: "user" | "assistant";
     content: string;
     status: "sent" | "failed";
-    external_message_id: string | null;
-    created_at: string | null;
+    externalMessageId: string | null;
+    createdAt: string | null;
   },
 ) {
-  if (await messageExists(supabase, row.external_message_id)) return;
+  try {
+    if (!row.userId) throw new Error("У сообщения нет user_id владельца.");
+    if (await messageExists(supabase, row.externalMessageId)) return;
 
-  const payload: {
-    conversation_id: string;
-    role: "assistant";
-    content: string;
-    status: "sent" | "failed";
-    external_message_id: string | null;
-    created_at?: string;
-  } = {
-    conversation_id: row.conversation_id,
-    role: row.role,
-    content: row.content,
-    status: row.status,
-    external_message_id: row.external_message_id,
-  };
-  if (row.created_at) payload.created_at = row.created_at;
+    const payload: {
+      user_id: string;
+      conversation_id: string;
+      role: "user" | "assistant";
+      content: string;
+      status: "sent" | "failed";
+      external_message_id: string | null;
+      created_at?: string;
+    } = {
+      user_id: row.userId,
+      conversation_id: row.conversationId,
+      role: row.role,
+      content: row.content,
+      status: row.status,
+      external_message_id: row.externalMessageId,
+    };
+    if (row.createdAt) payload.created_at = row.createdAt;
 
-  const { error } = await supabase.from("messages").insert(payload);
-  if (error && error.code !== "23505") throw new Error(error.message);
+    const { error } = await supabase.from("messages").insert(payload);
+    if (error && error.code !== "23505") throw error;
+  } catch (error) {
+    console.error("[whatsapp webhook] messages insert", error);
+    throw error instanceof Error ? error : new Error("Не удалось записать сообщение.");
+  }
 }
 
 function readIncoming(body: unknown): ChatText | null {
@@ -454,7 +477,7 @@ function isLateClientMessage(sentAt: string | null, assistantAt: string | null) 
 }
 
 async function findConversationId(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   integrationId: string,
   externalChatId: string,
 ) {
@@ -469,7 +492,7 @@ async function findConversationId(
 }
 
 async function latestAssistantAt(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   conversationId: string,
 ) {
   const { data, error } = await supabase
@@ -501,7 +524,7 @@ function timestampToIso(value: unknown) {
 }
 
 async function dialogueOverLimit(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   conversationId: string,
   agent: {
     limit_agent_messages?: unknown;
@@ -517,7 +540,7 @@ async function dialogueOverLimit(
 }
 
 async function readAgentHandoffDuration(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   agentId: string,
 ) {
   const { data, error } = await supabase
@@ -536,7 +559,7 @@ async function readAgentHandoffDuration(
 }
 
 async function loadWhatsAppAgent(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   agentId: string,
 ) {
   const withChannels = await supabase
@@ -574,7 +597,7 @@ async function loadWhatsAppAgent(
 }
 
 async function processingLockIsFresh(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   conversationId: string,
 ) {
   const current = await supabase
@@ -594,7 +617,7 @@ async function processingLockIsFresh(
 }
 
 async function logChatPause(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   conversationId: string,
 ) {
   const { data } = await supabase
@@ -607,7 +630,7 @@ async function logChatPause(
 }
 
 async function acquireProcessingLock(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   conversationId: string,
 ) {
   const claimed = await supabase
@@ -643,7 +666,7 @@ async function acquireProcessingLock(
 }
 
 async function releaseProcessingLock(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   conversationId: string,
 ) {
   const { error } = await supabase
@@ -685,35 +708,93 @@ function whatsappChannelEnabled(value: unknown) {
   return (value as { whatsapp?: unknown }).whatsapp !== false;
 }
 
+function createWebhookAdmin(): AdminClient {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim() ?? "";
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim() ?? "";
+  if (!url || !serviceRoleKey) {
+    const error = new Error("SUPABASE_SERVICE_ROLE_KEY is not set");
+    console.error("[whatsapp webhook]", error);
+    throw error;
+  }
+
+  const role = readJwtRole(serviceRoleKey);
+  if (role && role !== "service_role") {
+    const error = new Error("SUPABASE_SERVICE_ROLE_KEY is not a service_role key");
+    console.error("[whatsapp webhook]", error);
+    throw error;
+  }
+
+  return createClient(url, serviceRoleKey, {
+    auth: {
+      persistSession: false,
+      autoRefreshToken: false,
+      detectSessionInUrl: false,
+    },
+    global: {
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+      },
+    },
+  });
+}
+
+function readJwtRole(key: string) {
+  const payload = key.split(".")[1];
+  if (!payload) return "";
+  try {
+    const json = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as { role?: unknown };
+    return typeof json.role === "string" ? json.role : "";
+  } catch {
+    return "";
+  }
+}
+
 async function resolveWhatsAppAccount(
   request: NextRequest,
   body: unknown,
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
 ) {
   const instanceId = normalizeInstanceId(readInstanceId(request, body));
-  if (!instanceId) return null;
+  const phone = readAccountPhone(body);
+  const token = readAccountToken(request, body);
+  if (!instanceId && !phone && !token) {
+    console.error("[whatsapp webhook] WhatsApp account was not in the payload");
+    return null;
+  }
 
-  const { data, error } = await findAgentByInstance(supabase, instanceId);
+  const { data, error } = await findWhatsAppAgent(supabase, { instanceId, phone, token });
+  if (error) {
+    console.error("[whatsapp webhook] agent lookup", error);
+    throw new Error(error.message);
+  }
+  if (!data?.user_id) {
+    console.error("[whatsapp webhook] agent owner was not found");
+    return null;
+  }
 
-  if (error) throw new Error(error.message);
-  if (!data?.user_id || !data.wa_api_token) return null;
-
-  const agentId = String(data.id);
   const userId = String(data.user_id);
+  const agentId = String(data.id);
+  const resolvedInstance = normalizeInstanceId(String(data.wa_instance_id ?? "")) || instanceId;
+  if (!resolvedInstance) {
+    console.error("[whatsapp webhook] agent has no WhatsApp instance");
+    return null;
+  }
+
   const integration = await ensureWhatsAppIntegration(supabase, {
     userId,
     agentId,
-    instanceId,
+    instanceId: resolvedInstance,
   });
+  const apiToken = String(data.wa_api_token ?? "");
 
   return {
     integrationId: integration.id,
     userId,
     agentId,
-    canReply: data.wa_is_active === true,
+    canReply: data.wa_is_active === true && apiToken.length > 0,
     credentials: {
-      idInstance: String(data.wa_instance_id),
-      apiToken: String(data.wa_api_token),
+      idInstance: String(data.wa_instance_id ?? resolvedInstance),
+      apiToken,
     } satisfies GreenCredentials,
   };
 }
@@ -726,17 +807,56 @@ function readInstanceId(request: NextRequest, body: unknown) {
   return request.headers.get("x-id-instance")?.trim() || request.headers.get("id-instance")?.trim() || "";
 }
 
-async function findAgentByInstance(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
-  instanceId: string,
-) {
-  const columns = "id, user_id, wa_instance_id, wa_api_token, wa_is_active";
-  const exact = await supabase.from("agents").select(columns).eq("wa_instance_id", instanceId).maybeSingle();
-  if (exact.error || exact.data) return exact;
+function readAccountPhone(body: unknown) {
+  const record = asRecord(body);
+  const instance = asRecord(record.instanceData);
+  return normalizeInstanceId(stringValue(instance.wid) || stringValue(instance.phone) || stringValue(record.wid));
+}
 
-  const listed = await supabase.from("agents").select(columns).not("wa_instance_id", "is", null);
-  if (listed.error || !listed.data) return listed;
-  const match = listed.data.find((agent) => normalizeInstanceId(String(agent.wa_instance_id ?? "")) === instanceId);
+function readAccountToken(request: NextRequest, body: unknown) {
+  const record = asRecord(body);
+  const instance = asRecord(record.instanceData);
+  const fromQuery = request.nextUrl.searchParams.get("token")?.trim() ?? "";
+  const fromHeader = request.headers.get("x-api-token")?.trim() || request.headers.get("x-green-token")?.trim() || "";
+  const fromBody =
+    stringValue(instance.apiTokenInstance) || stringValue(record.apiTokenInstance) || stringValue(record.token);
+  return fromQuery || fromHeader || fromBody;
+}
+
+async function findWhatsAppAgent(
+  supabase: AdminClient,
+  hints: { instanceId: string; phone: string; token: string },
+) {
+  const columns = "id, user_id, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active";
+
+  if (hints.instanceId) {
+    const exact = await supabase.from("agents").select(columns).eq("wa_instance_id", hints.instanceId).limit(1);
+    if (exact.error) return { data: null, error: exact.error };
+    const row = exact.data?.[0];
+    if (row?.user_id) return { data: row, error: null };
+  }
+
+  if (hints.token) {
+    const byToken = await supabase.from("agents").select(columns).eq("wa_api_token", hints.token).limit(1);
+    if (byToken.error) return { data: null, error: byToken.error };
+    const row = byToken.data?.[0];
+    if (row?.user_id) return { data: row, error: null };
+  }
+
+  const listed = await supabase
+    .from("agents")
+    .select(columns)
+    .or("wa_api_token.not.is.null,wa_phone_number.not.is.null,wa_instance_id.not.is.null");
+  if (listed.error) return { data: null, error: listed.error };
+  const match = (listed.data ?? []).find((agent) => {
+    const instance = normalizeInstanceId(String(agent.wa_instance_id ?? ""));
+    const phone = normalizeInstanceId(String(agent.wa_phone_number ?? ""));
+    const token = String(agent.wa_api_token ?? "");
+    if (hints.instanceId && instance === hints.instanceId) return true;
+    if (hints.token && token === hints.token) return true;
+    if (hints.phone && phone === hints.phone) return true;
+    return false;
+  });
   return { data: match ?? null, error: null };
 }
 
@@ -745,16 +865,19 @@ function normalizeInstanceId(value: string) {
 }
 
 async function bindConversationAgent(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   conversationId: string,
   agentId: string,
 ) {
   const { error } = await supabase.from("conversations").update({ agent_id: agentId }).eq("id", conversationId);
-  if (error) throw new Error(error.message);
+  if (error) {
+    console.error("[whatsapp webhook] conversations update", error);
+    throw new Error(error.message);
+  }
 }
 
 async function ensureWhatsAppIntegration(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   input: { userId: string; agentId: string | null; instanceId: string },
 ) {
   const instanceId = normalizeInstanceId(input.instanceId);
@@ -766,12 +889,19 @@ async function ensureWhatsAppIntegration(
     .limit(1)
     .maybeSingle();
 
-  if (lookupError) throw new Error(lookupError.message);
+  if (lookupError) {
+    console.error("[whatsapp webhook] integrations lookup", lookupError);
+    throw new Error(lookupError.message);
+  }
   if (existing?.id) {
-    await supabase
+    const { error } = await supabase
       .from("integrations")
-      .update({ agent_id: input.agentId, status: "connected", external_id: instanceId })
+      .update({ agent_id: input.agentId, user_id: input.userId, status: "connected", external_id: instanceId })
       .eq("id", existing.id);
+    if (error) {
+      console.error("[whatsapp webhook] integrations update", error);
+      throw new Error(error.message);
+    }
     return { id: existing.id as string };
   }
 
@@ -781,15 +911,22 @@ async function ensureWhatsAppIntegration(
       .select("id, external_id")
       .eq("provider", "whatsapp")
       .eq("agent_id", input.agentId);
-    if (owned.error) throw new Error(owned.error.message);
+    if (owned.error) {
+      console.error("[whatsapp webhook] integrations lookup", owned.error);
+      throw new Error(owned.error.message);
+    }
     const reusable = (owned.data ?? []).find(
       (row) => !row.external_id || normalizeInstanceId(String(row.external_id)) === instanceId,
     );
     if (reusable?.id) {
-      await supabase
+      const { error } = await supabase
         .from("integrations")
-        .update({ agent_id: input.agentId, status: "connected", external_id: instanceId })
+        .update({ agent_id: input.agentId, user_id: input.userId, status: "connected", external_id: instanceId })
         .eq("id", reusable.id);
+      if (error) {
+        console.error("[whatsapp webhook] integrations update", error);
+        throw new Error(error.message);
+      }
       return { id: reusable.id as string };
     }
   }
@@ -807,12 +944,15 @@ async function ensureWhatsAppIntegration(
     .select("id")
     .single();
 
-  if (error || !data) throw new Error(error?.message ?? "Не удалось привязать номер.");
+  if (error || !data) {
+    console.error("[whatsapp webhook] integrations insert", error);
+    throw new Error(error?.message ?? "Не удалось привязать номер.");
+  }
   return { id: data.id as string };
 }
 
 async function upsertConversation(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   input: {
     userId: string;
     agentId: string | null;
@@ -823,54 +963,65 @@ async function upsertConversation(
     touchPreview?: boolean;
   },
 ) {
-  const { data: existing, error: lookupError } = await supabase
-    .from("conversations")
-    .select("id")
-    .eq("integration_id", input.integrationId)
-    .eq("external_chat_id", input.externalChatId)
-    .maybeSingle();
+  try {
+    if (!input.userId) throw new Error("У диалога нет user_id владельца.");
 
-  if (lookupError) throw new Error(lookupError.message);
+    const { data: existing, error: lookupError } = await supabase
+      .from("conversations")
+      .select("id")
+      .eq("integration_id", input.integrationId)
+      .eq("external_chat_id", input.externalChatId)
+      .maybeSingle();
 
-  const patch: {
-    user_id: string;
-    agent_id: string | null;
-    contact_name?: string;
-    last_message_preview?: string;
-    last_message_at?: string;
-  } = {
-    user_id: input.userId,
-    agent_id: input.agentId,
-  };
-  if (input.touchPreview !== false) {
-    patch.last_message_preview = input.preview.slice(0, 140);
-    patch.last_message_at = new Date().toISOString();
+    if (lookupError) throw lookupError;
+
+    const patch: {
+      user_id: string;
+      agent_id: string | null;
+      contact_name?: string;
+      last_message_preview?: string;
+      last_message_at?: string;
+    } = {
+      user_id: input.userId,
+      agent_id: input.agentId,
+    };
+    if (input.touchPreview !== false) {
+      patch.last_message_preview = input.preview.slice(0, 140);
+      patch.last_message_at = new Date().toISOString();
+    }
+
+    if (input.contactName) patch.contact_name = input.contactName;
+
+    if (existing?.id) {
+      const { error } = await supabase.from("conversations").update(patch).eq("id", existing.id);
+      if (error) throw error;
+      return { id: existing.id as string, botActive: await readBotActive(supabase, existing.id as string) };
+    }
+
+    const { data, error } = await supabase
+      .from("conversations")
+      .upsert(
+        {
+          ...patch,
+          integration_id: input.integrationId,
+          external_chat_id: input.externalChatId,
+        },
+        { onConflict: "integration_id,external_chat_id" },
+      )
+      .select("id")
+      .single();
+
+    if (error) throw error;
+    if (!data) throw new Error("Не удалось создать диалог.");
+    return { id: data.id as string, botActive: true };
+  } catch (error) {
+    console.error("[whatsapp webhook] conversations upsert", error);
+    throw error instanceof Error ? error : new Error("Не удалось записать диалог.");
   }
-
-  if (input.contactName) patch.contact_name = input.contactName;
-
-  if (existing?.id) {
-    const { error } = await supabase.from("conversations").update(patch).eq("id", existing.id);
-    if (error) throw new Error(error.message);
-    return { id: existing.id as string, botActive: await readBotActive(supabase, existing.id as string) };
-  }
-
-  const { data, error } = await supabase
-    .from("conversations")
-    .insert({
-      ...patch,
-      integration_id: input.integrationId,
-      external_chat_id: input.externalChatId,
-    })
-    .select("id")
-    .single();
-
-  if (error || !data) throw new Error(error?.message ?? "Не удалось создать диалог.");
-  return { id: data.id as string, botActive: true };
 }
 
 async function readBotActive(
-  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  supabase: AdminClient,
   conversationId: string,
 ) {
   const flags = await readBotFlags(supabase, [conversationId]);
