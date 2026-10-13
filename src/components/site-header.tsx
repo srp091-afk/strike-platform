@@ -3,10 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { AccountMenu } from "@/components/account-menu";
 import { isNavActive, navItems } from "@/lib/navigation";
+import type { AccountProfile } from "@/lib/auth-user";
 import { cn } from "@/lib/utils";
 
-export function SiteHeader() {
+export function SiteHeader({ account }: { account: AccountProfile | null }) {
   const pathname = usePathname();
   if (pathname.startsWith("/l/") || pathname === "/login") return null;
 
@@ -45,6 +47,7 @@ export function SiteHeader() {
             );
           })}
         </nav>
+        {account ? <AccountMenu account={account} /> : null}
       </div>
     </header>
   );

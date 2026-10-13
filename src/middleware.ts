@@ -3,7 +3,6 @@ import { NextResponse, type NextRequest } from "next/server";
 
 function isPublicPath(pathname: string) {
   return (
-    pathname === "/" ||
     pathname === "/login" ||
     pathname === "/auth/callback" ||
     pathname === "/api/webhooks" ||
