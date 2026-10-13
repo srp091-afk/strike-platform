@@ -1,10 +1,9 @@
-export const dynamic = "force-dynamic";
-
-import { NextRequest } from "next/server";
+import { connection, type NextRequest } from "next/server";
 
 import { listConversations, listMessages } from "@/lib/chats";
 
 export async function GET(request: NextRequest) {
+  await connection();
   const conversationId = request.nextUrl.searchParams.get("conversation") ?? "";
   const agentId = readAgentFilter(request.nextUrl.searchParams.get("agentId"));
 
