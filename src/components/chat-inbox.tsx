@@ -17,6 +17,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { ChatAgentOption, ChatMessage, ChatProvider, ChatThread } from "@/lib/chat-types";
 import type { IntegrationProvider } from "@/lib/integration-catalog";
@@ -58,11 +59,13 @@ export function ChatInbox({
   const [pending, setPending] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [query, setQuery] = useState("");
   const removedRef = useRef(new Set<string>());
   const agentIdRef = useRef(agentId);
   agentIdRef.current = agentId;
 
   const selected = threads.find((thread) => thread.id === selectedId) ?? null;
+  const visibleThreads = threads.filter((thread) => chatMatchesQuery(thread, query));
 
   useEffect(() => {
     if (initialSelectedId) return;
@@ -198,14 +201,24 @@ export function ChatInbox({
       <div className="grid overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-sm lg:h-[min(42rem,calc(100dvh-16rem))] lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <aside className="flex min-h-80 min-w-0 flex-col border-b border-zinc-200/80 lg:border-r lg:border-b-0">
           <AgentFilter agents={agents} value={agentId} onChange={(next) => void selectAgent(next)} />
+          <div className="px-4 pt-3">
+            <Input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Поиск по номеру или имени..."
+              aria-label="Поиск по номеру или имени"
+            />
+          </div>
           <p className="px-5 py-3 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Входящие</p>
           {threads.length === 0 ? (
             <p className="px-5 pb-6 text-sm leading-6 text-zinc-500">
               Диалогов пока нет. Они появятся, когда клиент напишет в подключённый канал.
             </p>
+          ) : visibleThreads.length === 0 ? (
+            <p className="px-5 pb-6 text-sm leading-6 text-zinc-500">Ничего не найдено.</p>
           ) : (
             <ul className="min-h-0 flex-1 overflow-y-auto">
-              {threads.map((thread) => {
+              {visibleThreads.map((thread) => {
                 const active = thread.id === selected?.id;
                 return (
                   <li key={thread.id}>
@@ -465,6 +478,26 @@ async function fetchInbox(agentId: string, conversationId: string | null) {
   const payload = (await response.json()) as InboxPayload;
   if (!response.ok) throw new Error(payload.error || "Не удалось загрузить чаты.");
   return payload;
+}
+
+function stripSearchMarks(value: string) {
+  return value.replace(/[+\s()\-]/g, "");
+}
+
+function chatMatchesQuery(thread: ChatThread, query: string) {
+  const trimmed = query.trim();
+  if (!trimmed) return true;
+
+  const needle = trimmed.toLowerCase();
+  const name = thread.title.toLowerCase();
+  if (name.includes(needle)) return true;
+
+  const compactNeedle = stripSearchMarks(needle);
+  if (!compactNeedle) return false;
+
+  const compactName = stripSearchMarks(name);
+  const compactPhone = stripSearchMarks(thread.handle).toLowerCase();
+  return compactName.includes(compactNeedle) || compactPhone.includes(compactNeedle);
 }
 
 function writeChatUrl(agentId: string, conversationId: string | null) {
