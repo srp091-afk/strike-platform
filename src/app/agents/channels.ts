@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { getWorkspaceUserId } from "@/lib/agents";
 import {
+  ensureGreenIncomingWebhook,
   getGreenAuthorizationCode,
   getGreenPhone,
   getGreenQr,
@@ -236,6 +237,16 @@ async function attachWhatsApp(
     if (error.code === "23505") return { ok: false as const, error: "Этот номер уже подключён к другому агенту." };
     return { ok: false as const, error: error.message };
   }
+
+  try {
+    await ensureGreenIncomingWebhook({
+      idInstance: input.instanceId,
+      apiToken: input.apiToken,
+    });
+  } catch {
+    return { ok: false as const, error: "Номер сохранён, но не удалось включить вебхук WhatsApp." };
+  }
+
   revalidatePath("/agents");
   return { ok: true as const, error: null };
 }

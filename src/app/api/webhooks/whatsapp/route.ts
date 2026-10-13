@@ -126,6 +126,7 @@ async function handleIncoming(request: NextRequest, body: unknown) {
   const priorId = await findConversationId(supabase, channel.integrationId, incoming.from);
   if (priorId && (await processingLockIsFresh(supabase, priorId))) {
     console.log("Остановка: is_processing = true");
+    await bindConversationAgent(supabase, priorId, channel.agentId);
     const { error: queuedError } = await supabase.from("messages").insert({
       conversation_id: priorId,
       role: "user",
@@ -689,14 +690,10 @@ async function resolveWhatsAppAccount(
   body: unknown,
   supabase: ReturnType<typeof createSupabaseAdminClient>,
 ) {
-  const instanceId = readInstanceId(request, body);
+  const instanceId = normalizeInstanceId(readInstanceId(request, body));
   if (!instanceId) return null;
 
-  const { data, error } = await supabase
-    .from("agents")
-    .select("id, user_id, wa_instance_id, wa_api_token, wa_is_active")
-    .eq("wa_instance_id", instanceId)
-    .maybeSingle();
+  const { data, error } = await findAgentByInstance(supabase, instanceId);
 
   if (error) throw new Error(error.message);
   if (!data?.user_id || !data.wa_api_token) return null;
@@ -729,15 +726,43 @@ function readInstanceId(request: NextRequest, body: unknown) {
   return request.headers.get("x-id-instance")?.trim() || request.headers.get("id-instance")?.trim() || "";
 }
 
+async function findAgentByInstance(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  instanceId: string,
+) {
+  const columns = "id, user_id, wa_instance_id, wa_api_token, wa_is_active";
+  const exact = await supabase.from("agents").select(columns).eq("wa_instance_id", instanceId).maybeSingle();
+  if (exact.error || exact.data) return exact;
+
+  const listed = await supabase.from("agents").select(columns).not("wa_instance_id", "is", null);
+  if (listed.error || !listed.data) return listed;
+  const match = listed.data.find((agent) => normalizeInstanceId(String(agent.wa_instance_id ?? "")) === instanceId);
+  return { data: match ?? null, error: null };
+}
+
+function normalizeInstanceId(value: string) {
+  return value.replace(/\D/g, "");
+}
+
+async function bindConversationAgent(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  conversationId: string,
+  agentId: string,
+) {
+  const { error } = await supabase.from("conversations").update({ agent_id: agentId }).eq("id", conversationId);
+  if (error) throw new Error(error.message);
+}
+
 async function ensureWhatsAppIntegration(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   input: { userId: string; agentId: string | null; instanceId: string },
 ) {
+  const instanceId = normalizeInstanceId(input.instanceId);
   const { data: existing, error: lookupError } = await supabase
     .from("integrations")
     .select("id")
     .eq("provider", "whatsapp")
-    .eq("external_id", input.instanceId)
+    .eq("external_id", instanceId)
     .limit(1)
     .maybeSingle();
 
@@ -745,9 +770,28 @@ async function ensureWhatsAppIntegration(
   if (existing?.id) {
     await supabase
       .from("integrations")
-      .update({ agent_id: input.agentId, status: "connected" })
+      .update({ agent_id: input.agentId, status: "connected", external_id: instanceId })
       .eq("id", existing.id);
     return { id: existing.id as string };
+  }
+
+  if (input.agentId) {
+    const owned = await supabase
+      .from("integrations")
+      .select("id, external_id")
+      .eq("provider", "whatsapp")
+      .eq("agent_id", input.agentId);
+    if (owned.error) throw new Error(owned.error.message);
+    const reusable = (owned.data ?? []).find(
+      (row) => !row.external_id || normalizeInstanceId(String(row.external_id)) === instanceId,
+    );
+    if (reusable?.id) {
+      await supabase
+        .from("integrations")
+        .update({ agent_id: input.agentId, status: "connected", external_id: instanceId })
+        .eq("id", reusable.id);
+      return { id: reusable.id as string };
+    }
   }
 
   const { data, error } = await supabase
@@ -758,7 +802,7 @@ async function ensureWhatsAppIntegration(
       provider: "whatsapp",
       name: "WhatsApp Business",
       status: "connected",
-      external_id: input.instanceId,
+      external_id: instanceId,
     })
     .select("id")
     .single();

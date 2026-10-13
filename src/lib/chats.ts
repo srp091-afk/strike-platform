@@ -19,7 +19,17 @@ export async function listConversations(agentId?: string | null): Promise<ChatTh
     .eq("user_id", userId);
 
   if (agentId && isUuid(agentId)) {
-    query = query.eq("agent_id", agentId);
+    const { data: links, error: linkError } = await supabase
+      .from("integrations")
+      .select("id")
+      .eq("agent_id", agentId);
+    if (linkError) throw new Error(linkError.message);
+    const integrationIds = (links ?? [])
+      .map((row) => row.id as string)
+      .filter((id) => isUuid(id));
+    const clauses = [`agent_id.eq.${agentId}`];
+    if (integrationIds.length > 0) clauses.push(`integration_id.in.(${integrationIds.join(",")})`);
+    query = query.or(clauses.join(","));
   }
 
   const { data, error } = await query.order("last_message_at", { ascending: false, nullsFirst: false });

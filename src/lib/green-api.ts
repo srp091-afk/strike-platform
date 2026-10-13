@@ -46,6 +46,22 @@ export async function getGreenChatHistory(chatId: string, count = 10, credential
   return Array.isArray(payload) ? payload : [];
 }
 
+export async function ensureGreenIncomingWebhook(credentials: GreenCredentials) {
+  const origin = (process.env.NEXT_PUBLIC_APP_URL || "https://strike-platform.vercel.app").replace(/\/$/, "");
+  const response = await fetch(endpoint("setSettings", credentials), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      webhookUrl: `${origin}/api/webhooks/whatsapp`,
+      incomingWebhook: "yes",
+    }),
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!response.ok) {
+    throw new Error(`Green API setSettings ${response.status}`);
+  }
+}
+
 export async function sendGreenMessage(chatId: string, message: string, credentials?: GreenCredentials) {
   const response = await fetch(endpoint("sendMessage", credentials), {
     method: "POST",
