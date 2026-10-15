@@ -1034,30 +1034,44 @@ function HumanHandoffField({
 }
 
 function LeadNotificationsField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [enabled, setEnabled] = useState(() => value.trim().length > 0);
+
+  function toggle(next: boolean) {
+    setEnabled(next);
+    if (!next) onChange("");
+  }
+
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
-      <div className="grid gap-2">
-        <h3 className="font-heading text-lg font-semibold text-zinc-900">Уведомления о лидах</h3>
-        <p className="text-sm leading-6 text-zinc-500">
-          Сюда будут приходить горячие лиды. Создайте группу в Telegram и добавьте в неё нашего бота @StrikeNotifyBot.
-        </p>
-      </div>
-      <label className="grid gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Chat ID</span>
-        <input
-          className={fieldClass}
-          name="telegram_chat_id"
-          type="text"
-          autoComplete="off"
-          value={value}
-          placeholder="Например: -100123456789"
-          onChange={(event) => onChange(event.target.value)}
-        />
-        <span className="text-xs leading-5 text-zinc-400">
-          Как узнать ID? Перешлите любое сообщение из вашей созданной группы боту @getmyid_bot и скопируйте полученное
-          число (с минусом).
-        </span>
+      <h3 className="font-heading text-lg font-semibold text-zinc-900">Уведомления о лидах</h3>
+      {enabled ? null : <input type="hidden" name="telegram_chat_id" value="" />}
+      <label className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-4 py-3">
+        <span className="text-sm font-medium text-zinc-800">Включить уведомления</span>
+        <Switch checked={enabled} onCheckedChange={toggle} aria-label="Включить уведомления" />
       </label>
+      {enabled ? (
+        <>
+          <p className="text-sm leading-6 text-zinc-500">
+            Сюда будут приходить горячие лиды. Создайте группу в Telegram и добавьте в неё нашего бота @StrikeNotifyBot.
+          </p>
+          <label className="grid gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Chat ID</span>
+            <input
+              className={fieldClass}
+              name="telegram_chat_id"
+              type="text"
+              autoComplete="off"
+              value={value}
+              placeholder="Например: -100123456789"
+              onChange={(event) => onChange(event.target.value)}
+            />
+            <span className="text-xs leading-5 text-zinc-400">
+              Как узнать ID? Перешлите любое сообщение из вашей созданной группы боту @getmyid_bot и скопируйте
+              полученное число (с минусом).
+            </span>
+          </label>
+        </>
+      ) : null}
     </section>
   );
 }
