@@ -57,6 +57,8 @@ export async function completeWithNotifyManager(input: {
     messages: input.messages,
     tools: [notifyManagerTool],
     tool_choice: "auto",
+    // gpt-6.1-sol rejects function tools in chat completions unless reasoning is off.
+    ...(input.model.includes("gpt-6") ? { reasoning_effort: "none" as const } : {}),
   });
 
   const choice = first.choices[0]?.message;
