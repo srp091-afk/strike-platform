@@ -79,6 +79,7 @@ create table if not exists public.agents (
   tg_bot_token text,
   tg_bot_username text,
   tg_is_active boolean not null default false,
+  telegram_chat_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint agents_temperature_range check (temperature >= 0 and temperature <= 2),

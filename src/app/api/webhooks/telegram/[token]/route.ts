@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { readMessageLimit } from "@/lib/agent-models";
 import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
-import { getOpenAI } from "@/lib/openai";
+import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -113,7 +113,7 @@ async function handleUpdate(token: string, body: unknown) {
     }));
 
   const model = (agent.model as string) || "gpt-4o-mini";
-  const completion = await getOpenAI().chat.completions.create({
+  const completion = await completeWithNotifyManager({
     model,
     temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
     messages: [
@@ -126,9 +126,17 @@ async function handleUpdate(token: string, body: unknown) {
       },
       ...dialogue,
     ],
+    chat: {
+      supabase,
+      conversationId: conversation.id,
+      agentId: String(agent.id),
+      channel: "telegram",
+      clientHandle: message.username ? `@${message.username}` : message.chatId,
+      clientName: message.contactName,
+    },
   });
 
-  const reply = completion.choices[0]?.message?.content?.trim() ?? "";
+  const reply = completion.text;
   if (!reply) return;
 
   const responseDelay = Number(agent.response_delay);
@@ -183,7 +191,8 @@ function readMessage(body: unknown) {
   const messageId = stringValue(message.message_id);
   if (!text || !chatId || !messageId) return null;
   const name = [stringValue(from.first_name), stringValue(from.last_name)].filter(Boolean).join(" ");
-  return { chatId, messageId, text, contactName: name || null };
+  const username = stringValue(from.username).replace(/^@/, "");
+  return { chatId, messageId, text, contactName: name || null, username: username || null };
 }
 
 async function ensureTelegramIntegration(

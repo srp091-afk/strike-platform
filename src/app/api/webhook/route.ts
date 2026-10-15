@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { readBotFlags } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
-import { getOpenAI } from "@/lib/openai";
+import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, sleep, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -132,9 +132,10 @@ export async function POST(request: NextRequest) {
 
   let reply = "";
   try {
-    const completion = await getOpenAI().chat.completions.create({
-      model: (agent.model as string) || "gpt-4o-mini",
-      temperature: clampTemperature(agent.temperature),
+    const model = (agent.model as string) || "gpt-4o-mini";
+    const completion = await completeWithNotifyManager({
+      model,
+      temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
       messages: [
         {
           role: "system",
@@ -145,8 +146,16 @@ export async function POST(request: NextRequest) {
         },
         ...dialogue,
       ],
+      chat: {
+        supabase,
+        conversationId,
+        agentId: String(agent.id),
+        channel: notifyChannel(integration.provider),
+        clientHandle: incoming.externalChatId,
+        clientName: incoming.contactName,
+      },
     });
-    reply = completion.choices[0]?.message?.content?.trim() ?? "";
+    reply = completion.text;
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "OpenAI request failed." },
@@ -359,6 +368,11 @@ async function loadWebhookAgent(
     data: fallback.data ? { ...fallback.data, split_messages: null } : null,
     error: fallback.error,
   };
+}
+
+function notifyChannel(provider: unknown) {
+  if (provider === "whatsapp" || provider === "telegram" || provider === "instagram") return provider;
+  return "unknown" as const;
 }
 
 function clampTemperature(value: unknown) {

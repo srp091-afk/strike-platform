@@ -4,7 +4,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
 import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
-import { getOpenAI } from "@/lib/openai";
+import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
 import { readGreenMedia, resolveWhatsAppMedia, visionModel, type VisionImage, type WhatsAppMedia } from "@/lib/whatsapp-media";
 
@@ -214,7 +214,7 @@ async function handleIncoming(request: NextRequest, body: unknown) {
 
     const configuredModel = (agent.model as string) || "gpt-4o-mini";
     const model = image ? visionModel(configuredModel) : configuredModel;
-    const completion = await getOpenAI().chat.completions.create({
+    const completion = await completeWithNotifyManager({
       model,
       temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
       messages: [
@@ -227,11 +227,19 @@ async function handleIncoming(request: NextRequest, body: unknown) {
         },
         ...completionMessages(dialogue, image),
       ],
+      chat: {
+        supabase,
+        conversationId,
+        agentId: String(agent.id),
+        channel: "whatsapp",
+        clientHandle: incoming.from,
+        clientName: incoming.contactName,
+      },
     });
 
-    const reply = completion.choices[0]?.message?.content?.trim() ?? "";
+    const reply = completion.text;
     if (!reply) throw new Error("Модель вернула пустой ответ.");
-    if (!(await readBotActive(supabase, conversationId))) return;
+    if (!completion.pausedByTool && !(await readBotActive(supabase, conversationId))) return;
 
     const responseDelay = Number(agent.response_delay);
     const chunks = replyChunks(reply, agent.split_messages);
