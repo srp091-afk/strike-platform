@@ -52,6 +52,7 @@ export type AgentRecord = {
   waIsActive: boolean;
   tgBotUsername: string | null;
   tgIsActive: boolean;
+  telegram_chat_id: string | null;
   created_at: string;
 };
 

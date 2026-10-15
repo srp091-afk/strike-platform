@@ -376,6 +376,10 @@ function AgentDialog({
                   value={draft.human_handoff_duration}
                   onChange={(human_handoff_duration) => patchDraft({ human_handoff_duration })}
                 />
+                <LeadNotificationsField
+                  value={draft.telegram_chat_id}
+                  onChange={(telegram_chat_id) => patchDraft({ telegram_chat_id })}
+                />
                 <MessageLimitsField
                   agentLimit={draft.limit_agent_messages}
                   clientLimit={draft.limit_client_messages}
@@ -403,6 +407,7 @@ type AgentDraft = {
   active_channels: ActiveChannels;
   response_delay: string;
   human_handoff_duration: HandoffDuration;
+  telegram_chat_id: string;
   limit_agent_messages: string;
   limit_client_messages: string;
   limit_total_messages: string;
@@ -421,6 +426,7 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     active_channels: { ...(agent?.active_channels ?? DEFAULT_ACTIVE_CHANNELS) },
     response_delay: String(agent?.response_delay ?? 0),
     human_handoff_duration: agent?.human_handoff_duration ?? "1_hour",
+    telegram_chat_id: agent?.telegram_chat_id ?? "",
     limit_agent_messages: String(agent?.limit_agent_messages ?? 0),
     limit_client_messages: String(agent?.limit_client_messages ?? 0),
     limit_total_messages: String(agent?.limit_total_messages ?? 0),
@@ -437,6 +443,7 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.model === right.model &&
     left.system_prompt === right.system_prompt &&
     left.human_handoff_duration === right.human_handoff_duration &&
+    left.telegram_chat_id.trim() === right.telegram_chat_id.trim() &&
     left.split_messages === right.split_messages &&
     sameNumber(left.temperature, right.temperature) &&
     sameNumber(left.response_delay, right.response_delay) &&
@@ -1021,6 +1028,35 @@ function HumanHandoffField({
             </option>
           ))}
         </select>
+      </label>
+    </section>
+  );
+}
+
+function LeadNotificationsField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  return (
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+      <div className="grid gap-2">
+        <h3 className="font-heading text-lg font-semibold text-zinc-900">Уведомления о лидах</h3>
+        <p className="text-sm leading-6 text-zinc-500">
+          Сюда будут приходить горячие лиды. Создайте группу в Telegram и добавьте в неё нашего бота @StrikeNotifyBot.
+        </p>
+      </div>
+      <label className="grid gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Chat ID</span>
+        <input
+          className={fieldClass}
+          name="telegram_chat_id"
+          type="text"
+          autoComplete="off"
+          value={value}
+          placeholder="Например: -100123456789"
+          onChange={(event) => onChange(event.target.value)}
+        />
+        <span className="text-xs leading-5 text-zinc-400">
+          Как узнать ID? Перешлите любое сообщение из вашей созданной группы боту @getmyid_bot и скопируйте полученное
+          число (с минусом).
+        </span>
       </label>
     </section>
   );

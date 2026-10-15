@@ -41,6 +41,7 @@ function readAgentFields(formData: FormData) {
   const waInstanceId = String(formData.get("wa_instance_id") ?? "").trim();
   const waApiToken = String(formData.get("wa_api_token") ?? "").trim();
   const waPhoneNumber = String(formData.get("wa_phone_number") ?? "").replace(/@c\.us$/i, "").replace(/\D/g, "");
+  const telegramChatId = readTelegramChatId(formData.get("telegram_chat_id"));
 
   if (!name) {
     return { ok: false as const, error: "Укажи имя агента." };
@@ -70,6 +71,10 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "Укажите Instance ID и API Token WhatsApp." };
   }
 
+  if (telegramChatId === null) {
+    return { ok: false as const, error: "ID чата Telegram должен быть числом, например -100123456789." };
+  }
+
   return {
     ok: true as const,
     id,
@@ -87,7 +92,15 @@ function readAgentFields(formData: FormData) {
     waInstanceId,
     waApiToken,
     waPhoneNumber,
+    telegramChatId,
   };
+}
+
+function readTelegramChatId(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value.trim()) return "";
+  const chatId = value.trim();
+  if (!/^-?\d{5,20}$/.test(chatId)) return null;
+  return chatId;
 }
 
 function readLimit(value: FormDataEntryValue | null) {
@@ -144,6 +157,7 @@ export async function saveAgent(_prev: SaveState, formData: FormData): Promise<S
       limit_client_messages: fields.clientMessageLimit,
       limit_total_messages: fields.totalMessageLimit,
       split_messages: fields.splitMessages,
+      telegram_chat_id: fields.telegramChatId || null,
       active_channels: fields.activeChannels,
       user_id: userId,
       ...(fields.waInstanceId && fields.waApiToken
