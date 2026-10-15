@@ -67,6 +67,44 @@ export async function ensureGreenIncomingWebhook(credentials: GreenCredentials) 
   }
 }
 
+const MAX_MEDIA_BYTES = 20 * 1024 * 1024;
+
+export async function downloadGreenFile(
+  input: { chatId: string; messageId: string; downloadUrl?: string },
+  credentials: GreenCredentials,
+) {
+  const url = await resolveGreenDownloadUrl(input, credentials);
+  const response = await fetch(url, { signal: AbortSignal.timeout(30000) });
+  if (!response.ok) throw new Error(`Green API file ${response.status}`);
+  const bytes = Buffer.from(await response.arrayBuffer());
+  if (bytes.length === 0) throw new Error("Green API вернул пустой файл.");
+  if (bytes.length > MAX_MEDIA_BYTES) throw new Error("Файл слишком большой.");
+  const mimeType = (response.headers.get("content-type") || "").split(";")[0].trim().toLowerCase();
+  return { bytes, mimeType };
+}
+
+async function resolveGreenDownloadUrl(
+  input: { chatId: string; messageId: string; downloadUrl?: string },
+  credentials: GreenCredentials,
+) {
+  try {
+    const response = await fetch(endpoint("downloadFile", credentials), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chatId: input.chatId, idMessage: input.messageId }),
+      signal: AbortSignal.timeout(20000),
+    });
+    const payload = (await response.json().catch(() => null)) as { downloadUrl?: string; url?: string } | null;
+    const fromApi = payload?.downloadUrl || payload?.url || "";
+    if (response.ok && fromApi) return fromApi;
+    console.error("[green-api] downloadFile", response.status);
+  } catch (error) {
+    console.error("[green-api] downloadFile", error instanceof Error ? error.message : error);
+  }
+  if (input.downloadUrl) return input.downloadUrl;
+  throw new Error("Green API не вернул ссылку на файл.");
+}
+
 export async function sendGreenMessage(chatId: string, message: string, credentials?: GreenCredentials) {
   const response = await fetch(endpoint("sendMessage", credentials), {
     method: "POST",

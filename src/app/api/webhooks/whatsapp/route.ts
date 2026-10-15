@@ -6,6 +6,7 @@ import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/li
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
 import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
+import { readGreenMedia, resolveWhatsAppMedia, visionModel, type VisionImage, type WhatsAppMedia } from "@/lib/whatsapp-media";
 
 type AdminClient = SupabaseClient;
 
@@ -78,23 +79,32 @@ async function handleOutgoing(request: NextRequest, body: unknown) {
 }
 
 async function handleIncoming(request: NextRequest, body: unknown) {
-  const incoming = readIncoming(body);
-  if (!incoming) return;
+  const parsed = readIncoming(body);
+  if (!parsed) return;
 
   const supabase = createWebhookAdmin();
   const channel = await resolveWhatsAppAccount(request, body, supabase);
   if (!channel) return;
 
-  if (incoming.messageId) {
+  if (parsed.messageId) {
     const { data: existing, error: duplicateError } = await supabase
       .from("messages")
       .select("id")
-      .eq("external_message_id", incoming.messageId)
+      .eq("external_message_id", parsed.messageId)
       .limit(1);
 
     if (duplicateError) throw new Error(duplicateError.message);
     if (existing && existing.length > 0) return;
   }
+
+  let incoming = parsed;
+  let image: VisionImage | null = null;
+  if (parsed.media) {
+    const resolved = await resolveWhatsAppMedia(parsed.media, channel.credentials);
+    incoming = { ...parsed, text: resolved.text };
+    image = resolved.image;
+  }
+  if (!incoming.text.trim()) return;
 
   if (!channel.canReply) {
     console.log("Остановка: ответы WhatsApp выключены");
@@ -202,7 +212,8 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     const latest = dialogue[dialogue.length - 1];
     if (!latest || latest.role !== "user" || !latest.content.trim()) return;
 
-    const model = (agent.model as string) || "gpt-4o-mini";
+    const configuredModel = (agent.model as string) || "gpt-4o-mini";
+    const model = image ? visionModel(configuredModel) : configuredModel;
     const completion = await getOpenAI().chat.completions.create({
       model,
       temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
@@ -214,7 +225,7 @@ async function handleIncoming(request: NextRequest, body: unknown) {
             agent.split_messages,
           ),
         },
-        ...dialogue,
+        ...completionMessages(dialogue, image),
       ],
     });
 
@@ -278,7 +289,28 @@ type ChatText = {
   messageId: string | null;
   contactName: string | null;
   sentAt: string | null;
+  media: WhatsAppMedia | null;
 };
+
+function completionMessages(
+  dialogue: { role: "user" | "assistant"; content: string }[],
+  image: VisionImage | null,
+) {
+  return dialogue.map((message, index) => {
+    const last = index === dialogue.length - 1;
+    if (!image || !last || message.role !== "user") return message;
+    return {
+      role: "user" as const,
+      content: [
+        { type: "text" as const, text: message.content.trim() || "Клиент прислал изображение." },
+        {
+          type: "image_url" as const,
+          image_url: { url: `data:${image.mimeType};base64,${image.base64}` },
+        },
+      ],
+    };
+  });
+}
 
 async function syncOpeningHistory(
   supabase: AdminClient,
@@ -417,15 +449,19 @@ function readIncoming(body: unknown): ChatText | null {
   const sender = asRecord(record.senderData);
   const text = readWebhookText(record);
   const from = stringValue(sender.sender);
-  if (!text || !from) return null;
+  const messageId = stringValue(record.idMessage) || null;
+  const chatId = stringValue(sender.chatId) || from;
+  const media = readGreenMedia(asRecord(record.messageData), chatId, messageId ?? "");
+  if ((!text && !media) || !from) return null;
   if (text.length > 8000) throw new Error("Сообщение слишком длинное.");
 
   return {
     from,
     text,
-    messageId: stringValue(record.idMessage) || null,
+    messageId,
     contactName: stringValue(sender.senderName) || stringValue(sender.senderContactName) || null,
     sentAt: readMessageTimestamp(record),
+    media,
   };
 }
 
@@ -454,6 +490,7 @@ function readOutgoing(body: unknown): (ChatText & { operator: boolean }) | null 
     messageId: stringValue(record.idMessage) || null,
     contactName: stringValue(sender.chatName) || stringValue(sender.senderName) || null,
     sentAt: readMessageTimestamp(record),
+    media: null,
     operator,
   };
 }
