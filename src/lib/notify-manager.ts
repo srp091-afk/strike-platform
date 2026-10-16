@@ -16,36 +16,131 @@ export type NotifyChat = {
   clientName: string | null;
 };
 
+const notifyDescription =
+  "Сообщить живому менеджеру о целевом действии клиента и, если нужно, остановить ответы бота в этом чате. Вызывай только когда это прямо следует из системных инструкций.";
+
+const notifyParameters = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    event_reason: {
+      type: "string",
+      description: "Кратко, почему нужно уведомить менеджера.",
+    },
+    extracted_data: {
+      type: "object",
+      description: "Собранные из диалога поля: имя, телефон, время, адрес и любые другие пары ключ-значение.",
+      additionalProperties: { type: "string" },
+    },
+    recommend_pause: {
+      type: "boolean",
+      description: "Остановить ИИ в этом чате после уведомления, чтобы диалог забрал менеджер.",
+    },
+  },
+  required: ["event_reason", "extracted_data", "recommend_pause"],
+};
+
 const notifyManagerTool: OpenAI.Chat.ChatCompletionTool = {
   type: "function",
   function: {
     name: "notify_manager",
-    description:
-      "Сообщить живому менеджеру о целевом действии клиента и, если нужно, остановить ответы бота в этом чате. Вызывай только когда это прямо следует из системных инструкций.",
-    parameters: {
-      type: "object",
-      additionalProperties: false,
-      properties: {
-        event_reason: {
-          type: "string",
-          description: "Кратко, почему нужно уведомить менеджера.",
-        },
-        extracted_data: {
-          type: "object",
-          description: "Собранные из диалога поля: имя, телефон, время, адрес и любые другие пары ключ-значение.",
-          additionalProperties: { type: "string" },
-        },
-        recommend_pause: {
-          type: "boolean",
-          description: "Остановить ИИ в этом чате после уведомления, чтобы диалог забрал менеджер.",
-        },
-      },
-      required: ["event_reason", "extracted_data", "recommend_pause"],
-    },
+    description: notifyDescription,
+    parameters: notifyParameters,
   },
 };
 
+const notifyManagerResponseTool: OpenAI.Responses.FunctionTool = {
+  type: "function",
+  name: "notify_manager",
+  description: notifyDescription,
+  parameters: notifyParameters,
+  strict: false,
+};
+
 export async function completeWithNotifyManager(input: {
+  model: string;
+  temperature: number;
+  messages: OpenAI.Chat.ChatCompletionMessageParam[];
+  chat: NotifyChat;
+}) {
+  if (input.model.includes("gpt-6")) return completeWithResponses(input);
+  return completeWithChat(input);
+}
+
+async function completeWithResponses(input: {
+  model: string;
+  messages: OpenAI.Chat.ChatCompletionMessageParam[];
+  chat: NotifyChat;
+}) {
+  const client = getOpenAI();
+  const first = await client.responses.create({
+    model: input.model,
+    input: toResponseInput(input.messages),
+    tools: [notifyManagerResponseTool],
+    tool_choice: "auto",
+    store: true,
+  });
+
+  const calls = first.output.filter(
+    (item): item is OpenAI.Responses.ResponseFunctionToolCall =>
+      item.type === "function_call" && item.name === "notify_manager",
+  );
+  if (calls.length === 0) return { text: first.output_text.trim(), pausedByTool: false };
+
+  let pausedByTool = false;
+  const toolOutputs: OpenAI.Responses.ResponseInputItem.FunctionCallOutput[] = [];
+  for (const call of calls) {
+    const result = await runNotifyManager(call.arguments, input.chat);
+    if (result.paused) pausedByTool = true;
+    toolOutputs.push({
+      type: "function_call_output",
+      call_id: call.call_id,
+      output: JSON.stringify(result),
+    });
+  }
+
+  const second = await client.responses.create({
+    model: input.model,
+    previous_response_id: first.id,
+    input: toolOutputs,
+    tools: [notifyManagerResponseTool],
+    tool_choice: "none",
+  });
+
+  return { text: second.output_text.trim(), pausedByTool };
+}
+
+function toResponseInput(messages: OpenAI.Chat.ChatCompletionMessageParam[]): OpenAI.Responses.ResponseInput {
+  const input: OpenAI.Responses.EasyInputMessage[] = [];
+  for (const message of messages) {
+    if (message.role !== "system" && message.role !== "user" && message.role !== "assistant") continue;
+    const content = responseContent(message.content);
+    if (content === null) continue;
+    input.push({ role: message.role, content });
+  }
+  return input;
+}
+
+function responseContent(
+  content: OpenAI.Chat.ChatCompletionMessageParam["content"],
+): OpenAI.Responses.EasyInputMessage["content"] | null {
+  if (typeof content === "string") return content;
+  if (content == null || !Array.isArray(content)) return null;
+
+  const parts: OpenAI.Responses.ResponseInputContent[] = [];
+  for (const part of content) {
+    if (part.type === "text" && part.text.trim()) {
+      parts.push({ type: "input_text", text: part.text });
+      continue;
+    }
+    if (part.type !== "image_url") continue;
+    const url = typeof part.image_url === "string" ? part.image_url : part.image_url.url;
+    if (url) parts.push({ type: "input_image", image_url: url, detail: "auto" });
+  }
+  return parts.length > 0 ? parts : null;
+}
+
+async function completeWithChat(input: {
   model: string;
   temperature: number;
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
@@ -57,8 +152,6 @@ export async function completeWithNotifyManager(input: {
     messages: input.messages,
     tools: [notifyManagerTool],
     tool_choice: "auto",
-    // gpt-6.1-sol rejects function tools in chat completions unless reasoning is off.
-    ...(input.model.includes("gpt-6") ? { reasoning_effort: "none" as const } : {}),
   });
 
   const choice = first.choices[0]?.message;
