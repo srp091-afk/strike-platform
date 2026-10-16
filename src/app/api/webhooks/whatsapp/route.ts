@@ -350,9 +350,11 @@ async function syncOpeningHistory(
     return;
   }
 
+  const clearedAt = await readContextClearedAt(supabase, conversationId);
   const outgoing = journal
     .map(readHistoryOutgoing)
     .filter((item): item is HistoryOutgoing => item !== null)
+    .filter((item) => isAfterContextReset(item.sentAt, clearedAt))
     .reverse();
   const fallbackBase = Date.now() - outgoing.length * 1000;
 
@@ -367,6 +369,31 @@ async function syncOpeningHistory(
       createdAt: item.sentAt ?? new Date(fallbackBase + index * 1000).toISOString(),
     });
   }
+}
+
+async function readContextClearedAt(supabase: AdminClient, conversationId: string) {
+  const { data, error } = await supabase
+    .from("conversations")
+    .select("context_cleared_at")
+    .eq("id", conversationId)
+    .maybeSingle();
+  if (error) {
+    if (error.message.includes("context_cleared_at")) {
+      console.error("[whatsapp webhook] context_cleared_at", error.message);
+      return null;
+    }
+    throw new Error(error.message);
+  }
+  return typeof data?.context_cleared_at === "string" ? data.context_cleared_at : null;
+}
+
+function isAfterContextReset(sentAt: string | null, clearedAt: string | null) {
+  if (!clearedAt) return true;
+  if (!sentAt) return false;
+  const sent = Date.parse(sentAt);
+  const cleared = Date.parse(clearedAt);
+  if (!Number.isFinite(sent) || !Number.isFinite(cleared)) return false;
+  return sent > cleared;
 }
 
 type HistoryOutgoing = {

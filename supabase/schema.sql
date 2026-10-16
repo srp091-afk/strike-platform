@@ -173,6 +173,7 @@ create table if not exists public.conversations (
   is_bot_active boolean not null default true,
   bot_paused_until timestamptz,
   is_processing boolean not null default false,
+  context_cleared_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint conversations_external_unique unique (integration_id, external_chat_id)

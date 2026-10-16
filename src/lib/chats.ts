@@ -11,32 +11,7 @@ export async function listConversations(agentId?: string | null): Promise<ChatTh
   if (!userId) return [];
 
   const supabase = createSupabaseAdminClient();
-  let query = supabase
-    .from("conversations")
-    .select(
-      "id, agent_id, contact_name, contact_handle, external_chat_id, last_message_preview, last_message_at, integrations(provider)",
-    )
-    .eq("user_id", userId);
-
-  if (agentId && isUuid(agentId)) {
-    const { data: links, error: linkError } = await supabase
-      .from("integrations")
-      .select("id")
-      .eq("agent_id", agentId);
-    if (linkError) throw new Error(linkError.message);
-    const integrationIds = (links ?? [])
-      .map((row) => row.id as string)
-      .filter((id) => isUuid(id));
-    const clauses = [`agent_id.eq.${agentId}`];
-    if (integrationIds.length > 0) clauses.push(`integration_id.in.(${integrationIds.join(",")})`);
-    query = query.or(clauses.join(","));
-  }
-
-  const { data, error } = await query.order("last_message_at", { ascending: false, nullsFirst: false });
-
-  if (error) throw new Error(error.message);
-
-  const rows = data ?? [];
+  const rows = await loadConversationRows(supabase, userId, agentId);
   const flags = await readBotFlags(
     supabase,
     rows.map((row) => row.id as string),
@@ -114,6 +89,26 @@ export async function deleteConversation(conversationId: string) {
   const { error: messagesError } = await supabase.from("messages").delete().eq("conversation_id", conversationId);
   if (messagesError) return { ok: false as const, error: messagesError.message };
 
+  const { error: clearError } = await supabase
+    .from("conversations")
+    .update({
+      context_cleared_at: new Date().toISOString(),
+      last_message_preview: null,
+      last_message_at: null,
+      unread_count: 0,
+      is_bot_active: true,
+      bot_paused_until: null,
+      is_processing: false,
+    })
+    .eq("id", conversationId)
+    .eq("user_id", userId);
+
+  if (!clearError) return { ok: true as const };
+  if (!clearError.message.includes("context_cleared_at")) {
+    return { ok: false as const, error: clearError.message };
+  }
+
+  console.error("[chats] context reset", clearError.message);
   const { error } = await supabase.from("conversations").delete().eq("id", conversationId).eq("user_id", userId);
   if (error) return { ok: false as const, error: error.message };
   return { ok: true as const };
@@ -126,6 +121,66 @@ export async function setConversationBotActive(conversationId: string, active: b
 
   const supabase = createSupabaseAdminClient();
   return writeBotFlag(supabase, conversationId, userId, active);
+}
+
+type ConversationRow = {
+  id: string;
+  agent_id: string | null;
+  contact_name: string | null;
+  contact_handle: string | null;
+  external_chat_id: string | null;
+  last_message_preview: string | null;
+  last_message_at: string | null;
+  context_cleared_at?: string | null;
+  integrations: unknown;
+};
+
+async function loadConversationRows(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  userId: string,
+  agentId?: string | null,
+): Promise<ConversationRow[]> {
+  const listed = await conversationQuery(supabase, userId, agentId, true);
+  const result = listed.error?.message.includes("context_cleared_at")
+    ? await conversationQuery(supabase, userId, agentId, false)
+    : listed;
+  if (result.error) throw new Error(result.error.message);
+
+  return ((result.data ?? []) as ConversationRow[]).filter((row) => !(row.context_cleared_at && !row.last_message_at));
+}
+
+async function conversationQuery(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  userId: string,
+  agentId: string | null | undefined,
+  withReset: boolean,
+) {
+  const filter = await agentFilter(supabase, agentId);
+  const ordered = withReset
+    ? supabase
+        .from("conversations")
+        .select(
+          "id, agent_id, contact_name, contact_handle, external_chat_id, last_message_preview, last_message_at, context_cleared_at, integrations(provider)",
+        )
+        .eq("user_id", userId)
+    : supabase
+        .from("conversations")
+        .select(
+          "id, agent_id, contact_name, contact_handle, external_chat_id, last_message_preview, last_message_at, integrations(provider)",
+        )
+        .eq("user_id", userId);
+  const query = filter ? ordered.or(filter) : ordered;
+  return query.order("last_message_at", { ascending: false, nullsFirst: false });
+}
+
+async function agentFilter(supabase: ReturnType<typeof createSupabaseAdminClient>, agentId?: string | null) {
+  if (!agentId || !isUuid(agentId)) return "";
+  const { data: links, error: linkError } = await supabase.from("integrations").select("id").eq("agent_id", agentId);
+  if (linkError) throw new Error(linkError.message);
+  const integrationIds = (links ?? []).map((row) => row.id as string).filter((id) => isUuid(id));
+  const clauses = [`agent_id.eq.${agentId}`];
+  if (integrationIds.length > 0) clauses.push(`integration_id.in.(${integrationIds.join(",")})`);
+  return clauses.join(",");
 }
 
 function readProvider(value: unknown): ChatProvider {
