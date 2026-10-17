@@ -21,6 +21,8 @@ const languageLabels: Record<CreativeLanguage, string> = {
   es: "Spanish",
 };
 
+const FLUX_SCHNELL = "black-forest-labs/flux-schnell";
+
 export async function generateImage(prompt: string): Promise<string> {
   return generateImageWithFlux(prompt);
 }
@@ -31,31 +33,113 @@ export async function generateImageWithFlux(prompt: string): Promise<string> {
       throw new Error("REPLICATE_API_TOKEN is not set");
     }
 
-    const output = await replicate.run("black-forest-labs/flux-schnell", {
-      input: {
-        prompt,
-        aspect_ratio: "4:5",
-        output_format: "webp",
-        output_quality: 90,
-      },
+    // Official flux-schnell schema: prompt, aspect_ratio, output_format, output_quality, …
+    // https://replicate.com/black-forest-labs/flux-schnell/api
+    const input = {
+      prompt,
+      aspect_ratio: "4:5",
+      output_format: "webp" as const,
+      output_quality: 90,
+      num_outputs: 1,
+    };
+
+    console.log("[generateImageWithFlux] request", {
+      model: FLUX_SCHNELL,
+      input,
+      authPrefix: process.env.REPLICATE_API_TOKEN.slice(0, 5),
     });
 
-    console.log("Raw Replicate output for prompt:", prompt);
-    console.log("Output data:", output);
+    // Do NOT use replicate.run() in block mode here: replicate@1.4.0 treats any
+    // status !== "starting" as done, so a Prefer:wait timeout with
+    // status:"processing" + output:null returns null without throwing.
+    let prediction = await replicate.predictions.create({
+      model: FLUX_SCHNELL,
+      input,
+    });
+
+    console.log("[generateImageWithFlux] initial prediction", summarizePrediction(prediction));
+
+    if (!isTerminalStatus(prediction.status)) {
+      prediction = await replicate.wait(prediction, { interval: 1000 });
+      console.log("[generateImageWithFlux] after wait", summarizePrediction(prediction));
+    }
+
+    if (prediction.status === "failed") {
+      throw new Error(`Prediction failed: ${stringifyUnknown(prediction.error)}`);
+    }
+    if (prediction.status === "canceled") {
+      throw new Error("Prediction canceled before output was ready.");
+    }
+    if (prediction.status !== "succeeded") {
+      throw new Error(
+        `Prediction stuck in status=${prediction.status}; output=${stringifyUnknown(prediction.output)}`,
+      );
+    }
+
+    const output = prediction.output;
+    console.log("[generateImageWithFlux] succeeded output", {
+      output,
+      outputType: describeOutputType(output),
+      logsTail: typeof prediction.logs === "string" ? prediction.logs.slice(-800) : prediction.logs,
+    });
 
     const items = Array.isArray(output) ? output : output != null ? [output] : [];
     if (items.length === 0) {
-      throw new Error("Replicate вернул пустой output. Возможно, сработал NSFW-фильтр.");
+      throw new Error(
+        `Replicate вернул пустой output после succeeded. Возможно NSFW/safety. logs=${String(prediction.logs ?? "").slice(0, 500)}`,
+      );
     }
 
     const imageUrl = resolveOutputUrl(items[0]);
     if (!imageUrl) {
-      throw new Error("Replicate вернул пустой output. Возможно, сработал NSFW-фильтр.");
+      throw new Error(`Не удалось извлечь URL из output[0]=${stringifyUnknown(items[0])}`);
     }
     return imageUrl;
   } catch (error) {
     console.error("[generateImageWithFlux]", error);
     return FALLBACK_IMAGE;
+  }
+}
+
+function isTerminalStatus(status: unknown) {
+  return status === "succeeded" || status === "failed" || status === "canceled";
+}
+
+function summarizePrediction(prediction: unknown) {
+  if (!prediction || typeof prediction !== "object") {
+    return { rawType: typeof prediction, raw: prediction };
+  }
+  const row = prediction as Record<string, unknown>;
+  return {
+    id: row.id,
+    status: row.status,
+    model: row.model,
+    version: row.version,
+    error: row.error,
+    output: row.output,
+    outputType: describeOutputType(row.output),
+    logs: typeof row.logs === "string" ? row.logs.slice(0, 2000) : row.logs,
+    metrics: row.metrics,
+    urls: row.urls,
+    created_at: row.created_at,
+    started_at: row.started_at,
+    completed_at: row.completed_at,
+    data_removed: row.data_removed,
+  };
+}
+
+function describeOutputType(output: unknown) {
+  if (output === null) return "null";
+  if (output === undefined) return "undefined";
+  if (Array.isArray(output)) return `array(length=${output.length})`;
+  return typeof output;
+}
+
+function stringifyUnknown(value: unknown) {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
   }
 }
 
