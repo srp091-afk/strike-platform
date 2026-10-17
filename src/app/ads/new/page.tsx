@@ -12,7 +12,7 @@ export default function NewAdProjectPage() {
     <PageFrame
       eyebrow="AI-Кампании"
       title="Новый проект"
-      description="Соберите бриф сами или загрузите таблицу. ИИ проверит, что в данных есть продукт и аудитория."
+      description="Ответьте на вопросы ИИ или загрузите таблицу, затем выберите визуальный стиль."
     >
       <AdProjectWizard />
     </PageFrame>

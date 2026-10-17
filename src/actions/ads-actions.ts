@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import * as XLSX from "xlsx";
 
 import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { findCreativeTemplate } from "@/lib/creative-templates";
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -11,40 +12,61 @@ export type CreateAdProjectState = {
   error: string | null;
 };
 
+export type UploadedTableState = {
+  error: string | null;
+  summary: string | null;
+  raw: unknown;
+};
+
 const validationPrompt =
   "Оцени данные. Относятся ли они к бизнесу, продукту или целевой аудитории? Верни JSON: { 'is_valid': boolean, 'reason': 'строка с вежливой причиной на русском, если данные не подходят' }.";
 
-export async function createAdProject(
-  _previous: CreateAdProjectState,
+export async function acceptUploadedTable(
+  _previous: UploadedTableState,
   formData: FormData,
-): Promise<CreateAdProjectState> {
-  const name = text(formData.get("name"));
-  const niche = text(formData.get("niche"));
-  const format = text(formData.get("format"));
-
-  if (!name) return { error: "Укажите название проекта." };
-  if (!niche) return { error: "Укажите нишу." };
-  if (format !== "brief" && format !== "table") return { error: "Выберите формат брифа." };
-
+): Promise<UploadedTableState> {
   let rawData: unknown;
   try {
-    rawData = format === "brief" ? { text: text(formData.get("brief")) } : await readUploadedTable(formData.get("file"));
+    await getAuthenticatedUserId();
+    rawData = await readUploadedTable(formData.get("file"));
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Не удалось прочитать бриф." };
-  }
-
-  const payload = format === "brief" ? (rawData as { text: string }).text : rawData;
-  if (format === "brief" && !String(payload).trim()) {
-    return { error: "Опишите продукт, его сильные стороны и идеального клиента." };
+    return { error: error instanceof Error ? error.message : "Не удалось прочитать таблицу.", summary: null, raw: null };
   }
 
   let verdict: { is_valid: boolean; reason: string };
   try {
-    verdict = await validateBusinessData(payload);
+    verdict = await validateBusinessData(rawData);
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Не удалось проверить данные." };
+    return { error: error instanceof Error ? error.message : "Не удалось проверить данные.", summary: null, raw: null };
   }
-  if (!verdict.is_valid) return { error: verdict.reason };
+  if (!verdict.is_valid) return { error: verdict.reason, summary: null, raw: null };
+
+  return { error: null, summary: summarizeTable(rawData), raw: rawData };
+}
+
+export async function createAdCampaign(
+  _previous: CreateAdProjectState,
+  formData: FormData,
+): Promise<CreateAdProjectState> {
+  const summary = text(formData.get("brief_summary"));
+  const templateId = text(formData.get("template_id"));
+  const source = text(formData.get("source"));
+  const template = findCreativeTemplate(templateId);
+
+  if (summary.length < 12) return { error: "Бриф ещё не собран." };
+  if (!template) return { error: "Выберите визуальный стиль." };
+  if (source !== "chat" && source !== "table") return { error: "Неизвестный источник брифа." };
+
+  let table: unknown = null;
+  if (source === "table") {
+    const encoded = text(formData.get("raw_data"));
+    if (encoded.length > 1_000_000) return { error: "Таблица слишком большая." };
+    try {
+      table = encoded ? JSON.parse(encoded) : null;
+    } catch {
+      return { error: "Таблица повреждена. Загрузите файл ещё раз." };
+    }
+  }
 
   let projectId = "";
   try {
@@ -52,7 +74,7 @@ export async function createAdProject(
     const userId = await getAuthenticatedUserId();
     const { data, error } = await supabase
       .from("ad_projects")
-      .insert({ user_id: userId, name })
+      .insert({ user_id: userId, name: campaignName(summary) })
       .select("id")
       .single();
     if (error || !data) return { error: error?.message ?? "Не удалось создать проект." };
@@ -60,8 +82,14 @@ export async function createAdProject(
     projectId = String(data.id);
     const { error: briefError } = await supabase.from("ad_briefs").insert({
       project_id: projectId,
-      niche,
-      raw_data: rawData,
+      niche: summary.replace(/\s+/g, " ").trim().slice(0, 120),
+      product_details: summary,
+      raw_data: {
+        brief_summary: summary,
+        template_id: template.id,
+        source,
+        table,
+      },
     });
     if (briefError) {
       await supabase.from("ad_projects").delete().eq("id", projectId).eq("user_id", userId);
@@ -71,7 +99,38 @@ export async function createAdProject(
     return { error: error instanceof Error ? error.message : "Не удалось сохранить проект." };
   }
 
-  redirect(`/ads/${projectId}`);
+  redirect("/ads");
+}
+
+function campaignName(summary: string) {
+  const clean = summary.replace(/\s+/g, " ").trim();
+  const head = clean.split(/[.!?\n]/)[0]?.trim() || clean;
+  if (head.length <= 72) return head || "AI-кампания";
+  const cut = head.slice(0, 72);
+  const space = cut.lastIndexOf(" ");
+  return `${(space > 24 ? cut.slice(0, space) : cut).trim()}…`;
+}
+
+function summarizeTable(raw: unknown) {
+  const rows = flattenRows(raw).slice(0, 40);
+  const lines = rows.map((row) => {
+    if (!row || typeof row !== "object") return String(row ?? "");
+    return Object.entries(row as Record<string, unknown>)
+      .map(([key, value]) => `${key}: ${String(value)}`)
+      .join("; ");
+  });
+  const summary = lines.join("\n").replace(/\s+\n/g, "\n").trim();
+  return summary.slice(0, 4000);
+}
+
+function flattenRows(raw: unknown): unknown[] {
+  if (Array.isArray(raw) && raw.every((item) => item && typeof item === "object" && "rows" in (item as object))) {
+    return raw.flatMap((item) => {
+      const rows = (item as { rows?: unknown }).rows;
+      return Array.isArray(rows) ? rows : [];
+    });
+  }
+  return Array.isArray(raw) ? raw : [raw];
 }
 
 async function validateBusinessData(payload: unknown) {
