@@ -40,36 +40,42 @@ export async function generateImageWithFlux(prompt: string): Promise<string> {
       },
     });
 
-    const url = firstOutputUrl(output);
-    if (!url) throw new Error("Replicate вернул пустой output.");
-    return url;
+    console.log("Raw Replicate output for prompt:", prompt);
+    console.log("Output data:", output);
+
+    const items = Array.isArray(output) ? output : output != null ? [output] : [];
+    if (items.length === 0) {
+      throw new Error("Replicate вернул пустой output. Возможно, сработал NSFW-фильтр.");
+    }
+
+    const imageUrl = resolveOutputUrl(items[0]);
+    if (!imageUrl) {
+      throw new Error("Replicate вернул пустой output. Возможно, сработал NSFW-фильтр.");
+    }
+    return imageUrl;
   } catch (error) {
     console.error("[generateImageWithFlux]", error);
     return FALLBACK_IMAGE;
   }
 }
 
-function firstOutputUrl(output: unknown): string | null {
-  const items = Array.isArray(output) ? output : output != null ? [output] : [];
-  for (const item of items) {
-    if (typeof item === "string" && /^https?:\/\//i.test(item)) return item;
-    if (item && typeof item === "object") {
-      if ("url" in item && typeof (item as { url: unknown }).url === "function") {
-        try {
-          const value = (item as { url: () => unknown }).url();
-          if (value instanceof URL) return value.href;
-          if (typeof value === "string" && /^https?:\/\//i.test(value)) return value;
-        } catch {
-          // Fall through to toString / href checks.
-        }
+function resolveOutputUrl(item: unknown): string | null {
+  if (typeof item === "string") {
+    const value = item.trim();
+    return /^https?:\/\//i.test(value) ? value : null;
+  }
+  if (item && typeof item === "object") {
+    if ("url" in item && typeof (item as { url: unknown }).url === "function") {
+      try {
+        const value = (item as { url: () => unknown }).url();
+        if (value instanceof URL) return value.href;
+        if (typeof value === "string" && /^https?:\/\//i.test(value.trim())) return value.trim();
+      } catch {
+        // Fall through.
       }
-      if (typeof (item as { href?: unknown }).href === "string") {
-        const href = (item as { href: string }).href;
-        if (/^https?:\/\//i.test(href)) return href;
-      }
-      const asString = String(item);
-      if (/^https?:\/\//i.test(asString)) return asString;
     }
+    const asString = String(item).trim();
+    if (/^https?:\/\//i.test(asString)) return asString;
   }
   return null;
 }
