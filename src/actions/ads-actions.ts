@@ -109,7 +109,7 @@ export async function createAdCampaign(
     return { error: error instanceof Error ? error.message : "Не удалось сохранить проект." };
   }
 
-  redirect("/ads");
+  redirect(`/ads/${projectId}`);
 }
 
 function isUuid(value: string) {

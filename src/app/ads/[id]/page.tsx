@@ -3,7 +3,7 @@ import { io } from "next/cache";
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { CampaignDashboard } from "@/components/campaign-dashboard";
+import { CampaignDashboard, type ProjectStatus } from "@/components/campaign-dashboard";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -33,7 +33,7 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
   await io();
   const { id } = await params;
 
-  let project: { name: string; strategy: string } | null = null;
+  let project: { name: string; strategy: string; status: ProjectStatus } | null = null;
   let creatives: { id: string; imageUrl: string }[] = [];
   let error: string | null = null;
 
@@ -67,7 +67,19 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
     );
   }
 
-  return <CampaignDashboard name={project.name} strategy={project.strategy} creatives={creatives} />;
+  return (
+    <CampaignDashboard
+      name={project.name}
+      strategy={project.strategy}
+      status={project.status}
+      creatives={creatives}
+    />
+  );
+}
+
+function readStatus(value: unknown): ProjectStatus {
+  if (value === "processing" || value === "error" || value === "ready") return value;
+  return "ready";
 }
 
 async function loadProject(id: string) {
@@ -75,7 +87,7 @@ async function loadProject(id: string) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("ad_projects")
-    .select("id, name")
+    .select("id, name, status")
     .eq("id", id)
     .eq("user_id", userId)
     .maybeSingle();
@@ -101,6 +113,7 @@ async function loadProject(id: string) {
     project: {
       name: typeof data.name === "string" && data.name.trim() ? data.name : "Без названия",
       strategy: mockStrategy,
+      status: readStatus(data.status),
     },
     creatives: stored.length > 0 ? stored : mockCreatives.map((imageUrl, index) => ({ id: `mock-${index}`, imageUrl })),
   };

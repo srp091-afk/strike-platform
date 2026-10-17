@@ -1,13 +1,15 @@
 "use client";
 
-import { Check, Copy, Download, RefreshCw, ZoomIn } from "lucide-react";
+import { Check, Copy, Download, Folder, Loader2, RefreshCw, ZoomIn } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
 
 const headlines = [
@@ -61,12 +63,28 @@ const formBenefits = [
   "Гарантия на работы 24 месяца",
 ];
 
-const questions = [
-  "Какая площадь квартиры?",
-  "Когда планируете заехать?",
-  "Нужен ремонт под ключ или только черновые работы?",
-  "Какой бюджет уже заложен?",
+const leadQuestions = [
+  {
+    prompt: "Какая площадь квартиры?",
+    answers: ["до 50 кв.м", "50-100 кв.м", "больше 100 кв.м"],
+  },
+  {
+    prompt: "Когда планируете заехать?",
+    answers: ["в этом месяце", "через 1–3 месяца", "дата не выбрана"],
+  },
+  {
+    prompt: "Нужен ремонт под ключ или только черновые работы?",
+    answers: ["под ключ", "только черновые"],
+  },
+  {
+    prompt: "Какой бюджет уже заложен?",
+    answers: ["до 1 млн ₽", "1–3 млн ₽", "больше 3 млн ₽"],
+  },
 ];
+
+const archiveFolders = ["Генерация #1 (Минимализм)", "Генерация #2 (Премиум)"];
+
+export type ProjectStatus = "ready" | "processing" | "error";
 
 const thanksMessage =
   "Смета почти готова. Напишите оператору в WhatsApp — пришлём расчёт и ближайшее окно на замер сегодня.";
@@ -76,10 +94,12 @@ const thanksCta = "Написать в WhatsApp";
 export function CampaignDashboard({
   name,
   strategy,
+  status = "ready",
   creatives,
 }: {
   name: string;
   strategy: string;
+  status?: ProjectStatus;
   creatives: { id: string; imageUrl: string }[];
 }) {
   const [zoom, setZoom] = useState<string | null>(null);
@@ -90,7 +110,7 @@ export function CampaignDashboard({
       <header className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-3xl font-bold text-white">{name}</h1>
-          <span className="rounded-full border border-zinc-800 px-2.5 py-1 text-xs font-medium text-zinc-300">Готово</span>
+          <ProjectStatusBadge status={status} />
         </div>
         <Button
           type="button"
@@ -133,7 +153,7 @@ export function CampaignDashboard({
               <AccordionContent className="grid gap-5">
                 <TextGroup label="1 экран. Приветствие" items={["Узнайте стоимость белого ключа за 2 минуты"]} />
                 <TextGroup label="Выгоды на первом экране" items={formBenefits} marked />
-                <TextGroup label="Вопросы" items={questions} />
+                <LeadQuestions />
                 <TextGroup label="Экран благодарности" items={[thanksMessage, thanksCta]} />
               </AccordionContent>
             </AccordionItem>
@@ -141,33 +161,99 @@ export function CampaignDashboard({
         </Card>
 
         <section className="lg:col-span-2">
-          <h2 className="text-xl text-white">Готовые креативы</h2>
-          <div className="mt-4 grid grid-cols-1 gap-4 md:grid-cols-2">
-            {creatives.map((creative) => (
-              <article key={creative.id} className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-black">
-                <img src={creative.imageUrl} alt="" className="aspect-[4/5] w-full object-cover" />
-                <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
-                  <div className="flex w-[min(16rem,80%)] flex-col gap-2">
-                    <Button type="button" variant="outline" onClick={() => setZoom(creative.imageUrl)}>
-                      <ZoomIn className="size-4" />
-                      Увеличить
-                    </Button>
-                    <Button
-                      type="button"
-                      className="bg-white text-black hover:bg-zinc-200 hover:shadow-none"
-                      onClick={() => toast.success("Перегенерация в разработке")}
-                    >
-                      <RefreshCw className="size-4" />
-                      Перегенерировать (1 токен)
-                    </Button>
-                  </div>
+          <Tabs defaultValue="active">
+            <TabsList>
+              <TabsTrigger value="active">Активные креативы</TabsTrigger>
+              <TabsTrigger value="archive">Архив генераций</TabsTrigger>
+            </TabsList>
+            <TabsContent value="active">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                {creatives.map((creative) => (
+                  <article key={creative.id} className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-black">
+                    <img src={creative.imageUrl} alt="" className="aspect-[4/5] w-full object-cover" />
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+                      <div className="flex w-[min(16rem,80%)] flex-col gap-2">
+                        <Button type="button" variant="outline" onClick={() => setZoom(creative.imageUrl)}>
+                          <ZoomIn className="size-4" />
+                          Увеличить
+                        </Button>
+                        <Button
+                          type="button"
+                          className="bg-white text-black hover:bg-zinc-200 hover:shadow-none"
+                          onClick={() => toast.success("Перегенерация в разработке")}
+                        >
+                          <RefreshCw className="size-4" />
+                          Перегенерировать (1 токен)
+                        </Button>
+                      </div>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            </TabsContent>
+            <TabsContent value="archive" className="grid gap-3">
+              {archiveFolders.map((folder) => (
+                <div
+                  key={folder}
+                  className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3"
+                >
+                  <Folder className="size-5 shrink-0 text-zinc-300" />
+                  <p className="min-w-0 flex-1 text-sm text-zinc-200">{folder}</p>
+                  <Button type="button" variant="outline" onClick={() => toast.success("Папка откроется в следующей версии")}>
+                    Открыть
+                  </Button>
                 </div>
-              </article>
-            ))}
-          </div>
+              ))}
+            </TabsContent>
+          </Tabs>
         </section>
       </div>
       {zoom ? <ZoomImage src={zoom} onClose={() => setZoom(null)} /> : null}
+    </div>
+  );
+}
+
+function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
+  if (status === "processing") {
+    return (
+      <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-500/30 bg-amber-500/10 px-2.5 py-1 text-xs font-medium text-amber-400">
+        <Loader2 className="size-3 animate-spin" />
+        В процессе
+      </span>
+    );
+  }
+  if (status === "error") {
+    return (
+      <span className="rounded-full border border-rose-500/30 bg-rose-500/10 px-2.5 py-1 text-xs font-medium text-rose-400">
+        Ошибка
+      </span>
+    );
+  }
+  return (
+    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400">
+      Готово
+    </span>
+  );
+}
+
+function LeadQuestions() {
+  return (
+    <div className="grid gap-3">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Вопросы</p>
+      <ul className="grid gap-3">
+        {leadQuestions.map((question) => (
+          <li key={question.prompt} className="grid gap-2">
+            <CopyRow text={question.prompt} />
+            <div className="flex flex-wrap gap-2">
+              {question.answers.map((answer) => (
+                <Badge key={answer} variant="outline" className="text-zinc-400">
+                  {answer}
+                </Badge>
+              ))}
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
