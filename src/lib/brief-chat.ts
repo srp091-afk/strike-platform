@@ -1,13 +1,35 @@
-export const briefSystemPrompt = `Роль: Ты — бескомпромиссный ИИ-маркетолог платформы STRIKE. Твоя задача — провести короткое интервью с клиентом и собрать железобетонный бриф для запуска рекламы.
-Правила:
-1. Один шаг — один вопрос. Не вываливай списки.
-2. Нулевая толерантность к «воде». Если клиент пишет общие фразы («высокое качество», «индивидуальный подход»), останавливай его: "Это абстракция. Дайте цифры или факты. В чем измеряется качество?".
-3. Твои сообщения короткие (до 3 предложений).
-4. Структура брифа, которую нужно собрать: Что продаем? Кто целевая аудитория (боль)? Главная выгода/оффер (цифры, сроки)?
-Условие завершения: Как только соберешь четкие факты по всем 3 пунктам, прекрати задавать вопросы. Твое ПОСЛЕДНЕЕ сообщение должно содержать строго валидный JSON:
-{"status": "complete", "brief_summary": "Концентрированная выжимка собранных фактов"}`;
+export const briefSystemPrompt = `Роль: Ты — дружелюбный, вовлеченный ИИ-маркетолог платформы STRIKE. Общаешься открыто, по-приятельски, как профи, который помогает партнеру запустить крутую рекламу.
+Твоя задача — собрать бриф (Продукт, ЦА/Боли, Главная выгода/Оффер в цифрах).
 
-const placeholderSummary = "Концентрированная выжимка собранных фактов";
+Правила:
+1. Эмпатия и фиксация: Обязательно хвали и кратко фиксируй то, что сказал клиент (например: "Супер, записал: красим премиум авто за 5 дней. Теперь давай уточним...").
+2. Фильтр воды: Если клиент пишет абстракции ("индивидуальный подход"), мягко, по-дружески попроси цифры: "Звучит классно, но давай оцифруем для рекламы. Что именно значит 'индивидуальный' в вашем случае?".
+3. Глубокий анализ ниши: На каждом вопросе ты должен глубоко проанализировать нишу клиента и предложить 3-4 максимально сильных, конвертящих варианта ответа (факты, боли, офферы), чтобы клиенту было проще.
+4. ОДИН ответ бота — это строго JSON объект:
+{
+  "message": "Текст твоего ответа/вопроса",
+  "suggestions": ["вариант 1", "вариант 2", "вариант 3"],
+  "status": "in_progress" | "confirm" | "complete",
+  "brief_summary": "текущая выжимка (заполняется только на статусе confirm или complete)"
+}
+
+Логика статусов:
+- "in_progress" — пока собираешь данные.
+- "confirm" — когда ты собрал все факты. Выведи итоговое резюме в "message" и спроси: "Всё верно или хочешь что-то добавить?". В "suggestions" передай ["Да, всё супер, генерируем!", "Хочу добавить деталь"].
+- "complete" — когда клиент подтвердил резюме (нажал "Да").`;
+
+const placeholderSummary = "текущая выжимка (заполняется только на статусе confirm или complete)";
+
+const confirmSuggestions = ["Да, всё супер, генерируем!", "Хочу добавить деталь"];
+
+export type BriefStatus = "in_progress" | "confirm" | "complete";
+
+export type BriefReply = {
+  message: string;
+  suggestions: string[];
+  status: BriefStatus;
+  briefSummary: string | null;
+};
 
 export type BriefTurn = {
   role: "user" | "assistant";
@@ -34,24 +56,54 @@ export function sanitizeBriefTurns(body: unknown): BriefTurn[] | null {
   return messages;
 }
 
-export function extractCompleteBrief(content: string) {
-  for (const candidate of jsonObjects(content).reverse()) {
-    const summary = readComplete(candidate);
-    if (summary) return summary;
-  }
-  return null;
+export function parseBriefReply(content: string): BriefReply | null {
+  const trimmed = content.trim();
+  const direct = readReply(trimmed);
+  if (direct) return direct;
+  const first = jsonObjects(content)[0];
+  if (!first || first === trimmed) return null;
+  return readReply(first);
 }
 
-function readComplete(raw: string) {
+function readReply(raw: string): BriefReply | null {
   try {
-    const value = JSON.parse(raw) as { status?: unknown; brief_summary?: unknown };
-    if (value.status !== "complete" || typeof value.brief_summary !== "string") return null;
-    const summary = value.brief_summary.trim();
-    if (summary.length < 12 || summary === placeholderSummary) return null;
-    return summary;
+    const value = JSON.parse(raw) as {
+      message?: unknown;
+      suggestions?: unknown;
+      status?: unknown;
+      brief_summary?: unknown;
+    };
+    const message = typeof value.message === "string" ? value.message.trim() : "";
+    if (!message) return null;
+
+    let suggestions = normalizeSuggestions(value.suggestions).slice(0, 4);
+    const briefSummary = readSummary(value.brief_summary);
+    let status: BriefStatus = "in_progress";
+    if (value.status === "confirm" || value.status === "complete" || value.status === "in_progress") {
+      status = value.status;
+    }
+    if (status === "complete" && !briefSummary) status = "confirm";
+    if (status === "confirm" && suggestions.length === 0) suggestions = confirmSuggestions;
+
+    return { message, suggestions, status, briefSummary };
   } catch {
     return null;
   }
+}
+
+function normalizeSuggestions(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function readSummary(value: unknown) {
+  if (typeof value !== "string") return null;
+  const summary = value.trim();
+  if (summary.length < 12 || summary === placeholderSummary) return null;
+  return summary;
 }
 
 function jsonObjects(content: string) {

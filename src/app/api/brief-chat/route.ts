@@ -1,4 +1,4 @@
-import { extractCompleteBrief, briefSystemPrompt, sanitizeBriefTurns } from "@/lib/brief-chat";
+import { briefSystemPrompt, parseBriefReply, sanitizeBriefTurns } from "@/lib/brief-chat";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { getOpenAI } from "@/lib/openai";
 
@@ -25,29 +25,28 @@ export async function POST(request: Request) {
 
   try {
     const completion = await getOpenAI().chat.completions.create({
-      model: "gpt-4o-mini",
-      temperature: 0.2,
+      model: "gpt-4o",
+      temperature: 0.4,
+      response_format: { type: "json_object" },
       messages: [{ role: "system", content: briefSystemPrompt }, ...messages],
     });
     const reply = completion.choices[0]?.message?.content?.trim() ?? "";
-    if (!reply) {
-      return Response.json({ error: "Модель вернула пустой ответ." }, { status: 502 });
-    }
-
-    const briefSummary = extractCompleteBrief(reply);
-    if (briefSummary) {
-      return Response.json({ complete: true, brief_summary: briefSummary });
-    }
-
-    const trimmed = reply.trim();
-    if (trimmed.startsWith("```") || trimmed.startsWith("{")) {
+    const parsed = reply ? parseBriefReply(reply) : null;
+    if (!parsed) {
       return Response.json({
-        complete: false,
-        reply: "Пока рано закрывать бриф. Назовите продукт и регион конкретными словами.",
+        message: "Не поймал мысль. Напиши ещё раз, что продаём и в каком регионе?",
+        suggestions: [],
+        status: "in_progress",
+        brief_summary: null,
       });
     }
 
-    return Response.json({ complete: false, reply });
+    return Response.json({
+      message: parsed.message,
+      suggestions: parsed.suggestions,
+      status: parsed.status,
+      brief_summary: parsed.briefSummary,
+    });
   } catch (error) {
     return Response.json({ error: publicError(error) }, { status: 500 });
   }

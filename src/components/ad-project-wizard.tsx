@@ -41,9 +41,11 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [category, setCategory] = useState("Все");
   const [createState, createAction, creating] = useActionState(createAdCampaign, createInitial);
+  const sendingRef = useRef(false);
   const threadRef = useRef<HTMLDivElement>(null);
 
   const acceptTable = useCallback((summary: string, raw: unknown) => {
@@ -57,16 +59,17 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     const thread = threadRef.current;
     if (!thread) return;
     thread.scrollTop = thread.scrollHeight;
-  }, [messages, sending, stage]);
+  }, [messages, sending, suggestions, stage]);
 
-  async function sendMessage(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const text = draft.trim();
-    if (!text || sending) return;
+  async function submitText(text: string) {
+    const value = text.trim();
+    if (!value || sendingRef.current) return;
 
-    const next = [...messages, { role: "user" as const, content: text }];
+    const next = [...messages, { role: "user" as const, content: value }];
+    sendingRef.current = true;
     setMessages(next);
     setDraft("");
+    setSuggestions([]);
     setSending(true);
     setChatError(null);
 
@@ -76,28 +79,42 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ messages: next }),
       });
-      const payload = (await response.json()) as { error?: string; complete?: boolean; brief_summary?: string; reply?: string };
+      const payload = (await response.json()) as {
+        error?: string;
+        message?: string;
+        suggestions?: unknown;
+        status?: string;
+        brief_summary?: string | null;
+      };
       if (!response.ok) {
         setChatError(payload.error || "Не удалось отправить сообщение.");
         return;
       }
-      if (payload.complete === true && typeof payload.brief_summary === "string" && payload.brief_summary.trim()) {
+      if (payload.status === "complete" && typeof payload.brief_summary === "string" && payload.brief_summary.trim()) {
         setSource("chat");
         setBriefSummary(payload.brief_summary.trim());
         setTableRaw(null);
         setStage("style");
         return;
       }
-      if (typeof payload.reply === "string" && payload.reply.trim()) {
-        setMessages((current) => [...current, { role: "assistant", content: payload.reply!.trim() }]);
+      const message = typeof payload.message === "string" ? payload.message.trim() : "";
+      if (!message) {
+        setChatError("Модель вернула пустой ответ.");
         return;
       }
-      setChatError("Модель вернула пустой ответ.");
+      setMessages((current) => [...current, { role: "assistant", content: message }]);
+      setSuggestions(readSuggestions(payload.suggestions));
     } catch {
       setChatError("Не удалось связаться с сервером.");
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
+  }
+
+  function sendMessage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void submitText(draft);
   }
 
   const templateCategories = ["Все", ...new Set(templates.map((template) => template.category))];
@@ -154,6 +171,21 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
                   ))}
                   {sending ? (
                     <p className="self-start rounded-2xl bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200">…</p>
+                  ) : null}
+                  {!sending && suggestions.length > 0 ? (
+                    <div className="flex flex-wrap gap-2 self-start">
+                      {suggestions.map((suggestion, index) => (
+                        <Button
+                          key={`${suggestion}-${index}`}
+                          type="button"
+                          variant="outline"
+                          className="h-auto whitespace-normal rounded-full bg-zinc-800 px-3 py-1.5 text-left text-xs font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white"
+                          onClick={() => void submitText(suggestion)}
+                        >
+                          {suggestion}
+                        </Button>
+                      ))}
+                    </div>
                   ) : null}
                 </div>
                 {chatError ? (
@@ -251,6 +283,15 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
       </Card>
     </div>
   );
+}
+
+function readSuggestions(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((item): item is string => typeof item === "string")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 4);
 }
 
 function TableUpload({ onAccepted }: { onAccepted: (summary: string, raw: unknown) => void }) {
