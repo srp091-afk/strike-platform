@@ -11,16 +11,16 @@ export const metadata: Metadata = {
 
 export default function NewAdProjectPage() {
   return (
-    <div className="mx-auto flex h-[calc(100dvh-114px)] w-full max-w-7xl flex-col overflow-hidden px-6 py-4">
-      <header className="shrink-0">
+    <div className="mx-auto w-full max-w-7xl px-6 py-8">
+      <header>
         <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">AI-Кампании</p>
-        <h1 className="mt-1 text-3xl font-semibold text-white">Новый проект</h1>
-        <p className="mt-1 max-w-2xl text-sm leading-6 text-zinc-400">
+        <h1 className="mt-2 text-3xl font-semibold text-white sm:text-4xl">Новый проект</h1>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
           Ответьте на вопросы ИИ или загрузите таблицу, затем выберите визуальный стиль.
         </p>
       </header>
-      <div className="mt-4 min-h-0 flex-1">
-        <Suspense fallback={<div className="h-full rounded-2xl border border-zinc-800 bg-zinc-900/40" />}>
+      <div className="mt-8">
+        <Suspense fallback={<div className="mx-auto h-80 max-w-5xl rounded-2xl border border-zinc-800 bg-zinc-900/40" />}>
           <NewProjectForm />
         </Suspense>
       </div>

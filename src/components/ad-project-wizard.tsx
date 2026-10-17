@@ -1,7 +1,7 @@
 "use client";
 
 import { ArrowUp, Bot, Link as LinkIcon, Mic } from "lucide-react";
-import { useActionState, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { useActionState, useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
 
 import { acceptUploadedTable, createAdCampaign, type CreateAdProjectState, type UploadedTableState } from "@/actions/ads-actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -64,9 +64,8 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   }, []);
 
   useEffect(() => {
-    const thread = threadRef.current;
-    if (!thread) return;
-    thread.scrollTop = thread.scrollHeight;
+    if (messages.length <= 1 && !sending) return;
+    threadRef.current?.lastElementChild?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [messages, sending, suggestions, suggestionsLoading, stage]);
 
   useEffect(() => {
@@ -207,9 +206,9 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   const selected = templates.find((template) => template.id === selectedTemplate) ?? null;
 
   return (
-    <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col">
-      <Card className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden border-zinc-800 bg-zinc-900/40 p-4 sm:p-6">
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto w-full max-w-5xl">
+      <Card className="grid gap-5 border-zinc-800 bg-zinc-900/40 p-4 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
             Шаг {stage === "intake" ? "1" : "2"} из 2
           </p>
@@ -220,8 +219,8 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
         </div>
 
         {stage === "intake" ? (
-          <div className="flex min-h-0 flex-1 flex-col gap-4">
-            <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
+          <div className="grid min-w-0 gap-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="grid gap-1">
                 <h2 className="font-heading text-lg font-semibold text-white">Сбор фактов</h2>
                 <p className="text-sm text-zinc-400">ИИ задаст вопросы по одному или примет готовую таблицу.</p>
@@ -232,18 +231,14 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
               </Button>
             </div>
 
-            <Tabs defaultValue="brief" className="min-h-0 flex-1">
-              <TabsList className="shrink-0">
+            <Tabs defaultValue="brief" className="min-w-0">
+              <TabsList>
                 <TabsTrigger value="brief">Пройти AI-бриф</TabsTrigger>
                 <TabsTrigger value="table">Загрузить готовую таблицу</TabsTrigger>
               </TabsList>
-              <TabsContent value="brief" className="flex min-h-0 flex-1 flex-col">
-                <div className="relative flex h-[600px] max-h-full min-h-0 flex-col overflow-hidden rounded-xl border border-zinc-800 bg-black">
-                  <div
-                    ref={threadRef}
-                    className="flex min-h-0 flex-1 flex-col space-y-6 overflow-y-auto px-6 pt-6 pb-36 scrollbar-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0"
-                    aria-live="polite"
-                  >
+              <TabsContent value="brief" className="min-w-0">
+                <div className="min-w-0 overflow-x-hidden rounded-xl border border-zinc-800 bg-black">
+                  <div ref={threadRef} className="flex min-w-0 flex-col gap-6 px-6 pt-6" aria-live="polite">
                     {messages.map((message, index) =>
                       message.role === "assistant" ? (
                         <div key={`${message.role}-${index}`} className="flex items-start gap-3">
@@ -290,14 +285,13 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
                       />
                     )}
                   </div>
-                  <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-32 bg-gradient-to-t from-black via-black/80 to-transparent" />
-                  <form className="absolute inset-x-0 bottom-0 z-20 p-4" onSubmit={sendMessage}>
-                    {chatError ? (
-                      <Alert variant="destructive" className="mb-3">
-                        <AlertTitle>Ответ не отправлен</AlertTitle>
-                        <AlertDescription>{chatError}</AlertDescription>
-                      </Alert>
-                    ) : null}
+                  {chatError ? (
+                    <Alert variant="destructive" className="mx-4 mt-4">
+                      <AlertTitle>Ответ не отправлен</AlertTitle>
+                      <AlertDescription>{chatError}</AlertDescription>
+                    </Alert>
+                  ) : null}
+                  <form className="p-4" onSubmit={sendMessage}>
                     <div className="relative">
                       <Textarea
                         value={draft}
@@ -334,13 +328,13 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
                   </form>
                 </div>
               </TabsContent>
-              <TabsContent value="table" className="min-h-0 flex-1 overflow-y-auto">
+              <TabsContent value="table">
                 <TableUpload onAccepted={acceptTable} />
               </TabsContent>
             </Tabs>
           </div>
         ) : (
-          <form action={createAction} className="grid min-h-0 flex-1 gap-5 overflow-y-auto">
+          <form action={createAction} className="grid gap-5">
             <input type="hidden" name="brief_summary" value={briefSummary} />
             <input type="hidden" name="template_id" value={selectedTemplate ?? ""} />
             <input type="hidden" name="source" value={source} />
@@ -438,28 +432,81 @@ function SuggestionRow({
   suggestions: string[];
   onPick: (suggestion: string) => void;
 }) {
-  if (loading) {
-    return (
-      <div className="flex w-full min-w-0 gap-2 overflow-x-auto pb-2 pl-11 scrollbar-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-        {[0, 1, 2].map((item) => (
-          <span key={item} className="h-9 w-28 shrink-0 animate-pulse rounded-xl bg-zinc-800" />
-        ))}
-      </div>
-    );
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const isDragging = useRef(false);
+  const startX = useRef(0);
+  const scrollLeft = useRef(0);
+  const dragged = useRef(false);
+
+  useEffect(() => {
+    const row = scrollRef.current;
+    if (!row) return;
+    const onWheel = (event: WheelEvent) => {
+      if (row.scrollWidth <= row.clientWidth + 1) return;
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY)) return;
+      event.preventDefault();
+      row.scrollLeft += event.deltaY;
+    };
+    row.addEventListener("wheel", onWheel, { passive: false });
+    return () => row.removeEventListener("wheel", onWheel);
+  }, [loading, suggestions]);
+
+  function onMouseDown(event: MouseEvent<HTMLDivElement>) {
+    const row = scrollRef.current;
+    if (!row) return;
+    isDragging.current = true;
+    dragged.current = false;
+    startX.current = event.pageX - row.offsetLeft;
+    scrollLeft.current = row.scrollLeft;
   }
-  if (suggestions.length === 0) return null;
+
+  function stopDragging() {
+    isDragging.current = false;
+  }
+
+  function onMouseMove(event: MouseEvent<HTMLDivElement>) {
+    const row = scrollRef.current;
+    if (!isDragging.current || !row) return;
+    event.preventDefault();
+    const x = event.pageX - row.offsetLeft;
+    const walk = x - startX.current;
+    if (Math.abs(walk) > 5) dragged.current = true;
+    row.scrollLeft = scrollLeft.current - walk;
+  }
+
+  function onChipClick(suggestion: string) {
+    if (dragged.current) {
+      dragged.current = false;
+      return;
+    }
+    onPick(suggestion);
+  }
+
+  if (!loading && suggestions.length === 0) return null;
+
   return (
-    <div className="flex w-full min-w-0 gap-2 overflow-x-auto pb-2 pl-11 scrollbar-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
-      {suggestions.map((suggestion, index) => (
-        <button
-          key={`${suggestion}-${index}`}
-          type="button"
-          className="shrink-0 cursor-pointer rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2 text-sm whitespace-nowrap text-zinc-300 shadow-sm transition-all hover:border-zinc-500 hover:bg-zinc-800 hover:text-white"
-          onClick={() => onPick(suggestion)}
-        >
-          {suggestion}
-        </button>
-      ))}
+    <div
+      ref={scrollRef}
+      className="flex w-full min-w-0 max-w-full cursor-grab gap-2 overflow-x-auto pb-2 pl-11 select-none [-ms-overflow-style:none] [scrollbar-width:none] active:cursor-grabbing [&::-webkit-scrollbar]:hidden"
+      onMouseDown={onMouseDown}
+      onMouseLeave={stopDragging}
+      onMouseUp={stopDragging}
+      onMouseMove={onMouseMove}
+    >
+      {loading
+        ? [0, 1, 2].map((item) => (
+            <span key={item} className="h-9 w-28 shrink-0 animate-pulse rounded-xl bg-zinc-800" />
+          ))
+        : suggestions.map((suggestion, index) => (
+            <button
+              key={`${suggestion}-${index}`}
+              type="button"
+              className="shrink-0 cursor-grab rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2 text-sm whitespace-nowrap text-zinc-300 shadow-sm transition-all select-none hover:border-zinc-500 hover:bg-zinc-800 hover:text-white active:cursor-grabbing"
+              onClick={() => onChipClick(suggestion)}
+            >
+              {suggestion}
+            </button>
+          ))}
     </div>
   );
 }
