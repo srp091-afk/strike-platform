@@ -16,7 +16,12 @@ export const briefSystemPrompt = `Роль: Ты — дружелюбный, в�
 Логика статусов:
 - "in_progress" — пока собираешь данные.
 - "confirm" — когда ты собрал все факты. Выведи итоговое резюме в "message" и спроси: "Всё верно или хочешь что-то добавить?". В "suggestions" передай ["Да, всё супер, генерируем!", "Хочу добавить деталь"].
-- "complete" — когда клиент подтвердил резюме (нажал "Да").`;
+- "complete" — когда клиент подтвердил резюме (нажал "Да").
+5. АЛГОРИТМ ЗАВЕРШЕНИЯ ДИАЛОГА (СТРОГИЕ ЛИМИТЫ):
+Ты ОБЯЗАН перевести статус в "confirm", вывести итоговое резюме в "message" и ждать подтверждения пользователя, если срабатывает ОДНО ИЗ ТРЕХ условий:
+- УСЛОВИЕ 1 (Успешный сбор): Ты четко закрыл все 3 базовых блока (1. Продукт, 2. Боль ЦА, 3. Твердый оффер/цифры). Как только они есть — сразу финализируй.
+- УСЛОВИЕ 2 (Жесткий лимит шагов): Диалог достиг максимума в 10 твоих вопросов. Это хард-лимит. Задавать 11-й вопрос ЗАПРЕЩЕНО. На 11-м шаге принудительно формируй резюме из того, что успел собрать.
+- УСЛОВИЕ 3 (Защита от уклонения): Если пользователь 2 раза подряд льет "воду", игнорирует вопрос или отказывается давать конкретику — прекращай допрос. Формируй резюме на базе того, что есть.`;
 
 const placeholderSummary = "текущая выжимка (заполняется только на статусе confirm или complete)";
 
@@ -36,24 +41,48 @@ export type BriefTurn = {
   content: string;
 };
 
-export function sanitizeBriefTurns(body: unknown): BriefTurn[] | null {
-  if (!body || typeof body !== "object") return null;
-  const raw = (body as { messages?: unknown }).messages;
-  if (!Array.isArray(raw) || raw.length === 0 || raw.length > 24) return null;
-
+export function readBriefHistory(value: unknown) {
+  if (!Array.isArray(value)) return [];
   const messages: BriefTurn[] = [];
-  for (const item of raw) {
-    if (!item || typeof item !== "object") return null;
+  for (const item of value.slice(-24)) {
+    if (!item || typeof item !== "object") continue;
     const role = (item as { role?: unknown }).role;
     const content = (item as { content?: unknown }).content;
-    if ((role !== "user" && role !== "assistant") || typeof content !== "string") return null;
+    if ((role !== "user" && role !== "assistant") || typeof content !== "string") continue;
     const text = content.trim();
-    if (!text || text.length > 4000) return null;
+    if (!text || text.length > 4000) continue;
     messages.push({ role, content: text });
   }
-
-  if (messages[messages.length - 1]?.role !== "user") return null;
   return messages;
+}
+
+export function sanitizeBriefTurns(body: unknown): BriefTurn[] | null {
+  if (!body || typeof body !== "object") return null;
+  const messages = readBriefHistory((body as { messages?: unknown }).messages);
+  if (messages.length === 0 || messages[messages.length - 1]?.role !== "user") return null;
+  return messages;
+}
+
+export function applyQuestionLimit(turns: BriefTurn[], reply: BriefReply): BriefReply {
+  const asked = turns.filter((turn) => turn.role === "assistant").length;
+  if (asked < 10 || reply.status !== "in_progress") return reply;
+  const summary = reply.briefSummary ?? knownFacts(turns);
+  return {
+    message: `${summary}\n\nВсё верно или хочешь что-то добавить?`,
+    suggestions: confirmSuggestions,
+    status: "confirm",
+    briefSummary: summary,
+  };
+}
+
+export function knownFacts(turns: BriefTurn[]) {
+  const text = turns
+    .filter((turn) => turn.role === "user")
+    .map((turn) => turn.content)
+    .join(". ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.slice(0, 700) || "Бриф собран по тем фактам, которые уже есть.";
 }
 
 export function parseBriefReply(content: string): BriefReply | null {

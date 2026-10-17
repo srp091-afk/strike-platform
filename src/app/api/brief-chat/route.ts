@@ -1,4 +1,4 @@
-import { briefSystemPrompt, parseBriefReply, sanitizeBriefTurns } from "@/lib/brief-chat";
+import { applyQuestionLimit, briefSystemPrompt, knownFacts, parseBriefReply, sanitizeBriefTurns } from "@/lib/brief-chat";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { getOpenAI } from "@/lib/openai";
 
@@ -24,15 +24,31 @@ export async function POST(request: Request) {
   }
 
   try {
+    const asked = messages.filter((turn) => turn.role === "assistant").length;
     const completion = await getOpenAI().chat.completions.create({
       model: "gpt-4o",
       temperature: 0.4,
       response_format: { type: "json_object" },
-      messages: [{ role: "system", content: briefSystemPrompt }, ...messages],
+      messages: [
+        {
+          role: "system",
+          content: `${briefSystemPrompt}\n\nФакт для лимита: в истории уже ${asked} твоих реплик. Если их 10 или больше, этот ответ — 11-й шаг: status только "confirm", новый вопрос запрещён.`,
+        },
+        ...messages,
+      ],
     });
     const reply = completion.choices[0]?.message?.content?.trim() ?? "";
     const parsed = reply ? parseBriefReply(reply) : null;
     if (!parsed) {
+      if (asked >= 10) {
+        const summary = knownFacts(messages);
+        return Response.json({
+          message: `${summary}\n\nВсё верно или хочешь что-то добавить?`,
+          suggestions: ["Да, всё супер, генерируем!", "Хочу добавить деталь"],
+          status: "confirm",
+          brief_summary: summary,
+        });
+      }
       return Response.json({
         message: "Не поймал мысль. Напиши ещё раз, что продаём и в каком регионе?",
         suggestions: [],
@@ -41,11 +57,12 @@ export async function POST(request: Request) {
       });
     }
 
+    const limited = applyQuestionLimit(messages, parsed);
     return Response.json({
-      message: parsed.message,
-      suggestions: parsed.suggestions,
-      status: parsed.status,
-      brief_summary: parsed.briefSummary,
+      message: limited.message,
+      suggestions: limited.suggestions,
+      status: limited.status,
+      brief_summary: limited.briefSummary,
     });
   } catch (error) {
     return Response.json({ error: publicError(error) }, { status: 500 });

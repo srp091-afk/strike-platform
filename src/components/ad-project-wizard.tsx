@@ -1,6 +1,6 @@
 "use client";
 
-import { Link as LinkIcon } from "lucide-react";
+import { ArrowUp, Bot, Link as LinkIcon, Mic } from "lucide-react";
 import { useActionState, useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import { acceptUploadedTable, createAdCampaign, type CreateAdProjectState, type UploadedTableState } from "@/actions/ads-actions";
@@ -8,6 +8,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
 import { cn } from "@/lib/utils";
@@ -42,11 +43,18 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   const [sending, setSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionClicks, setSuggestionClicks] = useState(0);
+  const [listening, setListening] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [category, setCategory] = useState("Все");
   const [createState, createAction, creating] = useActionState(createAdCampaign, createInitial);
   const sendingRef = useRef(false);
   const threadRef = useRef<HTMLDivElement>(null);
+  const suggestionRequest = useRef(0);
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
+  const draftRef = useRef("");
+  draftRef.current = draft;
 
   const acceptTable = useCallback((summary: string, raw: unknown) => {
     setSource("table");
@@ -59,17 +67,25 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     const thread = threadRef.current;
     if (!thread) return;
     thread.scrollTop = thread.scrollHeight;
-  }, [messages, sending, suggestions, stage]);
+  }, [messages, sending, suggestions, suggestionsLoading, stage]);
+
+  useEffect(() => {
+    return () => recognitionRef.current?.stop();
+  }, []);
 
   async function submitText(text: string) {
     const value = text.trim();
     if (!value || sendingRef.current) return;
 
+    recognitionRef.current?.stop();
+    suggestionRequest.current += 1;
     const next = [...messages, { role: "user" as const, content: value }];
     sendingRef.current = true;
     setMessages(next);
     setDraft("");
     setSuggestions([]);
+    setSuggestionsLoading(false);
+    setSuggestionClicks(0);
     setSending(true);
     setChatError(null);
 
@@ -117,6 +133,75 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     void submitText(draft);
   }
 
+  function appendSuggestion(suggestion: string) {
+    const nextDraft = joinDraft(draft, suggestion);
+    const nextClicks = suggestionClicks + 1;
+    setDraft(nextDraft);
+    setSuggestionClicks(nextClicks);
+    if (suggestionClicks >= 10) return;
+    void refreshSuggestions(nextDraft);
+  }
+
+  async function refreshSuggestions(draftText: string) {
+    const requestId = suggestionRequest.current + 1;
+    suggestionRequest.current = requestId;
+    setSuggestionsLoading(true);
+    try {
+      const response = await fetch("/api/brief-chat/suggestions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ history: messages, draftText }),
+      });
+      const payload = (await response.json()) as { suggestions?: unknown };
+      if (requestId !== suggestionRequest.current) return;
+      setSuggestions(response.ok ? readSuggestions(payload.suggestions) : []);
+    } catch {
+      if (requestId !== suggestionRequest.current) return;
+      setSuggestions([]);
+    } finally {
+      if (requestId === suggestionRequest.current) setSuggestionsLoading(false);
+    }
+  }
+
+  function toggleVoice() {
+    const Recognition = speechRecognition();
+    if (!Recognition) {
+      toast.error("Голосовой ввод не поддерживается в этом браузере.");
+      return;
+    }
+    if (listening) {
+      recognitionRef.current?.stop();
+      return;
+    }
+
+    const recognition = new Recognition();
+    const base = draftRef.current.trim();
+    recognition.lang = "ru-RU";
+    recognition.continuous = true;
+    recognition.interimResults = true;
+    recognition.onresult = (event) => {
+      let spoken = "";
+      for (let index = 0; index < event.results.length; index += 1) {
+        spoken += event.results[index]?.[0]?.transcript ?? "";
+      }
+      setDraft(base ? `${base} ${spoken.trim()}` : spoken.trim());
+    };
+    recognition.onerror = (event) => {
+      setListening(false);
+      if (event.error === "aborted" || event.error === "no-speech") return;
+      toast.error(event.error === "not-allowed" ? "Нет доступа к микрофону." : "Не удалось распознать речь.");
+    };
+    recognition.onend = () => setListening(false);
+    recognitionRef.current = recognition;
+    try {
+      recognition.start();
+      setListening(true);
+    } catch {
+      setListening(false);
+      toast.error("Не удалось включить микрофон.");
+    }
+  }
+
   const templateCategories = ["Все", ...new Set(templates.map((template) => template.category))];
   const visibleTemplates = category === "Все" ? templates : templates.filter((template) => template.category === category);
   const selected = templates.find((template) => template.id === selectedTemplate) ?? null;
@@ -155,38 +240,40 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
               <TabsContent value="brief" className="grid gap-3">
                 <div
                   ref={threadRef}
-                  className="flex h-[400px] flex-col gap-3 overflow-y-auto rounded-xl border border-zinc-800 bg-black/40 p-4"
+                  className="flex h-[400px] flex-col gap-5 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0"
                   aria-live="polite"
                 >
-                  {messages.map((message, index) => (
-                    <p
-                      key={`${message.role}-${index}`}
-                      className={cn(
-                        "max-w-[85%] rounded-2xl px-3 py-2 text-sm leading-6 text-zinc-200",
-                        message.role === "assistant" ? "self-start bg-zinc-800/50" : "self-end bg-zinc-700",
-                      )}
-                    >
-                      {message.content}
-                    </p>
-                  ))}
+                  {messages.map((message, index) =>
+                    message.role === "assistant" ? (
+                      <div key={`${message.role}-${index}`} className="flex items-start gap-3">
+                        <span className="mt-0.5 inline-flex shrink-0 rounded-full border border-zinc-800 bg-zinc-900 p-1.5 text-zinc-300">
+                          <Bot className="size-4" />
+                        </span>
+                        <p className="pt-1 text-sm leading-6 text-zinc-200">{message.content}</p>
+                      </div>
+                    ) : (
+                      <p
+                        key={`${message.role}-${index}`}
+                        className="max-w-[85%] self-end rounded-3xl rounded-tr-sm bg-zinc-800 px-5 py-3 text-sm leading-6 text-white"
+                      >
+                        {message.content}
+                      </p>
+                    ),
+                  )}
                   {sending ? (
-                    <p className="self-start rounded-2xl bg-zinc-800/50 px-3 py-2 text-sm text-zinc-200">…</p>
-                  ) : null}
-                  {!sending && suggestions.length > 0 ? (
-                    <div className="flex flex-wrap gap-2 self-start">
-                      {suggestions.map((suggestion, index) => (
-                        <Button
-                          key={`${suggestion}-${index}`}
-                          type="button"
-                          variant="outline"
-                          className="h-auto whitespace-normal rounded-full bg-zinc-800 px-3 py-1.5 text-left text-xs font-medium text-zinc-300 hover:bg-zinc-700 hover:text-white"
-                          onClick={() => void submitText(suggestion)}
-                        >
-                          {suggestion}
-                        </Button>
-                      ))}
+                    <div className="flex items-center gap-3 text-zinc-500">
+                      <span className="inline-flex rounded-full border border-zinc-800 bg-zinc-900 p-1.5">
+                        <Bot className="size-4" />
+                      </span>
+                      <span className="text-sm">…</span>
                     </div>
-                  ) : null}
+                  ) : (
+                    <SuggestionRow
+                      loading={suggestionsLoading}
+                      suggestions={suggestions}
+                      onPick={appendSuggestion}
+                    />
+                  )}
                 </div>
                 {chatError ? (
                   <Alert variant="destructive">
@@ -194,17 +281,38 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
                     <AlertDescription>{chatError}</AlertDescription>
                   </Alert>
                 ) : null}
-                <form className="flex gap-2" onSubmit={sendMessage}>
-                  <Input
+                <form className="relative" onSubmit={sendMessage}>
+                  <Textarea
                     value={draft}
+                    rows={2}
                     placeholder="Цифры и факты, без общих фраз"
                     disabled={sending}
                     autoComplete="off"
+                    className="min-h-16 resize-none rounded-lg border-zinc-800 bg-zinc-900/60 py-3 pr-28 pl-4 [scrollbar-width:none] focus-visible:border-zinc-500 [&::-webkit-scrollbar]:hidden"
                     onChange={(event) => setDraft(event.target.value)}
                   />
-                  <Button type="submit" disabled={sending || !draft.trim()}>
-                    Отправить
-                  </Button>
+                  <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      aria-label={listening ? "Остановить запись" : "Голосовой ввод"}
+                      aria-pressed={listening}
+                      className={cn(
+                        "grid h-9 w-9 place-items-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white",
+                        listening && "animate-pulse text-red-500",
+                      )}
+                      onClick={toggleVoice}
+                    >
+                      <Mic className="size-4" />
+                    </button>
+                    <button
+                      type="submit"
+                      aria-label="Отправить"
+                      disabled={sending || !draft.trim()}
+                      className="inline-flex h-9 items-center justify-center rounded-lg bg-white px-3.5 text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+                    >
+                      <ArrowUp className="size-4" />
+                    </button>
+                  </div>
                 </form>
               </TabsContent>
               <TabsContent value="table">
@@ -292,6 +400,74 @@ function readSuggestions(value: unknown) {
     .map((item) => item.trim())
     .filter(Boolean)
     .slice(0, 4);
+}
+
+function joinDraft(current: string, addition: string) {
+  const base = current.trim().replace(/,\s*$/, "");
+  const extra = addition.trim();
+  if (!extra) return base;
+  if (!base) return extra;
+  return `${base}, ${extra}`;
+}
+
+function SuggestionRow({
+  loading,
+  suggestions,
+  onPick,
+}: {
+  loading: boolean;
+  suggestions: string[];
+  onPick: (suggestion: string) => void;
+}) {
+  if (loading) {
+    return (
+      <div className="flex gap-2 overflow-hidden pb-2 pl-11">
+        {[0, 1, 2].map((item) => (
+          <span key={item} className="h-9 w-28 shrink-0 animate-pulse rounded-xl bg-zinc-800" />
+        ))}
+      </div>
+    );
+  }
+  if (suggestions.length === 0) return null;
+  return (
+    <div className="flex gap-2 overflow-x-auto pb-2 pl-11 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {suggestions.map((suggestion, index) => (
+        <button
+          key={`${suggestion}-${index}`}
+          type="button"
+          className="shrink-0 cursor-pointer rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2 text-sm whitespace-nowrap text-zinc-300 shadow-sm transition-all hover:border-zinc-500 hover:bg-zinc-800 hover:text-white"
+          onClick={() => onPick(suggestion)}
+        >
+          {suggestion}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+type SpeechResultEvent = {
+  results: ArrayLike<ArrayLike<{ transcript: string }> & { isFinal?: boolean }>;
+  error?: string;
+};
+
+type BrowserSpeechRecognition = {
+  lang: string;
+  continuous: boolean;
+  interimResults: boolean;
+  start: () => void;
+  stop: () => void;
+  onresult: ((event: SpeechResultEvent) => void) | null;
+  onend: (() => void) | null;
+  onerror: ((event: { error?: string }) => void) | null;
+};
+
+function speechRecognition() {
+  if (typeof window === "undefined") return null;
+  const host = window as Window & {
+    SpeechRecognition?: new () => BrowserSpeechRecognition;
+    webkitSpeechRecognition?: new () => BrowserSpeechRecognition;
+  };
+  return host.SpeechRecognition ?? host.webkitSpeechRecognition ?? null;
 }
 
 function TableUpload({ onAccepted }: { onAccepted: (summary: string, raw: unknown) => void }) {
