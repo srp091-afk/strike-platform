@@ -2,6 +2,7 @@
 
 import { Maximize, Play, Trash } from "lucide-react";
 import { startTransition, useActionState, useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { PlaygroundChat } from "@/components/playground-chat";
 import { deleteAgent, saveAgent, type SaveState } from "@/app/agents/actions";
@@ -573,7 +574,7 @@ function SystemPromptDialog({
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  return createPortal(
     <div
       data-channel-dialog=""
       className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
@@ -585,7 +586,7 @@ function SystemPromptDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="system-prompt-title"
-        className="flex h-[90vh] w-[90vw] flex-col rounded-2xl border border-zinc-800 bg-zinc-950 p-6"
+        className="flex h-[min(90vh,calc(100dvh-2rem))] w-[min(90vw,calc(100dvw-2rem))] flex-col rounded-2xl border border-zinc-800 bg-zinc-950 p-6"
       >
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</p>
@@ -606,7 +607,8 @@ function SystemPromptDialog({
           </Button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
