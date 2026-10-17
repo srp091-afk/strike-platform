@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { CampaignDashboard, type ProjectStatus } from "@/components/campaign-dashboard";
+import type { AdGeneration, AdGenerationStatus } from "@/lib/ad-types";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -13,13 +14,6 @@ export const metadata: Metadata = {
 
 const mockStrategy =
   "Ремонт квартир под ключ в Казани для семей, которые купили жильё в новостройке и не хотят жить на стройке полгода. Оффер: белый ключ за 90 дней, смета фиксируется в договоре, неустойка 1 000 ₽ за каждый день просрочки.";
-
-const mockCreatives = [
-  "https://images.unsplash.com/photo-1600585154340-be6161a56a0c?auto=format&fit=crop&w=800&h=1000&q=70",
-  "https://images.unsplash.com/photo-1600210492486-724fe5c67fb0?auto=format&fit=crop&w=800&h=1000&q=70",
-  "https://images.unsplash.com/photo-1600607687939-ce8a6c25118c?auto=format&fit=crop&w=800&h=1000&q=70",
-  "https://images.unsplash.com/photo-1503387762-592deb58ef4e?auto=format&fit=crop&w=800&h=1000&q=70",
-];
 
 export default function AdProjectPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -34,13 +28,13 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
   const { id } = await params;
 
   let project: { name: string; strategy: string; status: ProjectStatus } | null = null;
-  let creatives: { id: string; imageUrl: string }[] = [];
+  let generations: AdGeneration[] = [];
   let error: string | null = null;
 
   try {
     const loaded = await loadProject(id);
     project = loaded.project;
-    creatives = loaded.creatives;
+    generations = loaded.generations;
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Не удалось загрузить проект.";
   }
@@ -72,7 +66,7 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
       name={project.name}
       strategy={project.strategy}
       status={project.status}
-      creatives={creatives}
+      generations={generations}
     />
   );
 }
@@ -80,6 +74,37 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
 function readStatus(value: unknown): ProjectStatus {
   if (value === "processing" || value === "error" || value === "ready") return value;
   return "ready";
+}
+
+function readGenerationStatus(value: unknown): AdGenerationStatus {
+  if (value === "processing" || value === "ready" || value === "error") return value;
+  return "processing";
+}
+
+function readImages(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((item) => {
+    const url = typeof item === "string" ? item.trim() : "";
+    return url ? [url] : [];
+  });
+}
+
+function readGeneration(row: Record<string, unknown>, projectId: string): AdGeneration | null {
+  const id = typeof row.id === "string" ? row.id : "";
+  if (!id) return null;
+  const title = typeof row.title === "string" && row.title.trim() ? row.title.trim() : "Генерация";
+  const styleName = typeof row.style_name === "string" && row.style_name.trim() ? row.style_name.trim() : "Без стиля";
+  const createdAt = typeof row.created_at === "string" ? row.created_at : "";
+  return {
+    id,
+    project_id: typeof row.project_id === "string" ? row.project_id : projectId,
+    title,
+    style_name: styleName,
+    status: readGenerationStatus(row.status),
+    is_active: row.is_active === true,
+    images: readImages(row.images),
+    created_at: createdAt,
+  };
 }
 
 async function loadProject(id: string) {
@@ -93,20 +118,20 @@ async function loadProject(id: string) {
     .maybeSingle();
 
   if (error) throw new Error(error.message);
-  if (!data) return { project: null, creatives: [] as { id: string; imageUrl: string }[] };
+  if (!data) return { project: null, generations: [] as AdGeneration[] };
 
-  const creativesResult = await supabase
-    .from("ad_creatives")
-    .select("id, image_url")
-    .eq("project_id", id)
+  const projectId = String(data.id);
+  const generationsResult = await supabase
+    .from("ad_generations")
+    .select("*")
+    .eq("project_id", projectId)
     .order("created_at", { ascending: false });
 
-  if (creativesResult.error) throw new Error(creativesResult.error.message);
+  if (generationsResult.error) throw new Error(generationsResult.error.message);
 
-  const stored = (creativesResult.data ?? []).flatMap((row) => {
-    const imageUrl = typeof row.image_url === "string" ? row.image_url.trim() : "";
-    if (!imageUrl) return [];
-    return [{ id: String(row.id), imageUrl }];
+  const generations = (generationsResult.data ?? []).flatMap((row) => {
+    const generation = readGeneration(row, projectId);
+    return generation ? [generation] : [];
   });
 
   return {
@@ -115,6 +140,6 @@ async function loadProject(id: string) {
       strategy: mockStrategy,
       status: readStatus(data.status),
     },
-    creatives: stored.length > 0 ? stored : mockCreatives.map((imageUrl, index) => ({ id: `mock-${index}`, imageUrl })),
+    generations,
   };
 }

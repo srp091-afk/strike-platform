@@ -11,6 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
+import type { AdGeneration } from "@/lib/ad-types";
 
 const headlines = [
   "Белый ключ за 90 дней",
@@ -82,8 +83,6 @@ const leadQuestions = [
   },
 ];
 
-const archiveFolders = ["Генерация #1 (Минимализм)", "Генерация #2 (Премиум)"];
-
 export type ProjectStatus = "ready" | "processing" | "error";
 
 const thanksMessage =
@@ -95,14 +94,16 @@ export function CampaignDashboard({
   name,
   strategy,
   status = "ready",
-  creatives,
+  generations,
 }: {
   name: string;
   strategy: string;
   status?: ProjectStatus;
-  creatives: { id: string; imageUrl: string }[];
+  generations: AdGeneration[];
 }) {
   const [zoom, setZoom] = useState<string | null>(null);
+  const activeGeneration = generations.find((generation) => generation.is_active) ?? null;
+  const archivedGenerations = generations.filter((generation) => !generation.is_active);
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-10">
@@ -167,43 +168,32 @@ export function CampaignDashboard({
               <TabsTrigger value="archive">Архив генераций</TabsTrigger>
             </TabsList>
             <TabsContent value="active">
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-                {creatives.map((creative) => (
-                  <article key={creative.id} className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-black">
-                    <img src={creative.imageUrl} alt="" className="aspect-[4/5] w-full object-cover" />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
-                      <div className="flex w-[min(16rem,80%)] flex-col gap-2">
-                        <Button type="button" variant="outline" onClick={() => setZoom(creative.imageUrl)}>
-                          <ZoomIn className="size-4" />
-                          Увеличить
-                        </Button>
-                        <Button
-                          type="button"
-                          className="bg-white text-black hover:bg-zinc-200 hover:shadow-none"
-                          onClick={() => toast.success("Перегенерация в разработке")}
-                        >
-                          <RefreshCw className="size-4" />
-                          Перегенерировать (1 токен)
-                        </Button>
-                      </div>
-                    </div>
-                  </article>
-                ))}
-              </div>
+              <ActiveCreatives generation={activeGeneration} onZoom={setZoom} />
             </TabsContent>
             <TabsContent value="archive" className="grid gap-3">
-              {archiveFolders.map((folder) => (
-                <div
-                  key={folder}
-                  className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3"
-                >
-                  <Folder className="size-5 shrink-0 text-zinc-300" />
-                  <p className="min-w-0 flex-1 text-sm text-zinc-200">{folder}</p>
-                  <Button type="button" variant="outline" onClick={() => toast.success("Папка откроется в следующей версии")}>
-                    Открыть
-                  </Button>
-                </div>
-              ))}
+              {archivedGenerations.length === 0 ? (
+                <EmptyPanel text="Архив генераций пуст." />
+              ) : (
+                archivedGenerations.map((generation) => (
+                  <div
+                    key={generation.id}
+                    className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3"
+                  >
+                    <Folder className="size-5 shrink-0 text-zinc-300" />
+                    <div className="min-w-0 flex-1">
+                      <p className="truncate text-sm text-zinc-200">
+                        {generation.title} ({generation.style_name})
+                      </p>
+                      <p className="mt-0.5 text-xs text-zinc-500">
+                        {formatCreated(generation.created_at)} · {imageCountLabel(generation.images.length)}
+                      </p>
+                    </div>
+                    <Button type="button" variant="outline" onClick={() => toast.success("Папка откроется в следующей версии")}>
+                      Открыть
+                    </Button>
+                  </div>
+                ))
+              )}
             </TabsContent>
           </Tabs>
         </section>
@@ -211,6 +201,77 @@ export function CampaignDashboard({
       {zoom ? <ZoomImage src={zoom} onClose={() => setZoom(null)} /> : null}
     </div>
   );
+}
+
+function ActiveCreatives({
+  generation,
+  onZoom,
+}: {
+  generation: AdGeneration | null;
+  onZoom: (src: string) => void;
+}) {
+  if (!generation || generation.images.length === 0) {
+    if (generation?.status === "processing") return <CreativeSkeletons />;
+    return <EmptyPanel text="Активных креативов пока нет." />;
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      {generation.images.map((imageUrl, index) => (
+        <article key={`${generation.id}-${index}`} className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-black">
+          <img src={imageUrl} alt="" className="aspect-[4/5] w-full object-cover" />
+          <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+            <div className="flex w-[min(16rem,80%)] flex-col gap-2">
+              <Button type="button" variant="outline" onClick={() => onZoom(imageUrl)}>
+                <ZoomIn className="size-4" />
+                Увеличить
+              </Button>
+              <Button
+                type="button"
+                className="bg-white text-black hover:bg-zinc-200 hover:shadow-none"
+                onClick={() => toast.success("Перегенерация в разработке")}
+              >
+                <RefreshCw className="size-4" />
+                Перегенерировать (1 токен)
+              </Button>
+            </div>
+          </div>
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function CreativeSkeletons() {
+  return (
+    <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+      {Array.from({ length: 4 }, (_, index) => (
+        <div key={index} className="aspect-[4/5] animate-pulse rounded-xl border border-zinc-800 bg-zinc-900" />
+      ))}
+    </div>
+  );
+}
+
+function EmptyPanel({ text }: { text: string }) {
+  return (
+    <div className="flex min-h-48 items-center justify-center rounded-xl border border-dashed border-zinc-800 bg-zinc-900/30 px-6 py-10 text-center text-sm text-zinc-500">
+      {text}
+    </div>
+  );
+}
+
+function formatCreated(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "Дата неизвестна";
+  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" }).format(date);
+}
+
+function imageCountLabel(count: number) {
+  const mod10 = count % 10;
+  const mod100 = count % 100;
+  const word =
+    mod10 === 1 && mod100 !== 11 ? "картинка" : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? "картинки" : "картинок";
+  return `${count} ${word}`;
 }
 
 function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
