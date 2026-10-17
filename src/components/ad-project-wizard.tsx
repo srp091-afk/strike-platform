@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
+import type { AdFormattedBrief } from "@/lib/ad-types";
 import { cn } from "@/lib/utils";
 
 const openingMessage = "Привет! Что мы будем продвигать и в каком регионе?";
@@ -51,11 +52,14 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   const [strategyJson, setStrategyJson] = useState("");
   const [strategyPending, setStrategyPending] = useState(false);
   const [strategyError, setStrategyError] = useState<string | null>(null);
+  const [formattedBrief, setFormattedBrief] = useState<AdFormattedBrief | null>(null);
+  const [formattedPending, setFormattedPending] = useState(false);
   const [createState, createAction, creating] = useActionState(createAdCampaign, createInitial);
   const sendingRef = useRef(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const suggestionRequest = useRef(0);
   const strategyRequest = useRef<string | null>(null);
+  const formatRequest = useRef<string | null>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const draftRef = useRef("");
   draftRef.current = draft;
@@ -64,6 +68,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     setSource("table");
     setBriefSummary(summary);
     setTableRaw(raw);
+    setFormattedBrief(null);
     setStage("style");
   }, []);
 
@@ -71,6 +76,46 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     if (messages.length <= 1 && !sending) return;
     threadRef.current?.lastElementChild?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [messages, sending, suggestions, suggestionsLoading, stage]);
+
+  useEffect(() => {
+    if (stage !== "style" || briefSummary.length < 12) return;
+    if (formatRequest.current === briefSummary) return;
+    formatRequest.current = briefSummary;
+    const summary = briefSummary;
+    let active = true;
+    setFormattedPending(true);
+    setFormattedBrief(null);
+
+    void fetch("/api/format-brief", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brief_summary: summary }),
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as Partial<AdFormattedBrief> & { error?: string };
+        if (!active || formatRequest.current !== summary) return;
+        if (!response.ok || !isFormattedBrief(payload)) {
+          setFormattedBrief(null);
+          return;
+        }
+        setFormattedBrief({
+          product: payload.product.trim(),
+          audience: payload.audience.trim(),
+          offer: payload.offer.trim(),
+        });
+      })
+      .catch(() => {
+        if (!active || formatRequest.current !== summary) return;
+        setFormattedBrief(null);
+      })
+      .finally(() => {
+        if (formatRequest.current === summary) setFormattedPending(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [stage, briefSummary]);
 
   useEffect(() => {
     if (stage !== "style" || briefSummary.length < 12) return;
@@ -153,6 +198,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
         setSource("chat");
         setBriefSummary(payload.brief_summary.trim());
         setTableRaw(null);
+        setFormattedBrief(null);
         setStage("style");
         return;
       }
@@ -378,9 +424,11 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
             <input type="hidden" name="brief_summary" value={briefSummary} />
             <input type="hidden" name="source" value={source} />
             {strategyJson ? <input type="hidden" name="strategy_data" value={strategyJson} /> : null}
+            {formattedBrief ? <input type="hidden" name="formatted_brief" value={JSON.stringify(formattedBrief)} /> : null}
             {source === "table" ? <input type="hidden" name="raw_data" value={JSON.stringify(tableRaw)} /> : null}
             <AdStyleStudio
-              briefSummary={briefSummary}
+              formattedBrief={formattedBrief}
+              formattedPending={formattedPending}
               strategyPending={strategyPending}
               strategyError={strategyError}
               createError={createState.error}
@@ -399,6 +447,19 @@ function isStrategyPayload(value: unknown) {
   if (!value || typeof value !== "object") return false;
   const record = value as Record<string, unknown>;
   return Boolean(record.strategy && record.creatives && record.facebook_setup && record.lead_form);
+}
+
+function isFormattedBrief(value: unknown): value is AdFormattedBrief {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  return (
+    typeof row.product === "string" &&
+    row.product.trim().length > 0 &&
+    typeof row.audience === "string" &&
+    row.audience.trim().length > 0 &&
+    typeof row.offer === "string" &&
+    row.offer.trim().length > 0
+  );
 }
 
 function readSuggestions(value: unknown) {

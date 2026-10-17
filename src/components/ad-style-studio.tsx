@@ -1,11 +1,12 @@
 "use client";
 
 import { Globe, Sparkles } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select-field";
+import type { AdFormattedBrief } from "@/lib/ad-types";
 import {
   creativeLanguages,
   fontStyles,
@@ -25,7 +26,8 @@ type StyleTemplate = {
 };
 
 export function AdStyleStudio({
-  briefSummary,
+  formattedBrief,
+  formattedPending,
   strategyPending,
   strategyError,
   createError,
@@ -33,7 +35,8 @@ export function AdStyleStudio({
   creating,
   onBack,
 }: {
-  briefSummary: string;
+  formattedBrief: AdFormattedBrief | null;
+  formattedPending: boolean;
   strategyPending: boolean;
   strategyError: string | null;
   createError: string | null;
@@ -47,7 +50,6 @@ export function AdStyleStudio({
   const [category, setCategory] = useState<(typeof styleFilters)[number]>("Все");
   const [selectedStyle, setSelectedStyle] = useState<StudioStyleKey>("dark-editorial-grid");
 
-  const highlights = useMemo(() => readBriefHighlights(briefSummary), [briefSummary]);
   const visibleStyles = studioStyles.filter((style) => category === "Все" || style.category === category);
 
   useEffect(() => {
@@ -89,11 +91,11 @@ export function AdStyleStudio({
           <Sparkles className="size-3.5" />
           Ключевая выжимка
         </h2>
-        <BriefFact label="Продукт / Ниша" value={highlights.product} />
+        <BriefFact label="Продукт / Ниша" value={formattedBrief?.product} pending={formattedPending} />
         <div className="my-4 border-t border-zinc-800/60" />
-        <BriefFact label="Целевая аудитория" value={highlights.audience} />
+        <BriefFact label="Целевая аудитория" value={formattedBrief?.audience} pending={formattedPending} />
         <div className="my-4 border-t border-zinc-800/60" />
-        <BriefFact label="Уникальное предложение" value={highlights.offer} />
+        <BriefFact label="Уникальное предложение" value={formattedBrief?.offer} pending={formattedPending} />
       </aside>
 
       <section className="grid min-w-0 gap-6 lg:col-span-8">
@@ -257,11 +259,17 @@ function LuxuryPreview() {
   );
 }
 
-function BriefFact({ label, value }: { label: string; value: string }) {
+function BriefFact({ label, value, pending }: { label: string; value?: string; pending: boolean }) {
   return (
     <div>
       <p className="mb-1.5 text-xs font-bold uppercase tracking-widest text-zinc-500">{label}</p>
-      <p className="text-sm leading-relaxed text-zinc-200">{value || "—"}</p>
+      {value ? (
+        <p className="text-sm leading-relaxed text-zinc-200">{value}</p>
+      ) : pending ? (
+        <span className="mt-1 block h-10 animate-pulse rounded-md bg-zinc-800/80" />
+      ) : (
+        <p className="text-sm leading-relaxed text-zinc-200">—</p>
+      )}
     </div>
   );
 }
@@ -270,65 +278,4 @@ function templateIdFor(category: string, templates: StyleTemplate[]) {
   const needle = category.toLowerCase();
   const matched = templates.find((template) => template.category.toLowerCase().includes(needle));
   return matched?.id ?? templates[0]?.id ?? "";
-}
-
-function readBriefHighlights(summary: string) {
-  const clean = stripLeadIn(summary.replace(/\s+/g, " ").trim());
-  if (!clean) return { product: "—", audience: "—", offer: "—" };
-
-  const offerMatch = clean.match(
-    /(?:(?:наш\s+)?оффер|уникальное\s+предложение|предложение|цена|стоимость)\s*[:—-]\s*(.+)$/i,
-  );
-  const offer = offerMatch
-    ? clip(stripLeadIn(offerMatch[1]), 160)
-    : clip(pickClause(clean, /(монтаж|гарантия|от\s+\d|₽|руб|дней|день)/i) || "", 160);
-
-  const withoutOffer = offerMatch ? clean.slice(0, offerMatch.index).replace(/[.\s,;:—-]+$/, "").trim() : clean;
-  const audienceLabel = withoutOffer.match(/(?:ц[аa]|аудитори[яи]|клиент[ыов]*)\s*[:—-]\s*(.+)$/i);
-  const audienceFor = withoutOffer.match(/(?:^|[\s,;])для\s+(.+)$/i);
-  let audience = "";
-  let product = withoutOffer;
-
-  if (audienceLabel && audienceLabel.index != null) {
-    audience = clip(stripLeadIn(audienceLabel[1]), 140);
-    product = withoutOffer.slice(0, audienceLabel.index).replace(/[.\s,;:—-]+$/, "").trim();
-  } else if (audienceFor && audienceFor.index != null) {
-    const start = audienceFor[0].startsWith("для") ? audienceFor.index : audienceFor.index + 1;
-    audience = clip(stripLeadIn(audienceFor[1]), 140);
-    product = withoutOffer.slice(0, start).replace(/[.\s,;:—-]+$/, "").trim();
-  } else {
-    const parts = withoutOffer.split(/(?<=[.!;])\s+/).filter(Boolean);
-    product = parts[0] || withoutOffer;
-    audience = parts[1] || "";
-  }
-
-  return {
-    product: clip(stripLeadIn(product) || clean, 140) || "—",
-    audience: audience || "—",
-    offer: offer || "—",
-  };
-}
-
-function stripLeadIn(value: string) {
-  return value
-    .replace(
-      /^(?:итак,?\s*)?(?:мы\s+)?(?:продвигаем|продаём|продаем|предлагаем|продукт|ниша|резюме|выжимка)\s*[:—-]?\s*/i,
-      "",
-    )
-    .replace(/^(?:продукт|ниша|ца|цa|аудитория|оффер|предложение)\s*[:—-]\s*/i, "")
-    .trim();
-}
-
-function pickClause(value: string, pattern: RegExp) {
-  const parts = value.split(/(?<=[.!;])\s+/).filter(Boolean);
-  return parts.find((part) => pattern.test(part)) ?? "";
-}
-
-function clip(value: string, max: number) {
-  const clean = value.replace(/\s+/g, " ").trim();
-  if (!clean) return "";
-  if (clean.length <= max) return clean;
-  const cut = clean.slice(0, max);
-  const space = cut.lastIndexOf(" ");
-  return `${(space > 24 ? cut.slice(0, space) : cut).trim()}…`;
 }

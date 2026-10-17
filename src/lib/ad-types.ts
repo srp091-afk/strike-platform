@@ -1,3 +1,9 @@
+export interface AdFormattedBrief {
+  product: string;
+  audience: string;
+  offer: string;
+}
+
 export interface AdLeadQuestion {
   question: string;
   options: string[];

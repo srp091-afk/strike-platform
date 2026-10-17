@@ -5,6 +5,7 @@ import * as XLSX from "xlsx";
 
 import { generateAdStrategy, parseAdStrategy, publicModelError } from "@/lib/ad-strategy";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { formatBriefSummary, parseFormattedBrief, publicFormatError } from "@/lib/format-brief";
 import { getOpenAI } from "@/lib/openai";
 import { isCreativeLanguage, isFontStyle, isStudioStyleKey, studioStyles } from "@/lib/studio-styles";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -70,6 +71,8 @@ export async function createAdCampaign(
 
   const submittedStrategy = text(formData.get("strategy_data"));
   if (submittedStrategy.length > 200_000) return { error: "Стратегия слишком большая." };
+  const submittedFormatted = text(formData.get("formatted_brief"));
+  if (submittedFormatted.length > 20_000) return { error: "Оформленный бриф слишком большой." };
 
   let table: unknown = null;
   if (source === "table") {
@@ -96,6 +99,7 @@ export async function createAdCampaign(
     if (!template) return { error: "Выберите визуальный стиль." };
 
     const strategy = await resolveStrategy(summary, submittedStrategy);
+    const formattedBrief = await resolveFormattedBrief(summary, submittedFormatted);
 
     const inserted = await insertProject(supabase, {
       user_id: userId,
@@ -103,6 +107,7 @@ export async function createAdCampaign(
       brief_summary: summary,
       template_id: template.id,
       strategy_data: strategy,
+      formatted_brief: formattedBrief,
       creatives_count: creativesCount,
       creative_language: creativeLanguage,
       font_style: fontStyle,
@@ -112,6 +117,9 @@ export async function createAdCampaign(
       const message = inserted.error?.message ?? "Не удалось создать проект.";
       if (/strategy_data/i.test(message)) {
         return { error: "В базе нет колонки strategy_data. Выполните миграцию в Supabase." };
+      }
+      if (/formatted_brief/i.test(message)) {
+        return { error: "В базе нет колонки formatted_brief. Выполните миграцию в Supabase." };
       }
       return { error: message };
     }
@@ -153,6 +161,7 @@ async function insertProject(
     brief_summary: string;
     template_id: string;
     strategy_data: unknown;
+    formatted_brief: unknown;
     creatives_count: number;
     creative_language: string;
     font_style: string;
@@ -161,9 +170,45 @@ async function insertProject(
 ) {
   const first = await supabase.from("ad_projects").insert(row).select("id").single();
   if (!first.error) return first;
-  if (!/creatives_count|creative_language|font_style|style_key/i.test(first.error.message)) return first;
-  const { creatives_count: _count, creative_language: _language, font_style: _font, style_key: _style, ...base } = row;
-  return supabase.from("ad_projects").insert(base).select("id").single();
+
+  const {
+    creatives_count: _count,
+    creative_language: _language,
+    font_style: _font,
+    style_key: _style,
+    formatted_brief,
+    ...core
+  } = row;
+  const missingSettings = /creatives_count|creative_language|font_style|style_key/i.test(first.error.message);
+  const missingFormatted = /formatted_brief/i.test(first.error.message);
+  if (!missingSettings && !missingFormatted) return first;
+
+  const payload = missingSettings
+    ? missingFormatted
+      ? core
+      : { ...core, formatted_brief }
+    : (({ formatted_brief: _drop, ...rest }) => rest)(row);
+
+  const second = await supabase.from("ad_projects").insert(payload).select("id").single();
+  if (!second.error || !/formatted_brief/i.test(second.error.message)) return second;
+  return supabase.from("ad_projects").insert(core).select("id").single();
+}
+
+async function resolveFormattedBrief(summary: string, submitted: string) {
+  if (submitted) {
+    try {
+      const parsed = parseFormattedBrief(JSON.parse(submitted) as unknown);
+      if (parsed) return parsed;
+    } catch {
+      // Client copy is optional; generate below if missing.
+    }
+  }
+
+  try {
+    return await formatBriefSummary(summary);
+  } catch (error) {
+    throw new Error(publicFormatError(error));
+  }
 }
 
 async function resolveStrategy(summary: string, submitted: string) {
