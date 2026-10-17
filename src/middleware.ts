@@ -46,8 +46,8 @@ export async function middleware(request: NextRequest) {
     pathname === "/api/webhooks" ||
     pathname.startsWith("/api/webhooks/");
 
-  // Если нет пользователя и страница защищена -> на /login
-  if (!user && !isPublic) {
+  // Локальный dev-сервер открывает страницы без Google. На production редирект остаётся.
+  if (!user && !isPublic && process.env.NODE_ENV !== "development") {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     return NextResponse.redirect(url);
