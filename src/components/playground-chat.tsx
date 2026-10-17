@@ -25,10 +25,12 @@ export function PlaygroundChat({
   agents,
   initialAgentId,
   loadError,
+  embedded = false,
 }: {
   agents: PlaygroundAgent[];
   initialAgentId: string | null;
   loadError: string | null;
+  embedded?: boolean;
 }) {
   const router = useRouter();
   const [agentId, setAgentId] = useState(
@@ -102,6 +104,7 @@ export function PlaygroundChat({
 
   function selectAgent(id: string) {
     setAgentId(id);
+    if (embedded) return;
     router.replace(id ? `/playground?agent=${id}` : "/playground", { scroll: false });
   }
 
@@ -175,7 +178,14 @@ export function PlaygroundChat({
   }
 
   return (
-    <section className="mx-auto flex h-[min(42rem,calc(100dvh-18rem))] max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-[0_4px_25px_-5px_rgba(0,0,0,0.03)]">
+    <section
+      className={cn(
+        "mx-auto flex w-full max-w-4xl flex-col overflow-hidden bg-white",
+        embedded
+          ? "h-full rounded-none border-0 shadow-none"
+          : "h-[min(42rem,calc(100dvh-18rem))] rounded-2xl border border-zinc-200/80 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.03)]",
+      )}
+    >
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50/50 p-4">
         <label className="flex min-w-[220px] flex-1 items-center gap-3">
           <span className="shrink-0 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</span>

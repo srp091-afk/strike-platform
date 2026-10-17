@@ -6,7 +6,7 @@ import { FunnelHome } from "@/components/funnel-home";
 import { listLandings } from "@/lib/landings";
 
 export const metadata: Metadata = {
-  title: "Воронки",
+  title: "Сайты",
 };
 
 export default function FunnelsPage() {

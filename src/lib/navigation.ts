@@ -1,11 +1,10 @@
-import { Bot, Funnel, LayoutDashboard, Megaphone, MessagesSquare, Play } from "lucide-react";
+import { Bot, Globe, LayoutDashboard, Megaphone, MessagesSquare } from "lucide-react";
 
 export const navItems = [
   { href: "/", label: "Дашборд", icon: LayoutDashboard },
   { href: "/agents", label: "Агенты", icon: Bot },
-  { href: "/funnels", label: "Воронки", icon: Funnel },
+  { href: "/funnels", label: "Сайты", icon: Globe },
   { href: "/ads/new", label: "AI-Кампании", icon: Megaphone },
-  { href: "/playground", label: "Симулятор", icon: Play },
   { href: "/chats", label: "Чаты", icon: MessagesSquare },
 ] as const;
 

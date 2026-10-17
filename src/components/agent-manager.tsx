@@ -1,9 +1,9 @@
 "use client";
 
 import { Maximize, Play, Trash } from "lucide-react";
-import { startTransition, useActionState, useEffect, useRef, useState, useTransition } from "react";
-import Link from "next/link";
+import { startTransition, useActionState, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { PlaygroundChat } from "@/components/playground-chat";
 import { deleteAgent, saveAgent, type SaveState } from "@/app/agents/actions";
 import { connectTelegram, disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
 import { ChannelIcon } from "@/components/channel-icons";
@@ -60,6 +60,8 @@ export function AgentManager({
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState<AgentRecord | null>(null);
+  const [testing, setTesting] = useState<AgentRecord | null>(null);
+  const closeTesting = useCallback(() => setTesting(null), []);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [sessionKey, setSessionKey] = useState("closed");
   const [state, action, pending] = useActionState(saveAgent, initialState);
@@ -156,11 +158,9 @@ export function AgentManager({
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
-                  <Button asChild>
-                    <Link href={`/playground?agent=${agent.id}`} aria-label={`Тестировать агента ${agent.name}`}>
-                      <Play className="size-4" strokeWidth={2} />
-                      Тестировать
-                    </Link>
+                  <Button type="button" aria-label={`Тестировать агента ${agent.name}`} onClick={() => setTesting(agent)}>
+                    <Play className="size-4" strokeWidth={2} />
+                    Тестировать
                   </Button>
                   <Button type="button" variant="outline" onClick={() => openEdit(agent)}>
                     Править
@@ -202,6 +202,61 @@ export function AgentManager({
           onClose={closeDialog}
         />
       ) : null}
+      {testing ? <SimulatorDialog agent={testing} agents={agents} onClose={closeTesting} /> : null}
+    </div>
+  );
+}
+
+function SimulatorDialog({
+  agent,
+  agents,
+  onClose,
+}: {
+  agent: AgentRecord;
+  agents: AgentRecord[];
+  onClose: () => void;
+}) {
+  useEffect(() => {
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") onClose();
+    }
+    window.addEventListener("keydown", onKey);
+    return () => {
+      document.body.style.overflow = previous;
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[70] grid place-items-center bg-zinc-950/40 p-4" onMouseDown={onClose}>
+      <DialogContent
+        aria-labelledby="simulator-dialog-title"
+        className="flex h-[min(44rem,calc(100dvh-2rem))] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="flex items-center justify-between gap-3 border-b border-zinc-200/80 px-5 py-4">
+          <div className="min-w-0">
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Симулятор</p>
+            <h2 id="simulator-dialog-title" className="truncate font-heading text-lg font-semibold text-zinc-900">
+              {agent.name}
+            </h2>
+          </div>
+          <Button type="button" variant="outline" size="sm" onClick={onClose}>
+            Закрыть
+          </Button>
+        </header>
+        <div className="min-h-0 flex-1">
+          <PlaygroundChat
+            key={agent.id}
+            agents={agents.map((item) => ({ id: item.id, name: item.name, model: item.model }))}
+            initialAgentId={agent.id}
+            loadError={null}
+            embedded
+          />
+        </div>
+      </DialogContent>
     </div>
   );
 }

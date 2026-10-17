@@ -33,7 +33,7 @@ export function FunnelHome({
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col px-6 py-16">
       <section className="flex flex-col items-center pt-10 text-center sm:pt-16">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-400">Воронки</p>
+        <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-400">Сайты</p>
         <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-tight text-zinc-950 sm:text-6xl">
           Что будем запускать сегодня?
         </h1>
