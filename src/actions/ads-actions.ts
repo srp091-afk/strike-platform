@@ -4,7 +4,6 @@ import { redirect } from "next/navigation";
 import * as XLSX from "xlsx";
 
 import { getAuthenticatedUserId } from "@/lib/auth-user";
-import { findCreativeTemplate } from "@/lib/creative-templates";
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -51,10 +50,9 @@ export async function createAdCampaign(
   const summary = text(formData.get("brief_summary"));
   const templateId = text(formData.get("template_id"));
   const source = text(formData.get("source"));
-  const template = findCreativeTemplate(templateId);
 
   if (summary.length < 12) return { error: "Бриф ещё не собран." };
-  if (!template) return { error: "Выберите визуальный стиль." };
+  if (!isUuid(templateId)) return { error: "Выберите визуальный стиль." };
   if (source !== "chat" && source !== "table") return { error: "Неизвестный источник брифа." };
 
   let table: unknown = null;
@@ -72,9 +70,23 @@ export async function createAdCampaign(
   try {
     const supabase = createSupabaseAdminClient();
     const userId = await getAuthenticatedUserId();
+    const { data: template, error: templateError } = await supabase
+      .from("creative_templates")
+      .select("id")
+      .eq("id", templateId)
+      .eq("is_active", true)
+      .maybeSingle();
+    if (templateError) return { error: templateError.message };
+    if (!template) return { error: "Выберите визуальный стиль." };
+
     const { data, error } = await supabase
       .from("ad_projects")
-      .insert({ user_id: userId, name: campaignName(summary) })
+      .insert({
+        user_id: userId,
+        name: campaignName(summary),
+        brief_summary: summary,
+        template_id: template.id,
+      })
       .select("id")
       .single();
     if (error || !data) return { error: error?.message ?? "Не удалось создать проект." };
@@ -85,8 +97,6 @@ export async function createAdCampaign(
       niche: summary.replace(/\s+/g, " ").trim().slice(0, 120),
       product_details: summary,
       raw_data: {
-        brief_summary: summary,
-        template_id: template.id,
         source,
         table,
       },
@@ -100,6 +110,10 @@ export async function createAdCampaign(
   }
 
   redirect("/ads");
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 function campaignName(summary: string) {

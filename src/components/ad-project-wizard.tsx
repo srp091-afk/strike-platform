@@ -10,7 +10,6 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
-import { creativeTemplates, templateCategories } from "@/lib/creative-templates";
 import { cn } from "@/lib/utils";
 
 const openingMessage = "Привет! Что мы будем продвигать и в каком регионе?";
@@ -26,7 +25,14 @@ type ChatMessage = {
 type Stage = "intake" | "style";
 type BriefSource = "chat" | "table";
 
-export function AdProjectWizard() {
+type StyleTemplate = {
+  id: string;
+  name: string;
+  category: string;
+  preview_url: string;
+};
+
+export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   const [stage, setStage] = useState<Stage>("intake");
   const [source, setSource] = useState<BriefSource>("chat");
   const [briefSummary, setBriefSummary] = useState("");
@@ -36,7 +42,7 @@ export function AdProjectWizard() {
   const [sending, setSending] = useState(false);
   const [chatError, setChatError] = useState<string | null>(null);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [category, setCategory] = useState<(typeof templateCategories)[number]>("Все");
+  const [category, setCategory] = useState("Все");
   const [createState, createAction, creating] = useActionState(createAdCampaign, createInitial);
   const threadRef = useRef<HTMLDivElement>(null);
 
@@ -94,9 +100,9 @@ export function AdProjectWizard() {
     }
   }
 
-  const visibleTemplates =
-    category === "Все" ? creativeTemplates : creativeTemplates.filter((template) => template.category === category);
-  const selected = creativeTemplates.find((template) => template.id === selectedTemplate) ?? null;
+  const templateCategories = ["Все", ...new Set(templates.map((template) => template.category))];
+  const visibleTemplates = category === "Все" ? templates : templates.filter((template) => template.category === category);
+  const selected = templates.find((template) => template.id === selectedTemplate) ?? null;
 
   return (
     <div className="mx-auto grid max-w-5xl gap-4">
@@ -198,7 +204,7 @@ export function AdProjectWizard() {
               </Alert>
             ) : null}
 
-            <Tabs value={category} onValueChange={(value) => setCategory(value as (typeof templateCategories)[number])}>
+            <Tabs value={category} onValueChange={setCategory}>
               <TabsList className="h-auto flex-wrap">
                 {templateCategories.map((item) => (
                   <TabsTrigger key={item} value={item} className="h-auto min-h-8 flex-none px-3 py-1">
@@ -208,26 +214,32 @@ export function AdProjectWizard() {
               </TabsList>
             </Tabs>
 
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {visibleTemplates.map((template) => {
-                const active = template.id === selectedTemplate;
-                return (
-                  <button
-                    key={template.id}
-                    type="button"
-                    aria-pressed={active}
-                    className={cn(
-                      "overflow-hidden rounded-2xl border-2 bg-zinc-900/40 text-left",
-                      active ? "border-white" : "border-zinc-800",
-                    )}
-                    onClick={() => setSelectedTemplate(template.id)}
-                  >
-                    <img src={template.preview_url} alt="" className="aspect-[4/5] w-full object-cover" />
-                    <span className="block px-3 py-3 text-sm font-medium text-white">{template.name}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {visibleTemplates.length === 0 ? (
+              <p className="rounded-xl border border-zinc-800 px-4 py-8 text-center text-sm text-zinc-400">
+                В базе пока нет активных стилей.
+              </p>
+            ) : (
+              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+                {visibleTemplates.map((template) => {
+                  const active = template.id === selectedTemplate;
+                  return (
+                    <button
+                      key={template.id}
+                      type="button"
+                      aria-pressed={active}
+                      className={cn(
+                        "overflow-hidden rounded-2xl border-2 bg-zinc-900/40 text-left",
+                        active ? "border-white" : "border-zinc-800",
+                      )}
+                      onClick={() => setSelectedTemplate(template.id)}
+                    >
+                      <img src={template.preview_url} alt="" className="aspect-[4/5] w-full object-cover" />
+                      <span className="block px-3 py-3 text-sm font-medium text-white">{template.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             <div className="flex justify-end">
               <Button type="submit" disabled={!selected || creating}>
