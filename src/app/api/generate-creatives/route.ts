@@ -77,11 +77,24 @@ export async function POST(request: Request) {
       imageUrls,
     });
 
-    const { error: updateError } = await supabase
-      .from("ad_projects")
-      .update({ creatives_data: creatives })
-      .eq("id", projectId)
-      .eq("user_id", userId);
+    const nowIso = new Date().toISOString();
+    let updateError = (
+      await supabase
+        .from("ad_projects")
+        .update({ creatives_data: creatives, updated_at: nowIso })
+        .eq("id", projectId)
+        .eq("user_id", userId)
+    ).error;
+
+    if (updateError && /updated_at/i.test(updateError.message)) {
+      updateError = (
+        await supabase
+          .from("ad_projects")
+          .update({ creatives_data: creatives })
+          .eq("id", projectId)
+          .eq("user_id", userId)
+      ).error;
+    }
 
     if (updateError) {
       console.error("[generate-creatives] update creatives_data", updateError);

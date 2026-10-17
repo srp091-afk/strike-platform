@@ -1,8 +1,8 @@
 "use client";
 
-import { Check, Copy, Download, Folder, Loader2, RefreshCw, ZoomIn } from "lucide-react";
+import { Check, Clock, Copy, Download, Folder, Loader2, RefreshCw, ZoomIn } from "lucide-react";
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FocusEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
@@ -11,41 +11,151 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
+import { formatRuDate, toDateInputValue } from "@/lib/ad-project-media";
 import type { AdGeneration, AdStrategy } from "@/lib/ad-types";
+import { cn } from "@/lib/utils";
 
 export type ProjectStatus = "ready" | "processing" | "error";
 
 export function CampaignDashboard({
-  name,
-  strategy,
+  projectId,
+  name: initialName,
+  strategy: initialStrategy,
   status = "ready",
   generations,
+  updatedAt: initialUpdatedAt,
+  creativesReplaceAt: initialReplaceAt,
 }: {
+  projectId: string;
   name: string;
   strategy: AdStrategy | null;
   status?: ProjectStatus;
   generations: AdGeneration[];
+  updatedAt: string | null;
+  creativesReplaceAt: string | null;
 }) {
   const [zoom, setZoom] = useState<string | null>(null);
+  const [name, setName] = useState(initialName);
+  const [savedName, setSavedName] = useState(initialName);
+  const [strategy, setStrategy] = useState<AdStrategy | null>(initialStrategy);
+  const [updatedAt, setUpdatedAt] = useState(initialUpdatedAt);
+  const [creativesReplaceAt, setCreativesReplaceAt] = useState(initialReplaceAt);
+  const [saving, setSaving] = useState(false);
+
   const activeGeneration = generations.find((generation) => generation.is_active) ?? null;
   const archivedGenerations = generations.filter((generation) => !generation.is_active);
+
+  async function patchProject(body: Record<string, unknown>) {
+    setSaving(true);
+    try {
+      const response = await fetch(`/api/ads/${projectId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const payload = (await response.json()) as {
+        error?: string;
+        updated_at?: string | null;
+        creatives_replace_at?: string | null;
+        name?: string;
+        strategy_data?: AdStrategy;
+      };
+      if (!response.ok) {
+        toast.error(typeof payload.error === "string" ? payload.error : "Не удалось сохранить.");
+        return false;
+      }
+      if (typeof payload.updated_at === "string") setUpdatedAt(payload.updated_at);
+      if ("creatives_replace_at" in payload) {
+        setCreativesReplaceAt(typeof payload.creatives_replace_at === "string" ? payload.creatives_replace_at : null);
+      }
+      if (typeof payload.name === "string") {
+        setName(payload.name);
+        setSavedName(payload.name);
+      }
+      if (payload.strategy_data) setStrategy(payload.strategy_data);
+      toast.success("Сохранено");
+      return true;
+    } catch {
+      toast.error("Не удалось связаться с сервером.");
+      return false;
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveName() {
+    const next = name.trim();
+    if (!next) {
+      setName(savedName);
+      return;
+    }
+    if (next === savedName) return;
+    await patchProject({ name: next });
+  }
+
+  async function saveStrategy(next: AdStrategy) {
+    setStrategy(next);
+    await patchProject({ strategy_data: next });
+  }
+
+  async function saveReplaceDate(value: string) {
+    if (!value) return;
+    await patchProject({ creatives_replace_at: value });
+  }
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-10">
       <LinkBack />
       <header className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="text-3xl font-bold text-white">{name}</h1>
-          <ProjectStatusBadge status={status} />
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-3">
+            <input
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              onBlur={() => void saveName()}
+              className="min-w-0 flex-1 bg-transparent text-3xl font-bold text-white outline-none ring-0 placeholder:text-zinc-600 focus:underline"
+              aria-label="Название проекта"
+            />
+            <ProjectStatusBadge status={status} />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+            <p className="text-zinc-500">Обновлено: {formatRuDate(updatedAt)}</p>
+            <label className="inline-flex cursor-pointer items-center gap-1.5 text-zinc-300">
+              <Clock className="size-3.5 shrink-0" strokeWidth={2} />
+              <span>Рекомендуемая замена креативов:</span>
+              <input
+                type="date"
+                value={toDateInputValue(creativesReplaceAt)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setCreativesReplaceAt(value ? `${value}T12:00:00.000Z` : null);
+                  void saveReplaceDate(value);
+                }}
+                className="rounded-md border border-zinc-700 bg-zinc-950 px-2 py-1 text-sm text-zinc-200 outline-none focus:border-zinc-500"
+              />
+            </label>
+          </div>
         </div>
-        <Button
-          type="button"
-          className="shrink-0 bg-white text-black hover:bg-zinc-200 hover:shadow-none"
-          onClick={() => toast.success("Архив формируется... (в разработке)")}
-        >
-          <Download className="size-4" />
-          Экспорт в ZIP
-        </Button>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={saving || !strategy}
+            onClick={() => {
+              if (strategy) void patchProject({ name: name.trim(), strategy_data: strategy });
+            }}
+          >
+            {saving ? "Сохраняем…" : "Сохранить"}
+          </Button>
+          <Button
+            type="button"
+            className="bg-white text-black hover:bg-zinc-200 hover:shadow-none"
+            onClick={() => toast.success("Архив формируется... (в разработке)")}
+          >
+            <Download className="size-4" />
+            Экспорт в ZIP
+          </Button>
+        </div>
       </header>
 
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
@@ -56,9 +166,39 @@ export function CampaignDashboard({
               <AccordionContent>
                 {strategy ? (
                   <div className="grid gap-5">
-                    <TextGroup label="Портрет аудитории" items={[strategy.strategy.target_audience_insight]} />
-                    <TextGroup label="Угол оффера" items={[strategy.strategy.core_offer_angle]} />
-                    <TextGroup label="Крючок" items={[strategy.strategy.hook_concept]} />
+                    <EditableText
+                      label="Портрет аудитории"
+                      value={strategy.strategy.target_audience_insight}
+                      multiline
+                      onCommit={(value) =>
+                        void saveStrategy({
+                          ...strategy,
+                          strategy: { ...strategy.strategy, target_audience_insight: value },
+                        })
+                      }
+                    />
+                    <EditableText
+                      label="Угол оффера"
+                      value={strategy.strategy.core_offer_angle}
+                      multiline
+                      onCommit={(value) =>
+                        void saveStrategy({
+                          ...strategy,
+                          strategy: { ...strategy.strategy, core_offer_angle: value },
+                        })
+                      }
+                    />
+                    <EditableText
+                      label="Крючок"
+                      value={strategy.strategy.hook_concept}
+                      multiline
+                      onCommit={(value) =>
+                        void saveStrategy({
+                          ...strategy,
+                          strategy: { ...strategy.strategy, hook_concept: value },
+                        })
+                      }
+                    />
                   </div>
                 ) : (
                   <MissingCopy />
@@ -70,10 +210,47 @@ export function CampaignDashboard({
               <AccordionContent className="grid gap-5">
                 {strategy ? (
                   <>
-                    <TextGroup label="Заголовки" items={strategy.creatives.headlines} />
-                    <TextGroup label="Подзаголовки" items={strategy.creatives.subheadlines} />
-                    <TextGroup label="Выгоды" items={strategy.creatives.benefits} marked />
-                    <TextGroup label="Кнопки" items={strategy.creatives.buttons} />
+                    <EditableList
+                      label="Заголовки"
+                      items={strategy.creatives.headlines}
+                      onCommit={(items) =>
+                        void saveStrategy({
+                          ...strategy,
+                          creatives: { ...strategy.creatives, headlines: items },
+                        })
+                      }
+                    />
+                    <EditableList
+                      label="Подзаголовки"
+                      items={strategy.creatives.subheadlines}
+                      onCommit={(items) =>
+                        void saveStrategy({
+                          ...strategy,
+                          creatives: { ...strategy.creatives, subheadlines: items },
+                        })
+                      }
+                    />
+                    <EditableList
+                      label="Выгоды"
+                      items={strategy.creatives.benefits}
+                      marked
+                      onCommit={(items) =>
+                        void saveStrategy({
+                          ...strategy,
+                          creatives: { ...strategy.creatives, benefits: items },
+                        })
+                      }
+                    />
+                    <EditableList
+                      label="Кнопки"
+                      items={strategy.creatives.buttons}
+                      onCommit={(items) =>
+                        void saveStrategy({
+                          ...strategy,
+                          creatives: { ...strategy.creatives, buttons: items },
+                        })
+                      }
+                    />
                   </>
                 ) : (
                   <MissingCopy />
@@ -85,9 +262,37 @@ export function CampaignDashboard({
               <AccordionContent className="grid gap-5">
                 {strategy ? (
                   <>
-                    <TextGroup label="Основной текст поста" items={strategy.facebook_setup.primary_texts} />
-                    <TextGroup label="Заголовок объявления" items={strategy.facebook_setup.headlines} />
-                    <TextGroup label="Описание объявления" items={strategy.facebook_setup.descriptions} />
+                    <EditableList
+                      label="Основной текст поста"
+                      items={strategy.facebook_setup.primary_texts}
+                      multiline
+                      onCommit={(items) =>
+                        void saveStrategy({
+                          ...strategy,
+                          facebook_setup: { ...strategy.facebook_setup, primary_texts: items },
+                        })
+                      }
+                    />
+                    <EditableList
+                      label="Заголовок объявления"
+                      items={strategy.facebook_setup.headlines}
+                      onCommit={(items) =>
+                        void saveStrategy({
+                          ...strategy,
+                          facebook_setup: { ...strategy.facebook_setup, headlines: items },
+                        })
+                      }
+                    />
+                    <EditableList
+                      label="Описание объявления"
+                      items={strategy.facebook_setup.descriptions}
+                      onCommit={(items) =>
+                        void saveStrategy({
+                          ...strategy,
+                          facebook_setup: { ...strategy.facebook_setup, descriptions: items },
+                        })
+                      }
+                    />
                   </>
                 ) : (
                   <MissingCopy />
@@ -99,16 +304,64 @@ export function CampaignDashboard({
               <AccordionContent className="grid gap-5">
                 {strategy ? (
                   <>
-                    <TextGroup label="Заголовок" items={[strategy.lead_form.headline]} />
-                    <TextGroup label="Выгоды на первом экране" items={strategy.lead_form.welcome_screen_bullets} marked />
+                    <EditableText
+                      label="Заголовок"
+                      value={strategy.lead_form.headline}
+                      onCommit={(value) =>
+                        void saveStrategy({
+                          ...strategy,
+                          lead_form: { ...strategy.lead_form, headline: value },
+                        })
+                      }
+                    />
+                    <EditableList
+                      label="Выгоды на первом экране"
+                      items={strategy.lead_form.welcome_screen_bullets}
+                      marked
+                      onCommit={(items) =>
+                        void saveStrategy({
+                          ...strategy,
+                          lead_form: { ...strategy.lead_form, welcome_screen_bullets: items },
+                        })
+                      }
+                    />
                     <LeadQuestions questions={strategy.lead_form.questions} />
-                    <TextGroup
-                      label="Экран благодарности"
-                      items={[
-                        strategy.lead_form.thank_you_screen.headline,
-                        strategy.lead_form.thank_you_screen.description,
-                        strategy.lead_form.call_to_action,
-                      ]}
+                    <EditableText
+                      label="Экран благодарности — заголовок"
+                      value={strategy.lead_form.thank_you_screen.headline}
+                      onCommit={(value) =>
+                        void saveStrategy({
+                          ...strategy,
+                          lead_form: {
+                            ...strategy.lead_form,
+                            thank_you_screen: { ...strategy.lead_form.thank_you_screen, headline: value },
+                          },
+                        })
+                      }
+                    />
+                    <EditableText
+                      label="Экран благодарности — описание"
+                      value={strategy.lead_form.thank_you_screen.description}
+                      multiline
+                      onCommit={(value) =>
+                        void saveStrategy({
+                          ...strategy,
+                          lead_form: {
+                            ...strategy.lead_form,
+                            thank_you_screen: { ...strategy.lead_form.thank_you_screen, description: value },
+                          },
+                        })
+                      }
+                    />
+                    <EditableText
+                      label="Кнопка лид-формы"
+                      value={strategy.lead_form.call_to_action}
+                      onCommit={(value) =>
+                        void saveStrategy({
+                          ...strategy,
+                          lead_form: { ...strategy.lead_form, call_to_action: value },
+                        })
+                      }
                     />
                   </>
                 ) : (
@@ -157,6 +410,140 @@ export function CampaignDashboard({
         </section>
       </div>
       {zoom ? <ZoomImage src={zoom} onClose={() => setZoom(null)} /> : null}
+    </div>
+  );
+}
+
+function EditableText({
+  label,
+  value,
+  multiline = false,
+  onCommit,
+}: {
+  label: string;
+  value: string;
+  multiline?: boolean;
+  onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(value);
+  useEffect(() => setDraft(value), [value]);
+
+  function commit(event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    const next = event.currentTarget.value.trim();
+    if (!next || next === value) {
+      setDraft(value);
+      return;
+    }
+    onCommit(next);
+  }
+
+  return (
+    <div className="grid gap-2">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{label}</p>
+      {multiline ? (
+        <textarea
+          value={draft}
+          rows={4}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          className="w-full resize-y rounded-lg border border-zinc-800 bg-black/40 px-3 py-2 text-sm leading-6 text-zinc-200 outline-none focus:border-zinc-500"
+        />
+      ) : (
+        <input
+          value={draft}
+          onChange={(event) => setDraft(event.target.value)}
+          onBlur={commit}
+          className="w-full rounded-lg border border-zinc-800 bg-black/40 px-3 py-2 text-sm leading-6 text-zinc-200 outline-none focus:border-zinc-500"
+        />
+      )}
+    </div>
+  );
+}
+
+function EditableList({
+  label,
+  items,
+  marked = false,
+  multiline = false,
+  onCommit,
+}: {
+  label: string;
+  items: string[];
+  marked?: boolean;
+  multiline?: boolean;
+  onCommit: (items: string[]) => void;
+}) {
+  return (
+    <div className="grid gap-2">
+      <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{label}</p>
+      <ul className="grid gap-2">
+        {items.map((item, index) => (
+          <li key={`${label}-${index}`}>
+            <EditableRow
+              text={item}
+              marked={marked}
+              multiline={multiline}
+              onCommit={(value) => {
+                const next = [...items];
+                next[index] = value;
+                onCommit(next);
+              }}
+            />
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function EditableRow({
+  text,
+  marked = false,
+  multiline = false,
+  onCommit,
+}: {
+  text: string;
+  marked?: boolean;
+  multiline?: boolean;
+  onCommit: (value: string) => void;
+}) {
+  const [draft, setDraft] = useState(text);
+  useEffect(() => setDraft(text), [text]);
+
+  function commit() {
+    const next = draft.trim();
+    if (!next || next === text) {
+      setDraft(text);
+      return;
+    }
+    onCommit(next);
+  }
+
+  return (
+    <div className="flex items-start justify-between gap-3 rounded-lg border border-zinc-800 bg-black/40 px-3 py-2">
+      <div className={cn("flex min-w-0 flex-1 gap-2 text-sm leading-6 text-zinc-200", marked && "items-start")}>
+        {marked ? <Check className="mt-1 size-3.5 shrink-0 text-zinc-400" /> : null}
+        {multiline ? (
+          <textarea
+            value={draft}
+            rows={3}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={commit}
+            className="min-w-0 flex-1 resize-y bg-transparent outline-none"
+          />
+        ) : (
+          <input
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            onBlur={commit}
+            className="min-w-0 flex-1 bg-transparent outline-none"
+          />
+        )}
+      </div>
+      <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 px-2 text-zinc-400" onClick={() => copyText(text)}>
+        <Copy className="size-3.5" />
+        Скопировать
+      </Button>
     </div>
   );
 }
@@ -219,9 +606,7 @@ function EmptyPanel({ text }: { text: string }) {
 }
 
 function formatCreated(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "Дата неизвестна";
-  return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" }).format(date);
+  return formatRuDate(value);
 }
 
 function imageCountLabel(count: number) {
@@ -289,35 +674,11 @@ function LinkBack() {
   );
 }
 
-function TextGroup({ label, items, marked = false }: { label: string; items: string[]; marked?: boolean }) {
-  return (
-    <div className="grid gap-2">
-      <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{label}</p>
-      <ul className="grid gap-2">
-        {items.map((item, index) => (
-          <li key={`${label}-${index}`}>
-            <CopyRow text={item} marked={marked} />
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function CopyRow({ text, marked = false }: { text: string; marked?: boolean }) {
+function CopyRow({ text }: { text: string }) {
   return (
     <div className="flex items-start justify-between gap-3 rounded-lg border border-zinc-800 bg-black/40 px-3 py-2">
-      <p className="flex gap-2 text-sm leading-6 text-zinc-200">
-        {marked ? <Check className="mt-1 size-3.5 shrink-0 text-zinc-400" /> : null}
-        <span>{text}</span>
-      </p>
-      <Button
-        type="button"
-        variant="ghost"
-        size="sm"
-        className="h-8 shrink-0 px-2 text-zinc-400"
-        onClick={() => copyText(text)}
-      >
+      <p className="text-sm leading-6 text-zinc-200">{text}</p>
+      <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 px-2 text-zinc-400" onClick={() => copyText(text)}>
         <Copy className="size-3.5" />
         Скопировать
       </Button>

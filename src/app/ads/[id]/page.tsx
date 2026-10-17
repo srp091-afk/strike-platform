@@ -26,7 +26,14 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
   await io();
   const { id } = await params;
 
-  let project: { name: string; strategy: AdStrategy | null; status: ProjectStatus } | null = null;
+  let project: {
+    id: string;
+    name: string;
+    strategy: AdStrategy | null;
+    status: ProjectStatus;
+    updatedAt: string | null;
+    creativesReplaceAt: string | null;
+  } | null = null;
   let generations: AdGeneration[] = [];
   let error: string | null = null;
 
@@ -62,10 +69,13 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
 
   return (
     <CampaignDashboard
+      projectId={project.id}
       name={project.name}
       strategy={project.strategy}
       status={project.status}
       generations={generations}
+      updatedAt={project.updatedAt}
+      creativesReplaceAt={project.creativesReplaceAt}
     />
   );
 }
@@ -113,33 +123,51 @@ async function loadProjectRow(
 ) {
   const full = await supabase
     .from("ad_projects")
-    .select("id, name, status, strategy_data, creatives_data, style_key")
+    .select("id, name, status, strategy_data, creatives_data, style_key, updated_at, creatives_replace_at, created_at")
     .eq("id", id)
     .eq("user_id", userId)
     .maybeSingle();
 
   if (!full.error) return full.data;
-  if (/creatives_data|style_key/i.test(full.error.message) && !/strategy_data/i.test(full.error.message)) {
+  if (
+    /creatives_data|style_key|updated_at|creatives_replace_at/i.test(full.error.message) &&
+    !/strategy_data/i.test(full.error.message)
+  ) {
     const mid = await supabase
       .from("ad_projects")
-      .select("id, name, status, strategy_data")
+      .select("id, name, status, strategy_data, created_at")
       .eq("id", id)
       .eq("user_id", userId)
       .maybeSingle();
-    if (!mid.error && mid.data) return { ...mid.data, creatives_data: null, style_key: null };
+    if (!mid.error && mid.data) {
+      return {
+        ...mid.data,
+        creatives_data: null,
+        style_key: null,
+        updated_at: mid.data.created_at,
+        creatives_replace_at: null,
+      };
+    }
     if (mid.error && !/strategy_data/i.test(mid.error.message)) throw new Error(mid.error.message);
   }
   if (!/strategy_data/i.test(full.error.message)) throw new Error(full.error.message);
 
   const basic = await supabase
     .from("ad_projects")
-    .select("id, name, status")
+    .select("id, name, status, created_at")
     .eq("id", id)
     .eq("user_id", userId)
     .maybeSingle();
   if (basic.error) throw new Error(basic.error.message);
   if (!basic.data) return null;
-  return { ...basic.data, strategy_data: null, creatives_data: null, style_key: null };
+  return {
+    ...basic.data,
+    strategy_data: null,
+    creatives_data: null,
+    style_key: null,
+    updated_at: basic.data.created_at,
+    creatives_replace_at: null,
+  };
 }
 
 async function loadProject(id: string) {
@@ -172,9 +200,17 @@ async function loadProject(id: string) {
 
   return {
     project: {
+      id: projectId,
       name: typeof data.name === "string" && data.name.trim() ? data.name : "Без названия",
       strategy: parseAdStrategy(data.strategy_data),
       status: readStatus(data.status),
+      updatedAt:
+        typeof data.updated_at === "string"
+          ? data.updated_at
+          : typeof data.created_at === "string"
+            ? data.created_at
+            : null,
+      creativesReplaceAt: typeof data.creatives_replace_at === "string" ? data.creatives_replace_at : null,
     },
     generations,
   };

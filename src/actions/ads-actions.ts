@@ -3,6 +3,7 @@
 import * as XLSX from "xlsx";
 
 import { generateAdStrategy, parseAdStrategy, publicModelError } from "@/lib/ad-strategy";
+import { plusDaysIso } from "@/lib/ad-project-media";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { formatBriefSummary, parseFormattedBrief, publicFormatError } from "@/lib/format-brief";
 import { getOpenAI } from "@/lib/openai";
@@ -100,6 +101,7 @@ export async function createAdCampaign(
 
     const formattedBrief = await resolveFormattedBrief(summary, submittedFormatted);
     const strategy = await resolveStrategy(summary, submittedStrategy, formattedBrief);
+    const now = new Date();
 
     const inserted = await insertProject(supabase, {
       user_id: userId,
@@ -112,6 +114,8 @@ export async function createAdCampaign(
       creative_language: creativeLanguage,
       font_style: fontStyle,
       style_key: styleKey,
+      updated_at: now.toISOString(),
+      creatives_replace_at: plusDaysIso(now, 14),
     });
     if (inserted.error || !inserted.data) {
       const message = inserted.error?.message ?? "Не удалось создать проект.";
@@ -169,6 +173,8 @@ async function insertProject(
     creative_language: string;
     font_style: string;
     style_key: string;
+    updated_at: string;
+    creatives_replace_at: string;
   },
 ) {
   const first = await supabase.from("ad_projects").insert(row).select("id").single();
@@ -179,22 +185,43 @@ async function insertProject(
     creative_language: _language,
     font_style: _font,
     style_key: _style,
+    updated_at: _updated,
+    creatives_replace_at: _replace,
     formatted_brief,
     ...core
   } = row;
+  const missingDates = /updated_at|creatives_replace_at/i.test(first.error.message);
   const missingSettings = /creatives_count|creative_language|font_style|style_key/i.test(first.error.message);
   const missingFormatted = /formatted_brief/i.test(first.error.message);
-  if (!missingSettings && !missingFormatted) return first;
+  if (!missingSettings && !missingFormatted && !missingDates) return first;
 
-  const payload = missingSettings
-    ? missingFormatted
-      ? core
-      : { ...core, formatted_brief }
-    : (({ formatted_brief: _drop, ...rest }) => rest)(row);
+  let payload: Record<string, unknown> = { ...row };
+  if (missingDates) {
+    const { updated_at: _u, creatives_replace_at: _r, ...withoutDates } = payload as typeof row;
+    payload = withoutDates;
+  }
+  if (missingSettings) {
+    const {
+      creatives_count: _c,
+      creative_language: _l,
+      font_style: _f,
+      style_key: _s,
+      ...rest
+    } = payload as typeof row;
+    payload = rest;
+  }
+  if (missingFormatted) {
+    const { formatted_brief: _fb, ...rest } = payload;
+    payload = rest;
+  }
 
   const second = await supabase.from("ad_projects").insert(payload).select("id").single();
-  if (!second.error || !/formatted_brief/i.test(second.error.message)) return second;
-  return supabase.from("ad_projects").insert(core).select("id").single();
+  if (!second.error) return second;
+  if (/formatted_brief/i.test(second.error.message)) {
+    const { formatted_brief: _drop, ...rest } = payload;
+    return supabase.from("ad_projects").insert(rest).select("id").single();
+  }
+  return second;
 }
 
 async function resolveFormattedBrief(summary: string, submitted: string) {
