@@ -21,6 +21,43 @@
   --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+@keyframes typing {
+  0%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.4;
+  }
+  50% {
+    transform: translateY(-3px);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-subtle {
+  0%,
+  100% {
+    box-shadow: 0 0 12px rgba(139, 92, 246, 0.04);
+  }
+  50% {
+    box-shadow: 0 0 20px rgba(139, 92, 246, 0.14);
+  }
+}
+
+@utility animate-typing {
+  animation: typing 1.2s infinite ease-in-out;
+}
+
+@utility animate-pulse-subtle {
+  animation: pulse-subtle 2.4s infinite ease-in-out;
+}
+
 @layer base {
   html {
     @apply bg-black text-zinc-400 antialiased;

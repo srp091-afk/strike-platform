@@ -207,9 +207,9 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   const selected = templates.find((template) => template.id === selectedTemplate) ?? null;
 
   return (
-    <div className="mx-auto grid max-w-5xl gap-4">
-      <Card className="grid gap-6 border-zinc-800 bg-zinc-900/40 p-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col">
+      <Card className="flex min-h-0 flex-1 flex-col gap-4 overflow-hidden border-zinc-800 bg-zinc-900/40 p-4 sm:p-6">
+        <div className="flex shrink-0 flex-wrap items-center justify-between gap-3">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
             Шаг {stage === "intake" ? "1" : "2"} из 2
           </p>
@@ -220,8 +220,8 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
         </div>
 
         {stage === "intake" ? (
-          <div className="grid gap-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="flex min-h-0 flex-1 flex-col gap-4">
+            <div className="flex shrink-0 flex-wrap items-start justify-between gap-3">
               <div className="grid gap-1">
                 <h2 className="font-heading text-lg font-semibold text-white">Сбор фактов</h2>
                 <p className="text-sm text-zinc-400">ИИ задаст вопросы по одному или примет готовую таблицу.</p>
@@ -232,96 +232,115 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
               </Button>
             </div>
 
-            <Tabs defaultValue="brief">
-              <TabsList>
+            <Tabs defaultValue="brief" className="min-h-0 flex-1">
+              <TabsList className="shrink-0">
                 <TabsTrigger value="brief">Пройти AI-бриф</TabsTrigger>
                 <TabsTrigger value="table">Загрузить готовую таблицу</TabsTrigger>
               </TabsList>
-              <TabsContent value="brief" className="grid gap-3">
-                <div
-                  ref={threadRef}
-                  className="flex h-[400px] flex-col gap-5 overflow-y-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0"
-                  aria-live="polite"
-                >
-                  {messages.map((message, index) =>
-                    message.role === "assistant" ? (
-                      <div key={`${message.role}-${index}`} className="flex items-start gap-3">
-                        <span className="mt-0.5 inline-flex shrink-0 rounded-full border border-zinc-800 bg-zinc-900 p-1.5 text-zinc-300">
+              <TabsContent value="brief" className="flex min-h-0 flex-1 flex-col">
+                <div className="relative flex h-[600px] max-h-full min-h-0 flex-col overflow-hidden rounded-xl border border-zinc-800 bg-black">
+                  <div
+                    ref={threadRef}
+                    className="flex min-h-0 flex-1 flex-col space-y-6 overflow-y-auto px-6 pt-6 pb-36 scrollbar-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden [&>*]:shrink-0"
+                    aria-live="polite"
+                  >
+                    {messages.map((message, index) =>
+                      message.role === "assistant" ? (
+                        <div key={`${message.role}-${index}`} className="flex items-start gap-3">
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-600 bg-zinc-800 text-white shadow-sm">
+                            <Bot className="size-4" />
+                          </span>
+                          <div className="min-w-0 rounded-2xl rounded-tl-sm border border-zinc-800/50 bg-zinc-900/40 px-5 py-4 backdrop-blur-sm">
+                            <p className="text-sm leading-relaxed tracking-wide text-zinc-100">{message.content}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <p
+                          key={`${message.role}-${index}`}
+                          className="max-w-[85%] self-end rounded-3xl rounded-tr-sm bg-zinc-800 px-5 py-3 text-sm leading-6 text-white"
+                        >
+                          {message.content}
+                        </p>
+                      ),
+                    )}
+                    {sending ? (
+                      <div className="flex items-start gap-3">
+                        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-600 bg-zinc-800 text-white shadow-sm">
                           <Bot className="size-4" />
                         </span>
-                        <p className="pt-1 text-sm leading-6 text-zinc-200">{message.content}</p>
+                        <div
+                          className="flex items-center gap-1.5 rounded-xl border border-zinc-800/50 bg-zinc-900/40 px-2 py-1 shadow-[0_0_20px_rgba(139,92,246,0.05)] backdrop-blur-sm animate-pulse-subtle"
+                          role="status"
+                          aria-label="ИИ думает"
+                        >
+                          {["0ms", "150ms", "300ms"].map((delay) => (
+                            <span
+                              key={delay}
+                              className="h-1.5 w-1.5 animate-typing rounded-full bg-zinc-400"
+                              style={{ animationDelay: delay }}
+                            />
+                          ))}
+                        </div>
                       </div>
                     ) : (
-                      <p
-                        key={`${message.role}-${index}`}
-                        className="max-w-[85%] self-end rounded-3xl rounded-tr-sm bg-zinc-800 px-5 py-3 text-sm leading-6 text-white"
-                      >
-                        {message.content}
-                      </p>
-                    ),
-                  )}
-                  {sending ? (
-                    <div className="flex items-center gap-3 text-zinc-500">
-                      <span className="inline-flex rounded-full border border-zinc-800 bg-zinc-900 p-1.5">
-                        <Bot className="size-4" />
-                      </span>
-                      <span className="text-sm">…</span>
-                    </div>
-                  ) : (
-                    <SuggestionRow
-                      loading={suggestionsLoading}
-                      suggestions={suggestions}
-                      onPick={appendSuggestion}
-                    />
-                  )}
-                </div>
-                {chatError ? (
-                  <Alert variant="destructive">
-                    <AlertTitle>Ответ не отправлен</AlertTitle>
-                    <AlertDescription>{chatError}</AlertDescription>
-                  </Alert>
-                ) : null}
-                <form className="relative" onSubmit={sendMessage}>
-                  <Textarea
-                    value={draft}
-                    rows={2}
-                    placeholder="Цифры и факты, без общих фраз"
-                    disabled={sending}
-                    autoComplete="off"
-                    className="min-h-16 resize-none rounded-lg border-zinc-800 bg-zinc-900/60 py-3 pr-28 pl-4 [scrollbar-width:none] focus-visible:border-zinc-500 [&::-webkit-scrollbar]:hidden"
-                    onChange={(event) => setDraft(event.target.value)}
-                  />
-                  <div className="absolute right-2 bottom-2 flex items-center gap-1.5">
-                    <button
-                      type="button"
-                      aria-label={listening ? "Остановить запись" : "Голосовой ввод"}
-                      aria-pressed={listening}
-                      className={cn(
-                        "grid h-9 w-9 place-items-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-800 hover:text-white",
-                        listening && "animate-pulse text-red-500",
-                      )}
-                      onClick={toggleVoice}
-                    >
-                      <Mic className="size-4" />
-                    </button>
-                    <button
-                      type="submit"
-                      aria-label="Отправить"
-                      disabled={sending || !draft.trim()}
-                      className="inline-flex h-9 items-center justify-center rounded-lg bg-white px-3.5 text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
-                    >
-                      <ArrowUp className="size-4" />
-                    </button>
+                      <SuggestionRow
+                        loading={suggestionsLoading}
+                        suggestions={suggestions}
+                        onPick={appendSuggestion}
+                      />
+                    )}
                   </div>
-                </form>
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-32 bg-gradient-to-t from-black via-black/80 to-transparent" />
+                  <form className="absolute inset-x-0 bottom-0 z-20 p-4" onSubmit={sendMessage}>
+                    {chatError ? (
+                      <Alert variant="destructive" className="mb-3">
+                        <AlertTitle>Ответ не отправлен</AlertTitle>
+                        <AlertDescription>{chatError}</AlertDescription>
+                      </Alert>
+                    ) : null}
+                    <div className="relative">
+                      <Textarea
+                        value={draft}
+                        rows={2}
+                        placeholder="Цифры и факты, без общих фраз"
+                        disabled={sending}
+                        autoComplete="off"
+                        className="max-h-28 min-h-14 resize-none rounded-xl border-zinc-700/50 bg-zinc-900/80 px-4 py-3 pr-28 text-white shadow-2xl backdrop-blur-xl transition-colors placeholder:text-zinc-500 focus:border-zinc-500 focus-visible:border-zinc-500 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+                        onChange={(event) => setDraft(event.target.value)}
+                      />
+                      <div className="absolute inset-y-0 right-3 flex items-center gap-1.5">
+                        <button
+                          type="button"
+                          aria-label={listening ? "Остановить запись" : "Голосовой ввод"}
+                          aria-pressed={listening}
+                          className={cn(
+                            "grid h-8 w-8 place-items-center text-zinc-400 transition-colors hover:text-white",
+                            listening && "animate-pulse text-red-500",
+                          )}
+                          onClick={toggleVoice}
+                        >
+                          <Mic className="size-4" />
+                        </button>
+                        <button
+                          type="submit"
+                          aria-label="Отправить"
+                          disabled={sending || !draft.trim()}
+                          className="inline-flex h-8 items-center justify-center rounded-md bg-white px-3 text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          <ArrowUp className="size-4" />
+                        </button>
+                      </div>
+                    </div>
+                  </form>
+                </div>
               </TabsContent>
-              <TabsContent value="table">
+              <TabsContent value="table" className="min-h-0 flex-1 overflow-y-auto">
                 <TableUpload onAccepted={acceptTable} />
               </TabsContent>
             </Tabs>
           </div>
         ) : (
-          <form action={createAction} className="grid gap-5">
+          <form action={createAction} className="grid min-h-0 flex-1 gap-5 overflow-y-auto">
             <input type="hidden" name="brief_summary" value={briefSummary} />
             <input type="hidden" name="template_id" value={selectedTemplate ?? ""} />
             <input type="hidden" name="source" value={source} />
@@ -421,7 +440,7 @@ function SuggestionRow({
 }) {
   if (loading) {
     return (
-      <div className="flex gap-2 overflow-hidden pb-2 pl-11">
+      <div className="flex w-full min-w-0 gap-2 overflow-x-auto pb-2 pl-11 scrollbar-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {[0, 1, 2].map((item) => (
           <span key={item} className="h-9 w-28 shrink-0 animate-pulse rounded-xl bg-zinc-800" />
         ))}
@@ -430,7 +449,7 @@ function SuggestionRow({
   }
   if (suggestions.length === 0) return null;
   return (
-    <div className="flex gap-2 overflow-x-auto pb-2 pl-11 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+    <div className="flex w-full min-w-0 gap-2 overflow-x-auto pb-2 pl-11 scrollbar-none [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
       {suggestions.map((suggestion, index) => (
         <button
           key={`${suggestion}-${index}`}
