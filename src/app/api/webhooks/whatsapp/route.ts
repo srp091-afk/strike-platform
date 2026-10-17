@@ -1,7 +1,7 @@
 import type { NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
+import { normalizeAgentModel, readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
 import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
@@ -212,11 +212,11 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     const latest = dialogue[dialogue.length - 1];
     if (!latest || latest.role !== "user" || !latest.content.trim()) return;
 
-    const configuredModel = (agent.model as string) || "gpt-4o-mini";
+    const configuredModel = normalizeAgentModel(agent.model);
     const model = image ? visionModel(configuredModel) : configuredModel;
     const completion = await completeWithNotifyManager({
       model,
-      temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
+      temperature: clampTemperature(agent.temperature),
       messages: [
         {
           role: "system",

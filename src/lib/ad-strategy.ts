@@ -249,22 +249,23 @@ export function publicModelError(error: unknown) {
 }
 
 async function requestStrategy(brief: string) {
-  const response = await getOpenAI().responses.create({
-    model: "gpt-6.1-sol",
-    input: [
-      { role: "system", content: strategyPrompt.replace("{brief_summary}", brief) },
-      { role: "user", content: "Собери рекламную стратегию по брифу и верни только JSON." },
-    ],
-    text: {
-      format: {
-        type: "json_schema",
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o",
+    temperature: 0.7,
+    response_format: {
+      type: "json_schema",
+      json_schema: {
         name: "ad_strategy",
         strict: true,
         schema: strategySchema,
       },
     },
+    messages: [
+      { role: "system", content: strategyPrompt.replace("{brief_summary}", brief) },
+      { role: "user", content: "Собери рекламную стратегию по брифу и верни только JSON." },
+    ],
   });
-  const raw = response.output_text.trim();
+  const raw = completion.choices[0]?.message?.content?.trim() ?? "";
   if (!raw) throw new Error("Модель вернула пустой ответ.");
   return raw;
 }

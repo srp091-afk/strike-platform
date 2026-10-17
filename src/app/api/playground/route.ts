@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { normalizeAgentModel } from "@/lib/agent-models";
 import { getOpenAI } from "@/lib/openai";
 import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -55,10 +56,10 @@ export async function POST(request: NextRequest) {
       };
 
       try {
-        const model = (agent.model as string) || "gpt-4o-mini";
+        const model = normalizeAgentModel(agent.model);
         const completion = await getOpenAI().chat.completions.create({
           model,
-          temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
+          temperature: clampTemperature(agent.temperature),
           messages: [
             {
               role: "system",

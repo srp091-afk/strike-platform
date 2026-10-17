@@ -27,7 +27,9 @@ import {
 import {
   AGENT_MODELS,
   DEFAULT_ACTIVE_CHANNELS,
+  DEFAULT_AGENT_MODEL,
   HANDOFF_DURATIONS,
+  normalizeAgentModel,
   type ActiveChannels,
   type AgentRecord,
   type HandoffDuration,
@@ -474,7 +476,7 @@ type AgentDraft = {
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
   return {
     name: agent?.name ?? "",
-    model: agent?.model ?? "gpt-4o-mini",
+    model: normalizeAgentModel(agent?.model ?? DEFAULT_AGENT_MODEL),
     temperature: String(agent?.temperature ?? 0.7),
     system_prompt: agent?.system_prompt ?? "",
     active_channels: { ...(agent?.active_channels ?? DEFAULT_ACTIVE_CHANNELS) },

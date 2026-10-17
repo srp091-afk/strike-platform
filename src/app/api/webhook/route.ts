@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { normalizeAgentModel } from "@/lib/agent-models";
 import { readBotFlags } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
@@ -132,10 +133,10 @@ export async function POST(request: NextRequest) {
 
   let reply = "";
   try {
-    const model = (agent.model as string) || "gpt-4o-mini";
+    const model = normalizeAgentModel(agent.model);
     const completion = await completeWithNotifyManager({
       model,
-      temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
+      temperature: clampTemperature(agent.temperature),
       messages: [
         {
           role: "system",

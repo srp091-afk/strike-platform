@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 
-import { readMessageLimit } from "@/lib/agent-models";
+import { normalizeAgentModel, readMessageLimit } from "@/lib/agent-models";
 import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
@@ -112,10 +112,10 @@ async function handleUpdate(token: string, body: unknown) {
       content: item.content as string,
     }));
 
-  const model = (agent.model as string) || "gpt-4o-mini";
+  const model = normalizeAgentModel(agent.model);
   const completion = await completeWithNotifyManager({
     model,
-    temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
+    temperature: clampTemperature(agent.temperature),
     messages: [
       {
         role: "system",

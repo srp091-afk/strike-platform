@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { normalizeAgentModel } from "@/lib/agent-models";
 import { getLanding } from "@/lib/landings";
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -26,10 +27,10 @@ export async function POST(request: NextRequest) {
       }));
 
     const agent = landing.agentId ? await loadAgent(landing.agentId) : null;
-    const model = agent?.model || "gpt-4o-mini";
+    const model = normalizeAgentModel(agent?.model);
     const completion = await getOpenAI().chat.completions.create({
       model,
-      temperature: model.includes("gpt-6") ? 1 : clamp(agent?.temperature),
+      temperature: clamp(agent?.temperature),
       messages: [
         {
           role: "system",
@@ -59,7 +60,7 @@ async function loadAgent(agentId: string) {
   if (error || !data || data.is_active === false) return null;
   return {
     system_prompt: String(data.system_prompt ?? ""),
-    model: String(data.model ?? "gpt-4o-mini"),
+    model: normalizeAgentModel(data.model),
     temperature: Number(data.temperature),
   };
 }

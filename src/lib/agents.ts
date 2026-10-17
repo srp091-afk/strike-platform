@@ -3,6 +3,7 @@ import "server-only";
 import { cache } from "react";
 
 import {
+  normalizeAgentModel,
   readActiveChannels,
   readHandoffDuration,
   readMessageLimit,
@@ -113,7 +114,7 @@ export async function listAgents(): Promise<AgentRecord[]> {
     id: row.id as string,
     name: row.name as string,
     system_prompt: row.system_prompt as string,
-    model: row.model as string,
+    model: normalizeAgentModel(row.model),
     temperature: Number(row.temperature),
     is_active: Boolean(row.is_active),
     created_at: row.created_at as string,

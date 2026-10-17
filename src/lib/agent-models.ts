@@ -1,11 +1,16 @@
 export const AGENT_MODELS = [
   { value: "gpt-4o-mini", label: "Базовая" },
   { value: "gpt-4o", label: "Продвинутая" },
-  { value: "gpt-6-astra", label: "GPT-6 Astra" },
-  { value: "gpt-6.1-sol", label: "GPT-6.1 Sol" },
 ] as const;
 
 export type AgentModel = (typeof AGENT_MODELS)[number]["value"];
+
+export const DEFAULT_AGENT_MODEL: AgentModel = "gpt-4o";
+
+export function normalizeAgentModel(value: unknown): AgentModel {
+  if (typeof value === "string" && isAgentModel(value)) return value;
+  return DEFAULT_AGENT_MODEL;
+}
 
 export type ActiveChannels = {
   whatsapp: boolean;
