@@ -1,4 +1,11 @@
-import { applyQuestionLimit, briefSystemPrompt, knownFacts, parseBriefReply, sanitizeBriefTurns } from "@/lib/brief-chat";
+import {
+  applyQuestionLimit,
+  briefSystemPrompt,
+  confirmMessage,
+  knownFacts,
+  parseBriefReply,
+  sanitizeBriefTurns,
+} from "@/lib/brief-chat";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { getOpenAI } from "@/lib/openai";
 
@@ -43,7 +50,7 @@ export async function POST(request: Request) {
       if (asked >= 10) {
         const summary = knownFacts(messages);
         return Response.json({
-          message: `${summary}\n\nВсё верно или хочешь что-то добавить?`,
+          message: confirmMessage(summary),
           suggestions: ["Да, всё супер, генерируем!", "Хочу добавить деталь"],
           status: "confirm",
           brief_summary: summary,
