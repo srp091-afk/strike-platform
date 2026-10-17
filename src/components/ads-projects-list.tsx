@@ -2,7 +2,7 @@
 
 import { Clock, FolderPlus, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import {
   AlertDialog,
@@ -33,6 +33,10 @@ export type AdsProjectCard = {
 export function AdsProjectsList({ initialProjects }: { initialProjects: AdsProjectCard[] }) {
   const [projects, setProjects] = useState(initialProjects);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  useEffect(() => {
+    setProjects(initialProjects);
+  }, [initialProjects]);
 
   async function deleteProject(id: string) {
     const previous = projects;
@@ -100,7 +104,6 @@ function ProjectCard({
     <Card className="flex flex-col justify-between gap-6 border-zinc-800 bg-zinc-900/40 p-5 backdrop-blur-md sm:p-6 lg:flex-row lg:items-center">
       <div className="min-w-0 flex-1">
         <h2 className="text-xl font-medium text-white">{project.name}</h2>
-        <p className="mt-1 text-sm text-zinc-400">Генерация лидов на холодную аудиторию</p>
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
           <p className="text-zinc-500">Обновлено: {formatRuDate(project.updatedAt)}</p>
           <p className="inline-flex items-center gap-1.5 text-zinc-300">

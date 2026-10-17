@@ -1,5 +1,6 @@
 import { buildCreatives, parseFormattedBriefRow, publicCreativesError, resolveStyleId } from "@/lib/generate-creatives";
 import { parseAdStrategy } from "@/lib/ad-strategy";
+import { isRealCreativeImageUrl } from "@/lib/ad-project-media";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { isCreativeLanguage, studioStyles } from "@/lib/studio-styles";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -69,7 +70,7 @@ export async function POST(request: Request) {
 
     const imageUrls = creatives
       .map((creative) => creative.image_url.trim())
-      .filter((url) => /^https?:\/\//i.test(url));
+      .filter((url) => isRealCreativeImageUrl(url));
 
     console.log("[generate-creatives] built", {
       projectId,

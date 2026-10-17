@@ -7,6 +7,7 @@ import { CampaignDashboard, type ProjectStatus } from "@/components/campaign-das
 import type { AdCreative, AdGeneration, AdGenerationStatus, AdStrategy } from "@/lib/ad-types";
 import { parseAdStrategy } from "@/lib/ad-strategy";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { isRealCreativeImageUrl } from "@/lib/ad-project-media";
 import { studioStyles } from "@/lib/studio-styles";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -94,7 +95,7 @@ function readImages(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     const url = typeof item === "string" ? item.trim() : "";
-    return url ? [url] : [];
+    return isRealCreativeImageUrl(url) ? [url] : [];
   });
 }
 
@@ -225,7 +226,7 @@ function generationFromCreativesData(
   const images = value.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const url = (item as AdCreative).image_url;
-    return typeof url === "string" && /^https?:\/\//i.test(url.trim()) ? [url.trim()] : [];
+    return typeof url === "string" && isRealCreativeImageUrl(url) ? [url.trim()] : [];
   });
   if (images.length === 0) return null;
   return {

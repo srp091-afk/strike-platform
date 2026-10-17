@@ -26,12 +26,21 @@ export function formatRuDate(iso: string | null | undefined) {
   return new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" }).format(date);
 }
 
+export function isRealCreativeImageUrl(url: string) {
+  const value = url.trim();
+  if (!/^https?:\/\//i.test(value)) return false;
+  // Exclude generation-failure placeholders used only as backend fallbacks.
+  if (/placehold\.co/i.test(value)) return false;
+  if (/Image\+Generation\+Failed|Creative\+Ready/i.test(value)) return false;
+  return true;
+}
+
 export function imageUrlsFromCreativesData(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     if (!item || typeof item !== "object") return [];
     const url = (item as AdCreative).image_url;
-    return typeof url === "string" && /^https?:\/\//i.test(url.trim()) ? [url.trim()] : [];
+    return typeof url === "string" && isRealCreativeImageUrl(url) ? [url.trim()] : [];
   });
 }
 
@@ -39,6 +48,6 @@ export function imageUrlsFromGenerationImages(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     const url = typeof item === "string" ? item.trim() : "";
-    return /^https?:\/\//i.test(url) ? [url] : [];
+    return isRealCreativeImageUrl(url) ? [url] : [];
   });
 }
