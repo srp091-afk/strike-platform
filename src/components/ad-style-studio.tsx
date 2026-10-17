@@ -1,6 +1,6 @@
 "use client";
 
-import { Globe, Sparkles } from "lucide-react";
+import { Globe, Loader2, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -33,6 +33,7 @@ export function AdStyleStudio({
   createError,
   templates,
   creating,
+  generating,
   onBack,
 }: {
   formattedBrief: AdFormattedBrief | null;
@@ -42,8 +43,10 @@ export function AdStyleStudio({
   createError: string | null;
   templates: StyleTemplate[];
   creating: boolean;
+  generating: boolean;
   onBack: () => void;
 }) {
+  const busy = creating || generating;
   const [creativesCount, setCreativesCount] = useState(3);
   const [creativeLanguage, setCreativeLanguage] = useState<CreativeLanguage>("ru");
   const [fontStyle, setFontStyle] = useState<FontStyle>("premium");
@@ -205,22 +208,50 @@ export function AdStyleStudio({
           <span className="text-xs text-zinc-600">~${dollarCost}</span>
         </div>
         <div className="flex items-center justify-end gap-2">
-          <Button type="button" variant="ghost" className="text-zinc-400 hover:text-white" onClick={onBack}>
+          <Button
+            type="button"
+            variant="ghost"
+            className="text-zinc-400 hover:text-white"
+            disabled={busy}
+            onClick={onBack}
+          >
             Назад
           </Button>
           <Button
             type="submit"
-            disabled={!templateId || creating || strategyPending}
+            disabled={!templateId || busy || strategyPending}
             className="rounded-xl bg-white px-6 py-2.5 font-bold text-black shadow-lg hover:bg-zinc-200"
           >
             {strategyPending
               ? "Собираем стратегию"
-              : creating
-                ? "Сохраняем кампанию"
-                : `Сгенерировать кампанию (${creativesCount})`}
+              : generating
+                ? "Генерируем креативы"
+                : creating
+                  ? "Сохраняем кампанию"
+                  : `Сгенерировать кампанию (${creativesCount})`}
           </Button>
         </div>
       </footer>
+
+      {generating ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-6 backdrop-blur-sm"
+          role="status"
+          aria-live="polite"
+          aria-label="Генерация креативов"
+        >
+          <div className="w-full max-w-sm rounded-2xl border border-zinc-800 bg-zinc-950 p-8 text-center shadow-2xl">
+            <Loader2 className="mx-auto size-10 animate-spin text-white" />
+            <p className="mt-5 text-base font-semibold text-white">Генерируем креативы</p>
+            <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+              Арт-директор собирает тексты и промпты. Обычно 15–30 секунд.
+            </p>
+            <div className="mt-6 h-1.5 overflow-hidden rounded-full bg-zinc-800">
+              <div className="h-full w-2/3 animate-pulse rounded-full bg-white" />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </>
   );
 }

@@ -4,6 +4,21 @@ export interface AdFormattedBrief {
   offer: string;
 }
 
+export interface AdCreativeTexts {
+  headline: string;
+  subheadline: string;
+  benefit: string;
+  cta: string;
+}
+
+export interface AdCreative {
+  id: string;
+  image_url: string;
+  prompt: string;
+  texts: AdCreativeTexts;
+  style_id: string;
+}
+
 export interface AdLeadQuestion {
   question: string;
   options: string[];

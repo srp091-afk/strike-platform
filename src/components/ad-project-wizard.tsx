@@ -3,6 +3,7 @@
 import { ArrowUp, Bot, Link as LinkIcon, Mic } from "lucide-react";
 
 import { AdStyleStudio } from "@/components/ad-style-studio";
+import { useRouter } from "next/navigation";
 import { useActionState, useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
 
 import { acceptUploadedTable, createAdCampaign, type CreateAdProjectState, type UploadedTableState } from "@/actions/ads-actions";
@@ -19,7 +20,7 @@ import { cn } from "@/lib/utils";
 const openingMessage = "Привет! Что мы будем продвигать и в каком регионе?";
 
 const uploadedInitial: UploadedTableState = { error: null, summary: null, raw: null };
-const createInitial: CreateAdProjectState = { error: null };
+const createInitial: CreateAdProjectState = { error: null, projectId: null };
 
 type ChatMessage = {
   role: "assistant" | "user";
@@ -37,6 +38,7 @@ type StyleTemplate = {
 };
 
 export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
+  const router = useRouter();
   const [stage, setStage] = useState<Stage>("intake");
   const [source, setSource] = useState<BriefSource>("chat");
   const [briefSummary, setBriefSummary] = useState("");
@@ -54,7 +56,9 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   const [strategyError, setStrategyError] = useState<string | null>(null);
   const [formattedBrief, setFormattedBrief] = useState<AdFormattedBrief | null>(null);
   const [formattedPending, setFormattedPending] = useState(false);
-  const [createState, createAction, creating] = useActionState(createAdCampaign, createInitial);
+  const [createError, setCreateError] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+  const [generating, setGenerating] = useState(false);
   const sendingRef = useRef(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const suggestionRequest = useRef(0);
@@ -252,6 +256,59 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     }
   }
 
+  async function submitCampaign(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (creating || generating || strategyPending) return;
+
+    const formData = new FormData(event.currentTarget);
+    setCreateError(null);
+    setCreating(true);
+
+    let projectId = "";
+    try {
+      const created = await createAdCampaign(createInitial, formData);
+      if (created.error || !created.projectId) {
+        setCreateError(created.error ?? "Не удалось создать проект.");
+        setCreating(false);
+        return;
+      }
+      projectId = created.projectId;
+    } catch (error) {
+      setCreateError(error instanceof Error ? error.message : "Не удалось создать проект.");
+      setCreating(false);
+      return;
+    }
+
+    setCreating(false);
+    setGenerating(true);
+
+    const creativesCount = Number(String(formData.get("creatives_count") ?? "").trim());
+    const creativeLanguage = String(formData.get("creative_language") ?? "").trim();
+    const styleId = String(formData.get("style_key") ?? "").trim();
+
+    try {
+      const response = await fetch("/api/generate-creatives", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, creativesCount, creativeLanguage, styleId }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        toast.error(
+          typeof payload.error === "string" && payload.error.trim()
+            ? payload.error
+            : "Не удалось сгенерировать креативы.",
+        );
+        router.push(`/ads/${projectId}`);
+        return;
+      }
+      router.push(`/ads/${projectId}`);
+    } catch {
+      toast.error("Не удалось связаться с сервером генерации.");
+      router.push(`/ads/${projectId}`);
+    }
+  }
+
   function toggleVoice() {
     const Recognition = speechRecognition();
     if (!Recognition) {
@@ -420,7 +477,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
             </Tabs>
           </div>
         ) : (
-          <form action={createAction} className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12">
+          <form onSubmit={submitCampaign} className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12">
             <input type="hidden" name="brief_summary" value={briefSummary} />
             <input type="hidden" name="source" value={source} />
             {strategyJson ? <input type="hidden" name="strategy_data" value={strategyJson} /> : null}
@@ -431,9 +488,10 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
               formattedPending={formattedPending}
               strategyPending={strategyPending}
               strategyError={strategyError}
-              createError={createState.error}
+              createError={createError}
               templates={templates}
               creating={creating}
+              generating={generating}
               onBack={() => setStage("intake")}
             />
           </form>

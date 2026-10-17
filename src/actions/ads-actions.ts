@@ -1,6 +1,5 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import * as XLSX from "xlsx";
 
 import { generateAdStrategy, parseAdStrategy, publicModelError } from "@/lib/ad-strategy";
@@ -12,6 +11,7 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export type CreateAdProjectState = {
   error: string | null;
+  projectId: string | null;
 };
 
 export type UploadedTableState = {
@@ -58,30 +58,30 @@ export async function createAdCampaign(
   const fontStyle = text(formData.get("font_style"));
   const styleKey = text(formData.get("style_key"));
 
-  if (summary.length < 12) return { error: "Бриф ещё не собран." };
-  if (!isUuid(templateId)) return { error: "Выберите визуальный стиль." };
-  if (source !== "chat" && source !== "table") return { error: "Неизвестный источник брифа." };
+  if (summary.length < 12) return { error: "Бриф ещё не собран.", projectId: null };
+  if (!isUuid(templateId)) return { error: "Выберите визуальный стиль.", projectId: null };
+  if (source !== "chat" && source !== "table") return { error: "Неизвестный источник брифа.", projectId: null };
   if (!Number.isInteger(creativesCount) || creativesCount < 1 || creativesCount > 5) {
-    return { error: "Выберите от 1 до 5 креативов." };
+    return { error: "Выберите от 1 до 5 креативов.", projectId: null };
   }
-  if (!isCreativeLanguage(creativeLanguage)) return { error: "Выберите язык текста на креативе." };
-  if (!isFontStyle(fontStyle)) return { error: "Выберите характер типографики." };
-  if (!isStudioStyleKey(styleKey)) return { error: "Выберите визуальный стиль." };
+  if (!isCreativeLanguage(creativeLanguage)) return { error: "Выберите язык текста на креативе.", projectId: null };
+  if (!isFontStyle(fontStyle)) return { error: "Выберите характер типографики.", projectId: null };
+  if (!isStudioStyleKey(styleKey)) return { error: "Выберите визуальный стиль.", projectId: null };
   const styleName = studioStyles.find((style) => style.key === styleKey)?.name ?? styleKey;
 
   const submittedStrategy = text(formData.get("strategy_data"));
-  if (submittedStrategy.length > 200_000) return { error: "Стратегия слишком большая." };
+  if (submittedStrategy.length > 200_000) return { error: "Стратегия слишком большая.", projectId: null };
   const submittedFormatted = text(formData.get("formatted_brief"));
-  if (submittedFormatted.length > 20_000) return { error: "Оформленный бриф слишком большой." };
+  if (submittedFormatted.length > 20_000) return { error: "Оформленный бриф слишком большой.", projectId: null };
 
   let table: unknown = null;
   if (source === "table") {
     const encoded = text(formData.get("raw_data"));
-    if (encoded.length > 1_000_000) return { error: "Таблица слишком большая." };
+    if (encoded.length > 1_000_000) return { error: "Таблица слишком большая.", projectId: null };
     try {
       table = encoded ? JSON.parse(encoded) : null;
     } catch {
-      return { error: "Таблица повреждена. Загрузите файл ещё раз." };
+      return { error: "Таблица повреждена. Загрузите файл ещё раз.", projectId: null };
     }
   }
 
@@ -95,8 +95,8 @@ export async function createAdCampaign(
       .eq("id", templateId)
       .eq("is_active", true)
       .maybeSingle();
-    if (templateError) return { error: templateError.message };
-    if (!template) return { error: "Выберите визуальный стиль." };
+    if (templateError) return { error: templateError.message, projectId: null };
+    if (!template) return { error: "Выберите визуальный стиль.", projectId: null };
 
     const strategy = await resolveStrategy(summary, submittedStrategy);
     const formattedBrief = await resolveFormattedBrief(summary, submittedFormatted);
@@ -116,12 +116,12 @@ export async function createAdCampaign(
     if (inserted.error || !inserted.data) {
       const message = inserted.error?.message ?? "Не удалось создать проект.";
       if (/strategy_data/i.test(message)) {
-        return { error: "В базе нет колонки strategy_data. Выполните миграцию в Supabase." };
+        return { error: "В базе нет колонки strategy_data. Выполните миграцию в Supabase.", projectId: null };
       }
       if (/formatted_brief/i.test(message)) {
-        return { error: "В базе нет колонки formatted_brief. Выполните миграцию в Supabase." };
+        return { error: "В базе нет колонки formatted_brief. Выполните миграцию в Supabase.", projectId: null };
       }
-      return { error: message };
+      return { error: message, projectId: null };
     }
     const data = inserted.data;
 
@@ -144,13 +144,16 @@ export async function createAdCampaign(
     });
     if (briefError) {
       await supabase.from("ad_projects").delete().eq("id", projectId).eq("user_id", userId);
-      return { error: briefError.message };
+      return { error: briefError.message, projectId: null };
     }
   } catch (error) {
-    return { error: error instanceof Error ? error.message : "Не удалось сохранить проект." };
+    return {
+      error: error instanceof Error ? error.message : "Не удалось сохранить проект.",
+      projectId: null,
+    };
   }
 
-  redirect(`/ads/${projectId}`);
+  return { error: null, projectId };
 }
 
 async function insertProject(

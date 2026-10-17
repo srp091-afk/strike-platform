@@ -4,12 +4,14 @@ export const studioStyles = [
     name: "Dark Editorial Grid",
     category: "Минимализм",
     note: "Швейцарская сетка, акцентный бейдж, холст #0A0A0A",
+    masterPrompt: `Visual system: Dark Editorial Grid. Canvas #0A0A0A, Swiss grid, thin white rules, numbered badge, high-contrast typography, asymmetric columns, editorial magazine energy. No clutter, no stock-photo clichés. Vertical 4:5 ad format.`,
   },
   {
     key: "dark-luxury-minimal",
     name: "Dark Luxury Minimal",
     category: "Премиум",
     note: "Монохромная глубина и ультратонкие разделители",
+    masterPrompt: `Visual system: Dark Luxury Minimal. Deep monochrome gradients, soft spotlight, ultra-thin hairline dividers, generous negative space, atelier/premium quiet luxury mood. Vertical 4:5 ad format. No busy patterns.`,
   },
 ] as const;
 
