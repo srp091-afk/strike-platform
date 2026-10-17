@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     const model = normalizeAgentModel(agent?.model);
     const completion = await getOpenAI().chat.completions.create({
       model,
-      temperature: clamp(agent?.temperature),
+      temperature: model.includes("gpt-6") ? 1 : clamp(agent?.temperature),
       messages: [
         {
           role: "system",

@@ -1,6 +1,8 @@
 export const AGENT_MODELS = [
   { value: "gpt-4o-mini", label: "Базовая" },
   { value: "gpt-4o", label: "Продвинутая" },
+  { value: "gpt-6-astra", label: "GPT-6 Astra" },
+  { value: "gpt-6.1-sol", label: "GPT-6.1 Sol" },
 ] as const;
 
 export type AgentModel = (typeof AGENT_MODELS)[number]["value"];

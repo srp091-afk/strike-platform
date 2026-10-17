@@ -216,7 +216,7 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     const model = image ? visionModel(configuredModel) : configuredModel;
     const completion = await completeWithNotifyManager({
       model,
-      temperature: clampTemperature(agent.temperature),
+      temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
       messages: [
         {
           role: "system",

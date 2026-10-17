@@ -115,7 +115,7 @@ async function handleUpdate(token: string, body: unknown) {
   const model = normalizeAgentModel(agent.model);
   const completion = await completeWithNotifyManager({
     model,
-    temperature: clampTemperature(agent.temperature),
+    temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
     messages: [
       {
         role: "system",
