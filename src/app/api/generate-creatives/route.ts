@@ -1,7 +1,7 @@
 import { buildCreatives, parseFormattedBriefRow, publicCreativesError, resolveStyleId } from "@/lib/generate-creatives";
 import { parseAdStrategy } from "@/lib/ad-strategy";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
-import { isCreativeLanguage } from "@/lib/studio-styles";
+import { isCreativeLanguage, studioStyles } from "@/lib/studio-styles";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 120;
@@ -41,15 +41,17 @@ export async function POST(request: Request) {
     return Response.json({ error: "Выберите визуальный стиль." }, { status: 400 });
   }
 
+  const styleName = studioStyles.find((style) => style.key === styleId)?.name ?? styleId;
   const supabase = createSupabaseAdminClient();
   const { data: project, error: projectError } = await supabase
     .from("ad_projects")
-    .select("id, formatted_brief, strategy_data")
+    .select("id, name, formatted_brief, strategy_data, style_key")
     .eq("id", projectId)
     .eq("user_id", userId)
     .maybeSingle();
 
   if (projectError) {
+    console.error("[generate-creatives] load project", projectError);
     return Response.json({ error: projectError.message }, { status: 500 });
   }
   if (!project) {
@@ -65,6 +67,16 @@ export async function POST(request: Request) {
       strategy: parseAdStrategy(project.strategy_data),
     });
 
+    const imageUrls = creatives
+      .map((creative) => creative.image_url.trim())
+      .filter((url) => /^https?:\/\//i.test(url));
+
+    console.log("[generate-creatives] built", {
+      projectId,
+      creativesCount: creatives.length,
+      imageUrls,
+    });
+
     const { error: updateError } = await supabase
       .from("ad_projects")
       .update({ creatives_data: creatives })
@@ -72,6 +84,7 @@ export async function POST(request: Request) {
       .eq("user_id", userId);
 
     if (updateError) {
+      console.error("[generate-creatives] update creatives_data", updateError);
       if (/creatives_data/i.test(updateError.message)) {
         return Response.json(
           { error: "В базе нет колонки creatives_data. Выполните миграцию в Supabase." },
@@ -81,8 +94,52 @@ export async function POST(request: Request) {
       return Response.json({ error: updateError.message }, { status: 500 });
     }
 
-    return Response.json({ ok: true, creatives });
+    const { error: statusError } = await supabase
+      .from("ad_projects")
+      .update({ status: "ready" })
+      .eq("id", projectId)
+      .eq("user_id", userId);
+    if (statusError) {
+      console.error("[generate-creatives] update status (non-fatal)", statusError);
+    }
+
+    // Dashboard reads ad_generations.images — keep creatives_data and generations in sync.
+    const { error: deactivateError } = await supabase
+      .from("ad_generations")
+      .update({ is_active: false })
+      .eq("project_id", projectId)
+      .eq("is_active", true);
+
+    if (deactivateError) {
+      console.error("[generate-creatives] deactivate generations", deactivateError);
+      return Response.json({ error: deactivateError.message }, { status: 500 });
+    }
+
+    const projectName =
+      typeof project.name === "string" && project.name.trim() ? project.name.trim() : "Кампания";
+    const { data: generation, error: insertError } = await supabase
+      .from("ad_generations")
+      .insert({
+        project_id: projectId,
+        title: `${projectName} · ${styleName}`,
+        style_name: styleName,
+        status: "ready",
+        is_active: true,
+        images: imageUrls,
+      })
+      .select("id, images")
+      .single();
+
+    if (insertError) {
+      console.error("[generate-creatives] insert ad_generations", insertError);
+      return Response.json({ error: insertError.message }, { status: 500 });
+    }
+
+    console.log("[generate-creatives] saved generation", generation);
+
+    return Response.json({ ok: true, creatives, generationId: generation?.id ?? null, images: imageUrls });
   } catch (error) {
+    console.error("[generate-creatives] fatal", error);
     return Response.json({ error: publicCreativesError(error) }, { status: 500 });
   }
 }
