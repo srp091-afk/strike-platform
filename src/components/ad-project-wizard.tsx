@@ -381,7 +381,6 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
             {source === "table" ? <input type="hidden" name="raw_data" value={JSON.stringify(tableRaw)} /> : null}
             <AdStyleStudio
               briefSummary={briefSummary}
-              strategyJson={strategyJson}
               strategyPending={strategyPending}
               strategyError={strategyError}
               createError={createState.error}
