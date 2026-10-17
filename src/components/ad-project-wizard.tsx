@@ -1,6 +1,8 @@
 "use client";
 
 import { ArrowUp, Bot, Link as LinkIcon, Mic } from "lucide-react";
+
+import { AdStyleStudio } from "@/components/ad-style-studio";
 import { useActionState, useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
 
 import { acceptUploadedTable, createAdCampaign, type CreateAdProjectState, type UploadedTableState } from "@/actions/ads-actions";
@@ -46,8 +48,6 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [suggestionClicks, setSuggestionClicks] = useState(0);
   const [listening, setListening] = useState(false);
-  const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
-  const [category, setCategory] = useState("Все");
   const [strategyJson, setStrategyJson] = useState("");
   const [strategyPending, setStrategyPending] = useState(false);
   const [strategyError, setStrategyError] = useState<string | null>(null);
@@ -245,12 +245,8 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     }
   }
 
-  const templateCategories = ["Все", ...new Set(templates.map((template) => template.category))];
-  const visibleTemplates = category === "Все" ? templates : templates.filter((template) => template.category === category);
-  const selected = templates.find((template) => template.id === selectedTemplate) ?? null;
-
   return (
-    <div className="mx-auto w-full max-w-5xl">
+    <div className={cn("mx-auto w-full", stage === "style" ? "max-w-7xl" : "max-w-5xl")}>
       <Card className="grid gap-5 border-zinc-800 bg-zinc-900/40 p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
@@ -378,79 +374,21 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
             </Tabs>
           </div>
         ) : (
-          <form action={createAction} className="grid gap-5">
+          <form action={createAction} className="grid grid-cols-1 items-start gap-8 lg:grid-cols-12">
             <input type="hidden" name="brief_summary" value={briefSummary} />
-            <input type="hidden" name="template_id" value={selectedTemplate ?? ""} />
             <input type="hidden" name="source" value={source} />
             {strategyJson ? <input type="hidden" name="strategy_data" value={strategyJson} /> : null}
             {source === "table" ? <input type="hidden" name="raw_data" value={JSON.stringify(tableRaw)} /> : null}
-
-            <div className="flex flex-wrap items-end justify-between gap-3">
-              <div className="grid max-w-2xl gap-1">
-                <h2 className="font-heading text-lg font-semibold text-white">Выберите визуальный стиль</h2>
-                <p className="line-clamp-3 text-sm leading-6 text-zinc-400">{briefSummary}</p>
-              </div>
-              <Button type="button" variant="outline" onClick={() => setStage("intake")}>
-                Назад
-              </Button>
-            </div>
-
-            {strategyError ? (
-              <Alert variant="destructive">
-                <AlertTitle>Стратегия не собралась</AlertTitle>
-                <AlertDescription>{strategyError} Можно сохранить кампанию — соберём её ещё раз.</AlertDescription>
-              </Alert>
-            ) : null}
-
-            {createState.error ? (
-              <Alert variant="destructive">
-                <AlertTitle>Проект не создан</AlertTitle>
-                <AlertDescription>{createState.error}</AlertDescription>
-              </Alert>
-            ) : null}
-
-            <Tabs value={category} onValueChange={setCategory}>
-              <TabsList className="h-auto flex-wrap">
-                {templateCategories.map((item) => (
-                  <TabsTrigger key={item} value={item} className="h-auto min-h-8 flex-none px-3 py-1">
-                    {item}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-            </Tabs>
-
-            {visibleTemplates.length === 0 ? (
-              <p className="rounded-xl border border-zinc-800 px-4 py-8 text-center text-sm text-zinc-400">
-                В базе пока нет активных стилей.
-              </p>
-            ) : (
-              <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-                {visibleTemplates.map((template) => {
-                  const active = template.id === selectedTemplate;
-                  return (
-                    <button
-                      key={template.id}
-                      type="button"
-                      aria-pressed={active}
-                      className={cn(
-                        "overflow-hidden rounded-2xl border-2 bg-zinc-900/40 text-left",
-                        active ? "border-white" : "border-zinc-800",
-                      )}
-                      onClick={() => setSelectedTemplate(template.id)}
-                    >
-                      <img src={template.preview_url} alt="" className="aspect-[4/5] w-full object-cover" />
-                      <span className="block px-3 py-3 text-sm font-medium text-white">{template.name}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-            <div className="flex justify-end">
-              <Button type="submit" disabled={!selected || creating || strategyPending}>
-                {strategyPending ? "Собираем стратегию" : creating ? "Сохраняем кампанию" : "Сгенерировать кампанию"}
-              </Button>
-            </div>
+            <AdStyleStudio
+              briefSummary={briefSummary}
+              strategyJson={strategyJson}
+              strategyPending={strategyPending}
+              strategyError={strategyError}
+              createError={createState.error}
+              templates={templates}
+              creating={creating}
+              onBack={() => setStage("intake")}
+            />
           </form>
         )}
       </Card>

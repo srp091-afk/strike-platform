@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import { generateAdStrategy, parseAdStrategy, publicModelError } from "@/lib/ad-strategy";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { getOpenAI } from "@/lib/openai";
+import { isCreativeLanguage, isFontStyle, isStudioStyleKey, studioStyles } from "@/lib/studio-styles";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export type CreateAdProjectState = {
@@ -51,10 +52,21 @@ export async function createAdCampaign(
   const summary = text(formData.get("brief_summary"));
   const templateId = text(formData.get("template_id"));
   const source = text(formData.get("source"));
+  const creativesCount = Number(text(formData.get("creatives_count")));
+  const creativeLanguage = text(formData.get("creative_language"));
+  const fontStyle = text(formData.get("font_style"));
+  const styleKey = text(formData.get("style_key"));
 
   if (summary.length < 12) return { error: "Бриф ещё не собран." };
   if (!isUuid(templateId)) return { error: "Выберите визуальный стиль." };
   if (source !== "chat" && source !== "table") return { error: "Неизвестный источник брифа." };
+  if (!Number.isInteger(creativesCount) || creativesCount < 1 || creativesCount > 5) {
+    return { error: "Выберите от 1 до 5 креативов." };
+  }
+  if (!isCreativeLanguage(creativeLanguage)) return { error: "Выберите язык текста на креативе." };
+  if (!isFontStyle(fontStyle)) return { error: "Выберите характер типографики." };
+  if (!isStudioStyleKey(styleKey)) return { error: "Выберите визуальный стиль." };
+  const styleName = studioStyles.find((style) => style.key === styleKey)?.name ?? styleKey;
 
   const submittedStrategy = text(formData.get("strategy_data"));
   if (submittedStrategy.length > 200_000) return { error: "Стратегия слишком большая." };
@@ -85,24 +97,25 @@ export async function createAdCampaign(
 
     const strategy = await resolveStrategy(summary, submittedStrategy);
 
-    const { data, error } = await supabase
-      .from("ad_projects")
-      .insert({
-        user_id: userId,
-        name: campaignName(summary),
-        brief_summary: summary,
-        template_id: template.id,
-        strategy_data: strategy,
-      })
-      .select("id")
-      .single();
-    if (error || !data) {
-      const message = error?.message ?? "Не удалось создать проект.";
+    const inserted = await insertProject(supabase, {
+      user_id: userId,
+      name: campaignName(summary),
+      brief_summary: summary,
+      template_id: template.id,
+      strategy_data: strategy,
+      creatives_count: creativesCount,
+      creative_language: creativeLanguage,
+      font_style: fontStyle,
+      style_key: styleKey,
+    });
+    if (inserted.error || !inserted.data) {
+      const message = inserted.error?.message ?? "Не удалось создать проект.";
       if (/strategy_data/i.test(message)) {
         return { error: "В базе нет колонки strategy_data. Выполните миграцию в Supabase." };
       }
       return { error: message };
     }
+    const data = inserted.data;
 
     projectId = String(data.id);
     const { error: briefError } = await supabase.from("ad_briefs").insert({
@@ -112,6 +125,13 @@ export async function createAdCampaign(
       raw_data: {
         source,
         table,
+        generation: {
+          creatives_count: creativesCount,
+          creative_language: creativeLanguage,
+          font_style: fontStyle,
+          style_key: styleKey,
+          style_name: styleName,
+        },
       },
     });
     if (briefError) {
@@ -123,6 +143,27 @@ export async function createAdCampaign(
   }
 
   redirect(`/ads/${projectId}`);
+}
+
+async function insertProject(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  row: {
+    user_id: string;
+    name: string;
+    brief_summary: string;
+    template_id: string;
+    strategy_data: unknown;
+    creatives_count: number;
+    creative_language: string;
+    font_style: string;
+    style_key: string;
+  },
+) {
+  const first = await supabase.from("ad_projects").insert(row).select("id").single();
+  if (!first.error) return first;
+  if (!/creatives_count|creative_language|font_style|style_key/i.test(first.error.message)) return first;
+  const { creatives_count: _count, creative_language: _language, font_style: _font, style_key: _style, ...base } = row;
+  return supabase.from("ad_projects").insert(base).select("id").single();
 }
 
 async function resolveStrategy(summary: string, submitted: string) {
