@@ -48,10 +48,14 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   const [listening, setListening] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [category, setCategory] = useState("Все");
+  const [strategyJson, setStrategyJson] = useState("");
+  const [strategyPending, setStrategyPending] = useState(false);
+  const [strategyError, setStrategyError] = useState<string | null>(null);
   const [createState, createAction, creating] = useActionState(createAdCampaign, createInitial);
   const sendingRef = useRef(false);
   const threadRef = useRef<HTMLDivElement>(null);
   const suggestionRequest = useRef(0);
+  const strategyRequest = useRef<string | null>(null);
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null);
   const draftRef = useRef("");
   draftRef.current = draft;
@@ -67,6 +71,46 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     if (messages.length <= 1 && !sending) return;
     threadRef.current?.lastElementChild?.scrollIntoView({ block: "nearest", behavior: "smooth" });
   }, [messages, sending, suggestions, suggestionsLoading, stage]);
+
+  useEffect(() => {
+    if (stage !== "style" || briefSummary.length < 12) return;
+    if (strategyRequest.current === briefSummary) return;
+    strategyRequest.current = briefSummary;
+    const summary = briefSummary;
+    let active = true;
+    setStrategyPending(true);
+    setStrategyJson("");
+    setStrategyError(null);
+
+    void fetch("/api/generate-strategy", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ brief_summary: summary }),
+    })
+      .then(async (response) => {
+        const payload = (await response.json()) as { error?: string };
+        if (!active && strategyRequest.current !== summary) return;
+        if (!response.ok || !isStrategyPayload(payload)) {
+          setStrategyJson("");
+          setStrategyError(typeof payload.error === "string" && payload.error.trim() ? payload.error : "Не удалось собрать стратегию.");
+          return;
+        }
+        setStrategyError(null);
+        setStrategyJson(JSON.stringify(payload));
+      })
+      .catch(() => {
+        if (!active && strategyRequest.current !== summary) return;
+        setStrategyJson("");
+        setStrategyError("Не удалось связаться с сервером.");
+      })
+      .finally(() => {
+        if (strategyRequest.current === summary) setStrategyPending(false);
+      });
+
+    return () => {
+      active = false;
+    };
+  }, [stage, briefSummary]);
 
   useEffect(() => {
     return () => recognitionRef.current?.stop();
@@ -338,6 +382,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
             <input type="hidden" name="brief_summary" value={briefSummary} />
             <input type="hidden" name="template_id" value={selectedTemplate ?? ""} />
             <input type="hidden" name="source" value={source} />
+            {strategyJson ? <input type="hidden" name="strategy_data" value={strategyJson} /> : null}
             {source === "table" ? <input type="hidden" name="raw_data" value={JSON.stringify(tableRaw)} /> : null}
 
             <div className="flex flex-wrap items-end justify-between gap-3">
@@ -349,6 +394,13 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
                 Назад
               </Button>
             </div>
+
+            {strategyError ? (
+              <Alert variant="destructive">
+                <AlertTitle>Стратегия не собралась</AlertTitle>
+                <AlertDescription>{strategyError} Можно сохранить кампанию — соберём её ещё раз.</AlertDescription>
+              </Alert>
+            ) : null}
 
             {createState.error ? (
               <Alert variant="destructive">
@@ -395,8 +447,8 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
             )}
 
             <div className="flex justify-end">
-              <Button type="submit" disabled={!selected || creating}>
-                {creating ? "Сохраняем кампанию" : "Сгенерировать кампанию"}
+              <Button type="submit" disabled={!selected || creating || strategyPending}>
+                {strategyPending ? "Собираем стратегию" : creating ? "Сохраняем кампанию" : "Сгенерировать кампанию"}
               </Button>
             </div>
           </form>
@@ -404,6 +456,12 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
       </Card>
     </div>
   );
+}
+
+function isStrategyPayload(value: unknown) {
+  if (!value || typeof value !== "object") return false;
+  const record = value as Record<string, unknown>;
+  return Boolean(record.strategy && record.creatives && record.facebook_setup && record.lead_form);
 }
 
 function readSuggestions(value: unknown) {

@@ -4,16 +4,14 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { CampaignDashboard, type ProjectStatus } from "@/components/campaign-dashboard";
-import type { AdGeneration, AdGenerationStatus } from "@/lib/ad-types";
+import type { AdGeneration, AdGenerationStatus, AdStrategy } from "@/lib/ad-types";
+import { parseAdStrategy } from "@/lib/ad-strategy";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const metadata: Metadata = {
   title: "AI-кампания",
 };
-
-const mockStrategy =
-  "Ремонт квартир под ключ в Казани для семей, которые купили жильё в новостройке и не хотят жить на стройке полгода. Оффер: белый ключ за 90 дней, смета фиксируется в договоре, неустойка 1 000 ₽ за каждый день просрочки.";
 
 export default function AdProjectPage({ params }: { params: Promise<{ id: string }> }) {
   return (
@@ -27,7 +25,7 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
   await io();
   const { id } = await params;
 
-  let project: { name: string; strategy: string; status: ProjectStatus } | null = null;
+  let project: { name: string; strategy: AdStrategy | null; status: ProjectStatus } | null = null;
   let generations: AdGeneration[] = [];
   let error: string | null = null;
 
@@ -107,17 +105,36 @@ function readGeneration(row: Record<string, unknown>, projectId: string): AdGene
   };
 }
 
-async function loadProject(id: string) {
-  const userId = await getAuthenticatedUserId();
-  const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
+async function loadProjectRow(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  id: string,
+  userId: string,
+) {
+  const full = await supabase
+    .from("ad_projects")
+    .select("id, name, status, strategy_data")
+    .eq("id", id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (!full.error) return full.data;
+  if (!/strategy_data/i.test(full.error.message)) throw new Error(full.error.message);
+
+  const basic = await supabase
     .from("ad_projects")
     .select("id, name, status")
     .eq("id", id)
     .eq("user_id", userId)
     .maybeSingle();
+  if (basic.error) throw new Error(basic.error.message);
+  if (!basic.data) return null;
+  return { ...basic.data, strategy_data: null };
+}
 
-  if (error) throw new Error(error.message);
+async function loadProject(id: string) {
+  const userId = await getAuthenticatedUserId();
+  const supabase = createSupabaseAdminClient();
+  const data = await loadProjectRow(supabase, id, userId);
   if (!data) return { project: null, generations: [] as AdGeneration[] };
 
   const projectId = String(data.id);
@@ -137,7 +154,7 @@ async function loadProject(id: string) {
   return {
     project: {
       name: typeof data.name === "string" && data.name.trim() ? data.name : "Без названия",
-      strategy: mockStrategy,
+      strategy: parseAdStrategy(data.strategy_data),
       status: readStatus(data.status),
     },
     generations,

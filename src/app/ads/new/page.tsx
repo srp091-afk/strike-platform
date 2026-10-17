@@ -9,6 +9,8 @@ export const metadata: Metadata = {
   title: "Новая AI-кампания",
 };
 
+export const maxDuration = 120;
+
 export default function NewAdProjectPage() {
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-8">

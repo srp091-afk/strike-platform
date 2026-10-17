@@ -3,6 +3,7 @@
 import { redirect } from "next/navigation";
 import * as XLSX from "xlsx";
 
+import { generateAdStrategy, parseAdStrategy, publicModelError } from "@/lib/ad-strategy";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -55,6 +56,9 @@ export async function createAdCampaign(
   if (!isUuid(templateId)) return { error: "Выберите визуальный стиль." };
   if (source !== "chat" && source !== "table") return { error: "Неизвестный источник брифа." };
 
+  const submittedStrategy = text(formData.get("strategy_data"));
+  if (submittedStrategy.length > 200_000) return { error: "Стратегия слишком большая." };
+
   let table: unknown = null;
   if (source === "table") {
     const encoded = text(formData.get("raw_data"));
@@ -79,6 +83,8 @@ export async function createAdCampaign(
     if (templateError) return { error: templateError.message };
     if (!template) return { error: "Выберите визуальный стиль." };
 
+    const strategy = await resolveStrategy(summary, submittedStrategy);
+
     const { data, error } = await supabase
       .from("ad_projects")
       .insert({
@@ -86,10 +92,17 @@ export async function createAdCampaign(
         name: campaignName(summary),
         brief_summary: summary,
         template_id: template.id,
+        strategy_data: strategy,
       })
       .select("id")
       .single();
-    if (error || !data) return { error: error?.message ?? "Не удалось создать проект." };
+    if (error || !data) {
+      const message = error?.message ?? "Не удалось создать проект.";
+      if (/strategy_data/i.test(message)) {
+        return { error: "В базе нет колонки strategy_data. Выполните миграцию в Supabase." };
+      }
+      return { error: message };
+    }
 
     projectId = String(data.id);
     const { error: briefError } = await supabase.from("ad_briefs").insert({
@@ -110,6 +123,23 @@ export async function createAdCampaign(
   }
 
   redirect(`/ads/${projectId}`);
+}
+
+async function resolveStrategy(summary: string, submitted: string) {
+  if (submitted) {
+    try {
+      const parsed = parseAdStrategy(JSON.parse(submitted) as unknown);
+      if (parsed) return parsed;
+    } catch {
+      // The client payload is optional. A missing or broken copy is generated below.
+    }
+  }
+
+  try {
+    return await generateAdStrategy(summary);
+  } catch (error) {
+    throw new Error(publicModelError(error));
+  }
 }
 
 function isUuid(value: string) {

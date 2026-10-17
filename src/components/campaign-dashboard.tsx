@@ -11,84 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
-import type { AdGeneration } from "@/lib/ad-types";
-
-const headlines = [
-  "Белый ключ за 90 дней",
-  "Смета не вырастет после договора",
-  "Ремонт новостройки без вашего контроля",
-  "Заехали через 3 месяца, а не через год",
-  "1 000 ₽ в день, если сорвём срок",
-];
-
-const subheadlines = [
-  "Цена и срок фиксируются до старта работ",
-  "Один прораб ведёт объект от стяжки до уборки",
-  "Фотоотчёт каждый вечер в WhatsApp",
-  "Материалы закупаем по согласованной ведомости",
-  "Приёмка по чек-листу, без скрытых работ",
-];
-
-const benefits = [
-  "Срок 90 дней прописан в договоре",
-  "Неустойка 1 000 ₽ за каждый день просрочки",
-  "Смета не меняется после подписания",
-  "Ежедневный фотоотчёт в WhatsApp",
-  "Закупка материалов входит в договор",
-  "Уборка перед сдачей включена в цену",
-  "Один договор вместо десяти подрядчиков",
-  "Прораб на связи в рабочие часы",
-  "Приёмка по чек-листу из 42 пунктов",
-  "Гарантия на работы 24 месяца",
-];
-
-const callsToAction = ["Рассчитать смету", "Забронировать замер", "Получить план за 90 дней"];
-
-const postBodies = [
-  "Купили квартиру в новостройке и уже полгода слушаете «ещё две недели»? Мы сдаём белый ключ за 90 дней. Смета и срок фиксируются в договоре до старта. Если задержимся, платим 1 000 ₽ за каждый день. Каждый вечер — фотоотчёт в WhatsApp, на приёмке чек-лист из 42 пунктов. Напишите площадь, посчитаем смету до выезда на замер.",
-  "Ремонт под ключ для тех, кто не хочет жить на объекте. Один прораб, одна смета, один срок — 90 дней. Материалы закупаем сами по ведомости, уборка перед сдачей входит в цену, гарантия на работы 24 месяца. Оставьте площадь и дату заезда: вернём расчёт и ближайшее окно на замер.",
-];
-
-const adHeadlines = ["Белый ключ за 90 дней", "Смета зафиксирована в договоре", "Ремонт без вашего контроля"];
-
-const adDescriptions = [
-  "Неустойка 1 000 ₽ за день просрочки",
-  "Фотоотчёт каждый вечер в WhatsApp",
-  "Замер и расчёт сметы до старта",
-];
-
-const formBenefits = [
-  "Срок и цена фиксируются до старта",
-  "Неустойка за каждый день просрочки",
-  "Фотоотчёт каждый вечер",
-  "Гарантия на работы 24 месяца",
-];
-
-const leadQuestions = [
-  {
-    prompt: "Какая площадь квартиры?",
-    answers: ["до 50 кв.м", "50-100 кв.м", "больше 100 кв.м"],
-  },
-  {
-    prompt: "Когда планируете заехать?",
-    answers: ["в этом месяце", "через 1–3 месяца", "дата не выбрана"],
-  },
-  {
-    prompt: "Нужен ремонт под ключ или только черновые работы?",
-    answers: ["под ключ", "только черновые"],
-  },
-  {
-    prompt: "Какой бюджет уже заложен?",
-    answers: ["до 1 млн ₽", "1–3 млн ₽", "больше 3 млн ₽"],
-  },
-];
+import type { AdGeneration, AdStrategy } from "@/lib/ad-types";
 
 export type ProjectStatus = "ready" | "processing" | "error";
-
-const thanksMessage =
-  "Смета почти готова. Напишите оператору в WhatsApp — пришлём расчёт и ближайшее окно на замер сегодня.";
-
-const thanksCta = "Написать в WhatsApp";
 
 export function CampaignDashboard({
   name,
@@ -97,7 +22,7 @@ export function CampaignDashboard({
   generations,
 }: {
   name: string;
-  strategy: string;
+  strategy: AdStrategy | null;
   status?: ProjectStatus;
   generations: AdGeneration[];
 }) {
@@ -129,33 +54,66 @@ export function CampaignDashboard({
             <AccordionItem value="strategy">
               <AccordionTrigger>Стратегия</AccordionTrigger>
               <AccordionContent>
-                <CopyRow text={strategy} />
+                {strategy ? (
+                  <div className="grid gap-5">
+                    <TextGroup label="Портрет аудитории" items={[strategy.strategy.target_audience_insight]} />
+                    <TextGroup label="Угол оффера" items={[strategy.strategy.core_offer_angle]} />
+                    <TextGroup label="Крючок" items={[strategy.strategy.hook_concept]} />
+                  </div>
+                ) : (
+                  <MissingCopy />
+                )}
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="texts">
               <AccordionTrigger>Тексты для креативов</AccordionTrigger>
               <AccordionContent className="grid gap-5">
-                <TextGroup label="Заголовки" items={headlines} />
-                <TextGroup label="Подзаголовки" items={subheadlines} />
-                <TextGroup label="Выгоды" items={benefits} marked />
-                <TextGroup label="Кнопки" items={callsToAction} />
+                {strategy ? (
+                  <>
+                    <TextGroup label="Заголовки" items={strategy.creatives.headlines} />
+                    <TextGroup label="Подзаголовки" items={strategy.creatives.subheadlines} />
+                    <TextGroup label="Выгоды" items={strategy.creatives.benefits} marked />
+                    <TextGroup label="Кнопки" items={strategy.creatives.buttons} />
+                  </>
+                ) : (
+                  <MissingCopy />
+                )}
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="facebook">
               <AccordionTrigger>Упаковка кампании (Facebook Ads)</AccordionTrigger>
               <AccordionContent className="grid gap-5">
-                <TextGroup label="Основной текст поста" items={postBodies} />
-                <TextGroup label="Заголовок объявления" items={adHeadlines} />
-                <TextGroup label="Описание объявления" items={adDescriptions} />
+                {strategy ? (
+                  <>
+                    <TextGroup label="Основной текст поста" items={strategy.facebook_setup.primary_texts} />
+                    <TextGroup label="Заголовок объявления" items={strategy.facebook_setup.headlines} />
+                    <TextGroup label="Описание объявления" items={strategy.facebook_setup.descriptions} />
+                  </>
+                ) : (
+                  <MissingCopy />
+                )}
               </AccordionContent>
             </AccordionItem>
             <AccordionItem value="lead">
               <AccordionTrigger>Настройка Лид-формы</AccordionTrigger>
               <AccordionContent className="grid gap-5">
-                <TextGroup label="1 экран. Приветствие" items={["Узнайте стоимость белого ключа за 2 минуты"]} />
-                <TextGroup label="Выгоды на первом экране" items={formBenefits} marked />
-                <LeadQuestions />
-                <TextGroup label="Экран благодарности" items={[thanksMessage, thanksCta]} />
+                {strategy ? (
+                  <>
+                    <TextGroup label="Заголовок" items={[strategy.lead_form.headline]} />
+                    <TextGroup label="Выгоды на первом экране" items={strategy.lead_form.welcome_screen_bullets} marked />
+                    <LeadQuestions questions={strategy.lead_form.questions} />
+                    <TextGroup
+                      label="Экран благодарности"
+                      items={[
+                        strategy.lead_form.thank_you_screen.headline,
+                        strategy.lead_form.thank_you_screen.description,
+                        strategy.lead_form.call_to_action,
+                      ]}
+                    />
+                  </>
+                ) : (
+                  <MissingCopy />
+                )}
               </AccordionContent>
             </AccordionItem>
           </Accordion>
@@ -297,17 +255,17 @@ function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   );
 }
 
-function LeadQuestions() {
+function LeadQuestions({ questions }: { questions: AdStrategy["lead_form"]["questions"] }) {
   return (
     <div className="grid gap-3">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Вопросы</p>
       <ul className="grid gap-3">
-        {leadQuestions.map((question) => (
-          <li key={question.prompt} className="grid gap-2">
-            <CopyRow text={question.prompt} />
+        {questions.map((question, index) => (
+          <li key={`${question.question}-${index}`} className="grid gap-2">
+            <CopyRow text={question.question} />
             <div className="flex flex-wrap gap-2">
-              {question.answers.map((answer) => (
-                <Badge key={answer} variant="outline" className="text-zinc-400">
+              {question.options.map((answer, optionIndex) => (
+                <Badge key={`${answer}-${optionIndex}`} variant="outline" className="text-zinc-400">
                   {answer}
                 </Badge>
               ))}
@@ -317,6 +275,10 @@ function LeadQuestions() {
       </ul>
     </div>
   );
+}
+
+function MissingCopy() {
+  return <p className="text-sm leading-6 text-zinc-500">Эти тексты появятся, когда стратегия будет собрана.</p>;
 }
 
 function LinkBack() {
