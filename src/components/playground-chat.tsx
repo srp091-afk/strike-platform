@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 
 import { Button } from "@/components/ui/button";
+import { SelectField } from "@/components/ui/select-field";
 import { cn } from "@/lib/utils";
 
 type PlaygroundAgent = {
@@ -180,28 +181,27 @@ export function PlaygroundChat({
   return (
     <section
       className={cn(
-        "mx-auto flex w-full max-w-4xl flex-col overflow-hidden bg-white",
+        "mx-auto flex w-full max-w-4xl flex-col overflow-hidden bg-zinc-950",
         embedded
-          ? "h-full rounded-none border-0 shadow-none"
-          : "h-[min(42rem,calc(100dvh-18rem))] rounded-2xl border border-zinc-200/80 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.03)]",
+          ? "h-full rounded-none border-0"
+          : "h-[min(42rem,calc(100dvh-18rem))] rounded-2xl border border-zinc-800/50",
       )}
     >
-      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-100 bg-zinc-50/50 p-4">
+      <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-black/40 p-4">
         <label className="flex min-w-[220px] flex-1 items-center gap-3">
           <span className="shrink-0 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</span>
-          <select
-            className="min-w-0 flex-1 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-sm text-zinc-900 outline-none transition-all duration-200 focus:border-zinc-300"
-            value={agentId}
-            onChange={(event) => selectAgent(event.target.value)}
-            disabled={agents.length === 0}
-          >
-            {agents.length === 0 ? <option value="">Нет агентов</option> : null}
-            {agents.map((agent) => (
-              <option key={agent.id} value={agent.id}>
-                {agent.name} — {agent.model}
-              </option>
-            ))}
-          </select>
+          <div className="min-w-0 flex-1">
+            <SelectField
+              value={agentId}
+              disabled={agents.length === 0}
+              options={
+                agents.length === 0
+                  ? [{ value: "", label: "Нет агентов" }]
+                  : agents.map((agent) => ({ value: agent.id, label: `${agent.name} — ${agent.model}` }))
+              }
+              onChange={selectAgent}
+            />
+          </div>
         </label>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={clearChat}>
@@ -214,12 +214,12 @@ export function PlaygroundChat({
       </header>
 
       {loadError ? (
-        <p className="border-b border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>
+        <p className="border-b border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-200">{loadError}</p>
       ) : null}
 
-      <div ref={transcriptRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white px-4 py-3">
+      <div ref={transcriptRef} className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-black/30 px-4 py-3">
         {agents.length === 0 ? (
-          <p className="my-2 rounded-2xl bg-zinc-50 px-4 py-6 text-sm leading-6 text-zinc-500">
+          <p className="my-2 rounded-2xl border border-zinc-800 bg-black px-4 py-6 text-sm leading-6 text-zinc-400">
             Сначала создайте агента. Симулятор берёт системную инструкцию и модель из его карточки.
           </p>
         ) : null}
@@ -237,7 +237,7 @@ export function PlaygroundChat({
 
           if (item.kind === "error") {
             return (
-              <p key={item.id} className="my-2 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm leading-6 text-red-700">
+              <p key={item.id} className="my-2 rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm leading-6 text-red-200">
                 {item.content}
               </p>
             );
@@ -253,14 +253,14 @@ export function PlaygroundChat({
               className={cn(
                 "my-2 max-w-[80%] rounded-2xl p-4",
                 outgoing
-                  ? "ml-auto rounded-br-xs bg-zinc-950 text-white shadow-sm"
-                  : "mr-auto rounded-bl-xs bg-zinc-100 text-zinc-900 shadow-none",
+                  ? "ml-auto rounded-br-xs bg-white text-black"
+                  : "mr-auto rounded-bl-xs bg-zinc-800 text-zinc-100",
               )}
             >
               <span
                 className={cn(
                   "mb-1 block text-[10px] uppercase tracking-widest",
-                  outgoing ? "font-bold text-red-500" : "font-semibold text-zinc-400",
+                  outgoing ? "font-bold text-zinc-500" : "font-semibold text-zinc-400",
                 )}
               >
                 {outgoing ? "STRIKE AI" : "Вы (клиент)"}
@@ -270,24 +270,24 @@ export function PlaygroundChat({
           );
         })}
         {typing ? (
-          <article className="my-2 ml-auto max-w-[80%] rounded-2xl rounded-br-xs bg-zinc-950 p-4 text-white shadow-sm">
-            <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-red-500">
+          <article className="my-2 ml-auto max-w-[80%] rounded-2xl rounded-br-xs bg-white p-4 text-black">
+            <span className="mb-1 block text-[10px] font-bold uppercase tracking-widest text-zinc-500">
               STRIKE AI
             </span>
-            <p className="text-sm leading-6 text-zinc-300">Печатает...</p>
+            <p className="text-sm leading-6 text-zinc-600">Печатает...</p>
           </article>
         ) : null}
       </div>
 
       <form
-        className="flex items-center gap-3 border-t border-zinc-100 bg-white p-3"
+        className="flex items-center gap-3 border-t border-zinc-800 bg-black/40 p-3"
         onSubmit={(event) => {
           event.preventDefault();
           void sendMessage();
         }}
       >
         <input
-          className="min-w-0 flex-1 rounded-xl border border-transparent bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none transition-all placeholder:text-zinc-400 hover:bg-zinc-100/80 focus:border-zinc-300 focus:bg-white"
+          className="min-w-0 flex-1 rounded-xl border border-zinc-800 bg-black px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-white"
           name="draft"
           value={draft}
           placeholder="Сообщение"
@@ -296,7 +296,7 @@ export function PlaygroundChat({
         />
         <button
           type="submit"
-          className="shrink-0 rounded-xl bg-red-600 px-6 py-3 text-sm font-medium text-white shadow-sm transition-all hover:bg-red-700 active:scale-95 disabled:opacity-50"
+          className="shrink-0 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black transition-shadow hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] active:scale-95 disabled:opacity-50"
           disabled={!agentId || typing || !draft.trim()}
         >
           Отправить

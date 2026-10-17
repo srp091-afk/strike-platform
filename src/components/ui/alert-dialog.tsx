@@ -25,7 +25,7 @@ function AlertDialogOverlay({
   return (
     <AlertDialogPrimitive.Overlay
       data-slot="alert-dialog-overlay"
-      className={cn("fixed inset-0 z-[70] bg-zinc-950/40", className)}
+      className={cn("fixed inset-0 z-[70] bg-black/70", className)}
       {...props}
     />
   );
@@ -41,7 +41,7 @@ function AlertDialogContent({
       <AlertDialogPrimitive.Content
         data-slot="alert-dialog-content"
         className={cn(
-          "fixed top-1/2 left-1/2 z-[70] w-[min(28rem,calc(100%-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.35)]",
+          "fixed top-1/2 left-1/2 z-[70] w-[min(28rem,calc(100%-2rem))] -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-zinc-800/50 bg-zinc-950 p-6 backdrop-blur-md",
           className,
         )}
         {...props}
@@ -68,7 +68,7 @@ function AlertDialogTitle({ className, ...props }: React.ComponentProps<typeof A
   return (
     <AlertDialogPrimitive.Title
       data-slot="alert-dialog-title"
-      className={cn("font-heading text-lg font-semibold text-zinc-900", className)}
+      className={cn("font-heading text-lg font-semibold text-white", className)}
       {...props}
     />
   );
@@ -81,7 +81,7 @@ function AlertDialogDescription({
   return (
     <AlertDialogPrimitive.Description
       data-slot="alert-dialog-description"
-      className={cn("text-sm leading-6 text-zinc-500", className)}
+      className={cn("text-sm leading-6 text-zinc-400", className)}
       {...props}
     />
   );

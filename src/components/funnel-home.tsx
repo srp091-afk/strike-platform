@@ -34,15 +34,15 @@ export function FunnelHome({
     <div className="mx-auto flex w-full max-w-5xl flex-col px-6 py-16">
       <section className="flex flex-col items-center pt-10 text-center sm:pt-16">
         <p className="text-[10px] font-semibold uppercase tracking-[0.22em] text-zinc-400">Сайты</p>
-        <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-tight text-zinc-950 sm:text-6xl">
+        <h1 className="mt-4 max-w-3xl text-4xl font-semibold tracking-tight text-white sm:text-6xl">
           Что будем запускать сегодня?
         </h1>
-        <p className="mt-4 max-w-xl text-sm leading-6 text-zinc-500">
+        <p className="mt-4 max-w-xl text-sm leading-6 text-zinc-400">
           Опишите нишу. Конструктор соберёт премиальный лендинг и виджет чата с вашим агентом.
         </p>
 
         <form
-          className="mt-10 w-full max-w-3xl rounded-[28px] border border-zinc-200/80 bg-white p-3 text-left shadow-[0_20px_60px_-36px_rgba(0,0,0,0.45)] transition-shadow duration-300 focus-within:border-rose-200 focus-within:shadow-[0_0_0_1px_rgba(225,29,72,0.28),0_0_48px_-12px_rgba(225,29,72,0.55)]"
+          className="mt-10 w-full max-w-3xl rounded-[28px] border border-zinc-800/50 bg-zinc-900/50 p-3 text-left backdrop-blur-md transition-colors duration-300 focus-within:border-white"
           onSubmit={(event) => {
             event.preventDefault();
             openBuilder(prompt);
@@ -52,7 +52,7 @@ export function FunnelHome({
             value={prompt}
             rows={4}
             placeholder="Опишите вашу нишу, например: Нужен сайт для продажи вилл в Дубае..."
-            className="w-full resize-none bg-transparent px-4 py-3 text-base text-zinc-900 outline-none placeholder:text-zinc-400"
+            className="w-full resize-none bg-transparent px-4 py-3 text-base text-white outline-none placeholder:text-zinc-600"
             onChange={(event) => setPrompt(event.target.value)}
             onKeyDown={(event) => {
               if (event.key === "Enter" && !event.shiftKey) {
@@ -74,7 +74,7 @@ export function FunnelHome({
             <button
               key={chip.label}
               type="button"
-              className="rounded-full border border-zinc-200 bg-white px-4 py-2 text-sm text-zinc-700 shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md"
+              className="rounded-full border border-zinc-800 bg-zinc-900 px-4 py-2 text-sm text-zinc-300 transition-colors duration-200 hover:border-zinc-600 hover:text-white"
               onClick={() => setPrompt(chip.prompt)}
             >
               {chip.label}
@@ -89,10 +89,10 @@ export function FunnelHome({
           <p className="text-sm text-zinc-400">{landings.length}</p>
         </div>
         {loadError ? (
-          <p className="mt-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>
+          <p className="mt-4 rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-200">{loadError}</p>
         ) : null}
         {landings.length === 0 ? (
-          <p className="mt-6 rounded-2xl border border-dashed border-zinc-200 bg-white px-6 py-12 text-center text-sm text-zinc-500">
+          <p className="mt-6 rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/50 px-6 py-12 text-center text-sm text-zinc-400">
             Пока нет воронок. Опишите первую в поле выше.
           </p>
         ) : (
@@ -101,21 +101,21 @@ export function FunnelHome({
               <li key={landing.id}>
                 <button
                   type="button"
-                  className="group flex h-full w-full flex-col rounded-2xl border border-zinc-200/80 bg-white p-6 text-left shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05)] transition-all duration-200 hover:-translate-y-1 hover:shadow-[0_18px_40px_-24px_rgba(0,0,0,0.35)]"
+                  className="group flex h-full w-full flex-col rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 text-left backdrop-blur-md transition-colors duration-200 hover:border-zinc-600"
                   onClick={() => router.push(`/funnels/builder?id=${landing.id}`)}
                 >
                   <div className="flex items-center justify-between gap-3">
-                    <span className="rounded-full bg-zinc-100 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-500">
+                    <span className="rounded-full border border-zinc-800 bg-black px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
                       {landing.document.status === "published" ? "Опубликован" : "Черновик"}
                     </span>
                     <span className="text-xs text-zinc-400">{formatDate(landing.createdAt)}</span>
                   </div>
-                  <p className="mt-4 font-heading text-xl font-semibold tracking-tight text-zinc-900">{landing.title}</p>
-                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-zinc-500">
+                  <p className="mt-4 font-heading text-xl font-semibold tracking-tight text-white">{landing.title}</p>
+                  <p className="mt-2 line-clamp-2 text-sm leading-6 text-zinc-400">
                     {landing.subtitle || "Лендинг без подзаголовка"}
                   </p>
-                  <p className="mt-5 flex items-center gap-2 text-sm text-zinc-600">
-                    <span className="grid size-8 place-items-center rounded-xl bg-red-50 text-red-600">
+                  <p className="mt-5 flex items-center gap-2 text-sm text-zinc-400">
+                    <span className="grid size-8 place-items-center rounded-xl border border-zinc-800 bg-black text-white">
                       <Bot className="size-4" />
                     </span>
                     {landing.agentName ?? "Агент не выбран"}

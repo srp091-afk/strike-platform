@@ -19,7 +19,7 @@ export default function AgentsPage() {
       description="Системная инструкция #ROLE, модель и имя. Запись сразу попадает в Supabase."
     >
       <Suspense
-        fallback={<div className="h-40 rounded-2xl border border-zinc-200/80 bg-white shadow-sm" />}
+        fallback={<div className="h-40 rounded-2xl border border-zinc-800/50 bg-zinc-900/50" />}
       >
         <AgentsData />
       </Suspense>

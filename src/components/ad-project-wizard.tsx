@@ -6,6 +6,7 @@ import { useActionState, useState } from "react";
 import { createAdProject, type CreateAdProjectState } from "@/actions/ads-actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
@@ -39,12 +40,12 @@ export function AdProjectWizard() {
         </Alert>
       ) : null}
 
-      <section className="grid gap-6 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+      <Card className="grid gap-6 p-6">
         <div className="flex items-center justify-between gap-3">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Шаг {step} из 2</p>
           <div className="flex gap-1.5" aria-hidden="true">
-            <span className="h-1.5 w-10 rounded-full bg-strike" />
-            <span className={`h-1.5 w-10 rounded-full ${step === 2 ? "bg-strike" : "bg-zinc-200"}`} />
+            <span className="h-1.5 w-10 rounded-full bg-white" />
+            <span className={`h-1.5 w-10 rounded-full ${step === 2 ? "bg-white" : "bg-zinc-800"}`} />
           </div>
         </div>
 
@@ -80,8 +81,8 @@ export function AdProjectWizard() {
             <input type="hidden" name="niche" value={niche} />
             <input type="hidden" name="format" value={format} />
             <div className="grid gap-1">
-              <h2 className="font-heading text-lg font-semibold text-zinc-900">Формат брифа</h2>
-              <p className="text-sm leading-6 text-zinc-500">
+              <h2 className="font-heading text-lg font-semibold text-white">Формат брифа</h2>
+              <p className="text-sm leading-6 text-zinc-400">
                 {name} · {niche}
               </p>
             </div>
@@ -92,8 +93,8 @@ export function AdProjectWizard() {
               </TabsList>
               <TabsContent value="brief" className="grid gap-3">
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-sm font-medium text-zinc-800">Свободное описание</p>
-                  <span className="inline-flex items-center gap-1.5 rounded-full bg-zinc-100 px-2.5 py-1 text-xs font-medium text-zinc-500">
+                  <p className="text-sm font-medium text-zinc-300">Свободное описание</p>
+                  <span className="inline-flex items-center gap-1.5 rounded-full border border-zinc-800 bg-black px-2.5 py-1 text-xs font-medium text-zinc-400">
                     <Clock className="size-3.5" strokeWidth={2} />
                     Займет 5-7 минут
                   </span>
@@ -122,7 +123,7 @@ export function AdProjectWizard() {
             </div>
           </div>
         )}
-      </section>
+      </Card>
     </form>
   );
 }

@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function FunnelsPage() {
   return (
-    <Suspense fallback={<div className="mx-auto mt-24 h-40 max-w-3xl rounded-[28px] border border-zinc-200/80 bg-white" />}>
+    <Suspense fallback={<div className="mx-auto mt-24 h-40 max-w-3xl rounded-[28px] border border-zinc-800/50 bg-zinc-900/50" />}>
       <FunnelsData />
     </Suspense>
   );

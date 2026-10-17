@@ -33,7 +33,7 @@ const metricIcons = {
 } as const;
 
 const cardClass =
-  "rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05)] transition-all duration-200 hover:shadow-md";
+  "rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md transition-colors duration-200 hover:border-zinc-700";
 
 export default function DashboardPage() {
   return (
@@ -53,13 +53,13 @@ export default function DashboardPage() {
             const Icon = item.icon;
             return (
               <Link key={item.href} href={item.href} className={cardClass}>
-                <span className="inline-flex rounded-xl bg-red-50 p-2.5 text-red-600">
+                <span className="inline-flex rounded-xl border border-zinc-800 bg-black p-2.5 text-white">
                   <Icon className="size-5" strokeWidth={2} />
                 </span>
-                <span className="mt-4 block font-heading text-lg font-semibold tracking-tight text-zinc-900">
+                <span className="mt-4 block font-heading text-lg font-semibold tracking-tight text-white">
                   {item.title}
                 </span>
-                <span className="mt-1 block text-sm leading-6 text-zinc-500">{item.text}</span>
+                <span className="mt-1 block text-sm leading-6 text-zinc-400">{item.text}</span>
               </Link>
             );
           })}
@@ -81,7 +81,7 @@ async function LiveMetrics() {
   return (
     <div>
       {counts.error ? (
-        <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p className="mb-4 rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-200">
           {counts.error}
         </p>
       ) : null}
@@ -91,12 +91,12 @@ async function LiveMetrics() {
           return (
             <Link key={metric.label} href={metric.href} className={cardClass}>
               <div className="flex items-start justify-between gap-4">
-                <p className="text-sm font-medium text-zinc-500">{metric.label}</p>
-                <span className="rounded-xl bg-red-50 p-2.5 text-red-600">
+                <p className="text-sm font-medium text-zinc-400">{metric.label}</p>
+                <span className="rounded-xl border border-zinc-800 bg-black p-2.5 text-white">
                   <Icon className="size-5" strokeWidth={2} />
                 </span>
               </div>
-              <p className="mt-4 font-heading text-3xl font-bold tracking-tight text-zinc-900">
+              <p className="mt-4 font-heading text-3xl font-bold tracking-tight text-white">
                 {metric.value}
               </p>
             </Link>
@@ -112,8 +112,8 @@ function MetricsSkeleton() {
     <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
       {Array.from({ length: 3 }).map((_, index) => (
         <div key={index} className={cardClass}>
-          <div className="h-10 w-10 rounded-xl bg-zinc-100" />
-          <p className="mt-4 font-heading text-3xl font-bold tracking-tight text-zinc-200">0</p>
+          <div className="h-10 w-10 rounded-xl bg-zinc-800" />
+          <p className="mt-4 font-heading text-3xl font-bold tracking-tight text-zinc-700">0</p>
           <p className="mt-2 text-sm text-zinc-400">Загрузка</p>
         </div>
       ))}

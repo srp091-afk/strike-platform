@@ -23,7 +23,7 @@ export default function ChatsPage({
       title="Чаты"
       description="Живые переписки из подключённых каналов. Агента можно остановить в конкретном диалоге."
     >
-      <Suspense fallback={<div className="h-[42rem] rounded-2xl border border-zinc-200/80 bg-white shadow-sm" />}>
+      <Suspense fallback={<div className="h-[42rem] rounded-2xl border border-zinc-800/50 bg-zinc-900/50" />}>
         <ChatsData searchParams={searchParams} />
       </Suspense>
     </PageFrame>

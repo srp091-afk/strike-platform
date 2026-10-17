@@ -8,7 +8,7 @@ const config: Config = {
           DEFAULT: "#E11D48",
           dark: "#BE123C",
         },
-        ink: "#09090B",
+        ink: "#A1A1AA",
       },
       fontFamily: {
         sans: ["var(--font-inter)", "ui-sans-serif", "system-ui", "sans-serif"],
@@ -16,7 +16,7 @@ const config: Config = {
         display: ["var(--font-jakarta)", "var(--font-inter)", "ui-sans-serif", "sans-serif"],
       },
       boxShadow: {
-        card: "0 4px 20px -2px rgba(0,0,0,0.05)",
+        card: "0 0 0 1px rgba(255,255,255,0.04)",
       },
     },
   },

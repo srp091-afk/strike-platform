@@ -18,7 +18,7 @@ export default function SettingsPage() {
       title="Профиль"
       description="Email и имя из Google. Отображаемое имя можно изменить."
     >
-      <Suspense fallback={<div className="h-64 max-w-lg rounded-2xl border border-zinc-200/80 bg-white shadow-sm" />}>
+      <Suspense fallback={<div className="h-64 max-w-lg rounded-2xl border border-zinc-800/50 bg-zinc-900/50" />}>
         <SettingsData />
       </Suspense>
     </PageFrame>
@@ -29,7 +29,7 @@ async function SettingsData() {
   await io();
   const account = await getAccountProfile();
   if (!account) {
-    return <p className="text-sm text-zinc-500">Нужно войти через Google.</p>;
+    return <p className="text-sm text-zinc-400">Нужно войти через Google.</p>;
   }
 
   return (

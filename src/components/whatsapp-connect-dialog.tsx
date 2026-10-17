@@ -16,7 +16,7 @@ type GreenDefaults = {
 };
 
 const fieldClass =
-  "w-full rounded-xl border border-transparent bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none transition-all duration-200 placeholder:text-zinc-400 hover:bg-zinc-100/80 focus:border-zinc-300 focus:bg-white";
+  "w-full rounded-xl border border-zinc-800 bg-black px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-white";
 
 export function WhatsAppConnectDialog({
   agentId,
@@ -184,7 +184,7 @@ export function WhatsAppConnectDialog({
   return (
     <div
       data-channel-dialog=""
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-zinc-950/40 p-4"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
       onKeyDown={(event) => {
         if (event.key === "Enter") event.preventDefault();
       }}
@@ -196,7 +196,7 @@ export function WhatsAppConnectDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="whatsapp-account-title"
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.35)]"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-zinc-800/50 bg-zinc-950 p-6"
       >
         <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">WhatsApp Business</p>
         <h2 id="whatsapp-account-title" className="mt-1 text-2xl font-semibold">
@@ -216,7 +216,7 @@ export function WhatsAppConnectDialog({
             <TabsContent value="qr" className="grid gap-4">
               <button
                 type="button"
-                className="rounded-xl bg-zinc-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800 disabled:opacity-50"
+                className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
                 disabled={qrPending}
                 onClick={() => void showQr()}
               >
@@ -225,7 +225,7 @@ export function WhatsAppConnectDialog({
               {qrImage ? (
                 <img src={qrImage} alt="QR-код WhatsApp" className="mx-auto h-56 w-56 rounded-xl bg-white" />
               ) : null}
-              <p className="text-sm leading-6 text-zinc-500">
+              <p className="text-sm leading-6 text-zinc-400">
                 Откройте WhatsApp ➔ Связанные устройства ➔ Привязать устройство и сканируйте код
               </p>
             </TabsContent>
@@ -243,26 +243,26 @@ export function WhatsAppConnectDialog({
               </label>
               <button
                 type="button"
-                className="rounded-xl bg-zinc-900 px-4 py-3 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800 disabled:opacity-50"
+                className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
                 disabled={codePending}
                 onClick={() => void showCode()}
               >
                 {codePending ? "Загрузка" : "Получить код"}
               </button>
-              {linkCode ? <p className="text-center text-3xl font-semibold tracking-[0.2em] text-zinc-900">{linkCode}</p> : null}
-              <p className="text-sm leading-6 text-zinc-500">
+              {linkCode ? <p className="text-center text-3xl font-semibold tracking-[0.2em] text-white">{linkCode}</p> : null}
+              <p className="text-sm leading-6 text-zinc-400">
                 Введите этот код в WhatsApp в разделе Связанные устройства
               </p>
             </TabsContent>
           </Tabs>
 
-          {watching ? <p className="text-sm text-zinc-500">Проверяем подключение…</p> : null}
-          {alreadyAuthorized ? <p className="text-sm font-medium text-emerald-700">Уже авторизован</p> : null}
-          {message ? <p className="text-sm text-red-600">{message}</p> : null}
+          {watching ? <p className="text-sm text-zinc-400">Проверяем подключение…</p> : null}
+          {alreadyAuthorized ? <p className="text-sm font-medium text-zinc-200">Уже авторизован</p> : null}
+          {message ? <p className="text-sm text-red-300">{message}</p> : null}
 
           <button
             type="button"
-            className="text-left text-sm font-medium text-zinc-500 transition-colors hover:text-zinc-900"
+            className="text-left text-sm font-medium text-zinc-400 transition-colors hover:text-white"
             aria-expanded={settingsOpen}
             onClick={() => setSettingsOpen((open) => !open)}
           >
@@ -302,14 +302,14 @@ export function WhatsAppConnectDialog({
           <div className="flex justify-end gap-2">
             <button
               type="button"
-              className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700 transition-all duration-200 hover:bg-zinc-50"
+              className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
               onClick={onClose}
             >
               Закрыть
             </button>
             <button
               type="button"
-              className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800"
+              className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow hover:shadow-[0_0_15px_rgba(255,255,255,0.2)]"
               onClick={applyKeys}
             >
               Применить ключи

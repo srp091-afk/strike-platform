@@ -57,7 +57,7 @@ export function AccountMenu({ account }: { account: AccountProfile }) {
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-2 rounded-xl py-1 pl-1 pr-2 transition-colors duration-200 hover:bg-zinc-50"
+        className="flex items-center gap-2 rounded-xl py-1 pl-1 pr-2 transition-colors duration-200 hover:bg-white/5"
       >
         {account.avatarUrl && !avatarFailed ? (
           <img
@@ -67,26 +67,26 @@ export function AccountMenu({ account }: { account: AccountProfile }) {
             onError={() => setAvatarFailed(true)}
           />
         ) : (
-          <span className="grid size-8 place-items-center rounded-full bg-zinc-900 font-heading text-xs font-semibold text-white">
+          <span className="grid size-8 place-items-center rounded-full bg-white font-heading text-xs font-semibold text-black">
             {letters}
           </span>
         )}
         <span className="hidden max-w-40 truncate text-left sm:block">
-          <span className="block font-heading text-sm font-semibold text-zinc-900">{account.displayName}</span>
+          <span className="block font-heading text-sm font-semibold text-white">{account.displayName}</span>
           <span className="block truncate text-xs text-zinc-500">{account.email}</span>
         </span>
       </button>
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-60 rounded-xl border border-zinc-200 bg-white p-1.5 shadow-[0_12px_40px_-12px_rgba(0,0,0,0.18)]"
+          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-60 rounded-xl border border-zinc-800 bg-zinc-950 p-1.5"
         >
           <p className="truncate px-2.5 py-2 text-xs text-zinc-500 sm:hidden">{account.email}</p>
           <Link
             role="menuitem"
             href="/settings"
             onClick={() => setOpen(false)}
-            className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-zinc-800 hover:bg-zinc-50"
+            className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-900 hover:text-white"
           >
             <Settings className="size-4" strokeWidth={2} />
             Настройки
@@ -97,7 +97,7 @@ export function AccountMenu({ account }: { account: AccountProfile }) {
             disabled={pending}
             onClick={signOut}
             className={cn(
-              "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-zinc-800 hover:bg-zinc-50 disabled:opacity-40",
+              "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-zinc-900 hover:text-white disabled:opacity-40",
             )}
           >
             <LogOut className="size-4" strokeWidth={2} />

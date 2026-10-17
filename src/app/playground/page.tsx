@@ -22,7 +22,7 @@ export default function PlaygroundPage({
     >
       <Suspense
         fallback={
-          <div className="mx-auto flex h-[min(42rem,calc(100dvh-18rem))] max-w-4xl items-center justify-center rounded-2xl border border-zinc-200/80 bg-white text-sm text-zinc-400 shadow-[0_4px_25px_-5px_rgba(0,0,0,0.03)]">
+          <div className="mx-auto flex h-[min(42rem,calc(100dvh-18rem))] max-w-4xl items-center justify-center rounded-2xl border border-zinc-800/50 bg-zinc-900/50 text-sm text-zinc-400">
             Загрузка
           </div>
         }

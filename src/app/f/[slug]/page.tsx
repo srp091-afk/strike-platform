@@ -31,7 +31,7 @@ export default function PublicFunnelPage({
   searchParams: Promise<FunnelSearch>;
 }) {
   return (
-    <Suspense fallback={<div className="mx-auto mt-16 h-[40rem] max-w-md rounded-2xl bg-white shadow-sm" />}>
+    <Suspense fallback={<div className="mx-auto mt-16 h-[40rem] max-w-md rounded-2xl border border-zinc-800 bg-zinc-950" />}>
       <PublicFunnel params={params} searchParams={searchParams} />
     </Suspense>
   );
@@ -57,9 +57,9 @@ async function PublicFunnel({
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col px-4 py-10">
-      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-strike">Воронка</p>
+      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Воронка</p>
       <h1 className="mt-2 text-3xl font-semibold">{template.title}</h1>
-      <p className="mt-2 text-sm leading-6 text-zinc-500">{template.summary}</p>
+      <p className="mt-2 text-sm leading-6 text-zinc-400">{template.summary}</p>
       <div className="mt-8">
         <FunnelPreview
           variant="page"

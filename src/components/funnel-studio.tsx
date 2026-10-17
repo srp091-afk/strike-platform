@@ -6,6 +6,7 @@ import Link from "next/link";
 import { saveLandingDraft } from "@/app/funnels/actions";
 import { LandingView } from "@/components/landing-view";
 import { Button } from "@/components/ui/button";
+import { SelectField } from "@/components/ui/select-field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import type { LandingRecord } from "@/lib/landing-types";
 
@@ -13,7 +14,7 @@ type AgentOption = { id: string; name: string };
 type ChatLine = { role: "user" | "assistant"; content: string };
 
 const fieldClass =
-  "w-full rounded-xl border border-transparent bg-zinc-50 px-3 py-2.5 text-sm text-zinc-900 outline-none transition-all duration-200 placeholder:text-zinc-400 focus:border-zinc-300 focus:bg-white";
+  "w-full rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-white";
 
 export function FunnelStudio({
   agents,
@@ -102,13 +103,13 @@ export function FunnelStudio({
 
   return (
     <div className="grid h-[calc(100dvh-4rem)] lg:grid-cols-[24rem_minmax(0,1fr)]">
-      <aside className="flex min-h-0 flex-col border-b border-zinc-200 bg-white lg:border-r lg:border-b-0">
-        <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-5 py-4">
+      <aside className="flex min-h-0 flex-col border-b border-zinc-800 bg-black lg:border-r lg:border-b-0">
+        <div className="flex items-center justify-between gap-3 border-b border-zinc-800 px-5 py-4">
           <div>
             <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Конструктор</p>
             <h1 className="text-lg font-semibold">{landing?.title ?? "Новый лендинг"}</h1>
           </div>
-          <Link href="/funnels" className="text-sm text-zinc-500 hover:text-zinc-900">
+          <Link href="/funnels" className="text-sm text-zinc-400 hover:text-white">
             К списку
           </Link>
         </div>
@@ -120,15 +121,15 @@ export function FunnelStudio({
           <TabsContent value="chat" className="flex min-h-0 flex-1 flex-col">
             <div className="mt-2 min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
               {lines.length === 0 ? (
-                <p className="text-sm leading-6 text-zinc-500">Опишите нишу, и я соберу лендинг справа.</p>
+                <p className="text-sm leading-6 text-zinc-400">Опишите нишу, и я соберу лендинг справа.</p>
               ) : null}
               {lines.map((line, index) => (
                 <p
                   key={`${line.role}-${index}`}
                   className={
                     line.role === "user"
-                      ? "ml-8 rounded-2xl bg-zinc-950 px-3 py-2 text-sm leading-6 text-white"
-                      : "mr-6 rounded-2xl bg-zinc-100 px-3 py-2 text-sm leading-6 text-zinc-800"
+                      ? "ml-8 rounded-2xl bg-white px-3 py-2 text-sm leading-6 text-black"
+                      : "mr-6 rounded-2xl bg-zinc-800 px-3 py-2 text-sm leading-6 text-zinc-100"
                   }
                 >
                   {line.content}
@@ -172,18 +173,18 @@ export function FunnelStudio({
                 onPublish={() => void persist(landing, true)}
               />
             ) : (
-              <p className="text-sm text-zinc-500">Настройки появятся после первой генерации.</p>
+              <p className="text-sm text-zinc-400">Настройки появятся после первой генерации.</p>
             )}
           </TabsContent>
         </Tabs>
       </aside>
 
-      <section className="min-h-0 bg-[#ECEAE6] p-4 sm:p-6">
-        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-zinc-200/80 bg-white shadow-[0_24px_60px_-36px_rgba(0,0,0,0.45)]">
-          <div className="flex items-center gap-2 border-b border-zinc-100 px-4 py-3">
-            <span className="size-2.5 rounded-full bg-zinc-200" />
-            <span className="size-2.5 rounded-full bg-zinc-200" />
-            <span className="size-2.5 rounded-full bg-zinc-200" />
+      <section className="min-h-0 bg-black p-4 sm:p-6">
+        <div className="flex h-full min-h-0 flex-col overflow-hidden rounded-[28px] border border-zinc-800 bg-zinc-950">
+          <div className="flex items-center gap-2 border-b border-zinc-800 px-4 py-3">
+            <span className="size-2.5 rounded-full bg-zinc-700" />
+            <span className="size-2.5 rounded-full bg-zinc-700" />
+            <span className="size-2.5 rounded-full bg-zinc-700" />
             <p className="ml-3 truncate text-xs text-zinc-400">{landing ? `/l/${landing.slug}` : "Предпросмотр"}</p>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto">
@@ -232,29 +233,22 @@ function SettingsForm({
       </label>
       <label className="grid gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</span>
-        <select
-          className={fieldClass}
+        <SelectField
           value={landing.agentId ?? ""}
-          onChange={(event) => patch({ agentId: event.target.value || null, agentName: agents.find((agent) => agent.id === event.target.value)?.name ?? null })}
-        >
-          <option value="">Не выбран</option>
-          {agents.map((agent) => (
-            <option key={agent.id} value={agent.id}>
-              {agent.name}
-            </option>
-          ))}
-        </select>
+          options={[{ value: "", label: "Не выбран" }, ...agents.map((agent) => ({ value: agent.id, label: agent.name }))]}
+          onChange={(next) => patch({ agentId: next || null, agentName: agents.find((agent) => agent.id === next)?.name ?? null })}
+        />
       </label>
       <label className="grid gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Режим захвата</span>
-        <select
-          className={fieldClass}
+        <SelectField
           value={landing.captureMode}
-          onChange={(event) => patch({ captureMode: event.target.value === "quiz" ? "quiz" : "chat" })}
-        >
-          <option value="chat">Чат</option>
-          <option value="quiz">Квиз</option>
-        </select>
+          options={[
+            { value: "chat", label: "Чат" },
+            { value: "quiz", label: "Квиз" },
+          ]}
+          onChange={(next) => patch({ captureMode: next === "quiz" ? "quiz" : "chat" })}
+        />
       </label>
       <label className="grid gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Приветствие чата</span>
@@ -274,7 +268,7 @@ function SettingsForm({
           onChange={(event) => patch({ successMessage: event.target.value })}
         />
       </label>
-      {notice ? <p className="text-sm text-zinc-500">{notice}</p> : null}
+      {notice ? <p className="text-sm text-zinc-300">{notice}</p> : null}
       <div className="flex flex-wrap gap-2">
         <Button type="button" variant="outline" onClick={onSave}>
           Сохранить
@@ -282,7 +276,7 @@ function SettingsForm({
         <Button type="button" onClick={onPublish}>
           Опубликовать
         </Button>
-        <a href={`/l/${landing.slug}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center rounded-xl px-3 text-sm font-semibold text-zinc-600">
+        <a href={`/l/${landing.slug}`} target="_blank" rel="noreferrer" className="inline-flex h-10 items-center rounded-xl px-3 text-sm font-semibold text-zinc-300 hover:text-white">
           Открыть
         </a>
       </div>

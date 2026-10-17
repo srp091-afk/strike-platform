@@ -15,7 +15,7 @@ export default function AdProjectPage({ params }: { params: Promise<{ id: string
       title="Проект создан"
       description="Бриф сохранён. Генератор кампании появится на этом экране."
     >
-      <Suspense fallback={<div className="h-48 rounded-2xl border border-dashed border-zinc-300 bg-white shadow-sm" />}>
+      <Suspense fallback={<div className="h-48 rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/50" />}>
         <AdProjectStub params={params} />
       </Suspense>
     </PageFrame>
@@ -27,8 +27,8 @@ async function AdProjectStub({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
 
   return (
-    <section className="rounded-2xl border border-dashed border-zinc-300 bg-white px-6 py-16 text-center shadow-sm">
-      <p className="text-sm text-zinc-500">Кампания для проекта {id} ещё не собрана.</p>
+    <section className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/50 px-6 py-16 text-center backdrop-blur-md">
+      <p className="text-sm text-zinc-400">Кампания для проекта {id} ещё не собрана.</p>
     </section>
   );
 }

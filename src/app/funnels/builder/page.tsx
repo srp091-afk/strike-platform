@@ -16,7 +16,7 @@ export default function BuilderPage({
   searchParams: Promise<{ prompt?: string | string[]; id?: string | string[] }>;
 }) {
   return (
-    <Suspense fallback={<div className="h-[calc(100dvh-4rem)] bg-[#F8FAFC]" />}>
+    <Suspense fallback={<div className="h-[calc(100dvh-4rem)] bg-black" />}>
       <BuilderData searchParams={searchParams} />
     </Suspense>
   );

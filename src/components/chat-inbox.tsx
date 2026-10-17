@@ -24,9 +24,9 @@ import type { IntegrationProvider } from "@/lib/integration-catalog";
 import { cn } from "@/lib/utils";
 
 const iconTone: Record<IntegrationProvider, string> = {
-  telegram: "bg-sky-50 text-sky-600",
-  whatsapp: "bg-emerald-50 text-emerald-600",
-  instagram: "bg-rose-50 text-rose-600",
+  telegram: "border border-zinc-700 bg-zinc-900 text-white",
+  whatsapp: "border border-zinc-700 bg-zinc-900 text-white",
+  instagram: "border border-zinc-700 bg-zinc-900 text-white",
 };
 
 const providerLabel: Record<ChatProvider, string> = {
@@ -195,11 +195,11 @@ export function ChatInbox({
   return (
     <div>
       {error ? (
-        <p className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</p>
+        <p className="mb-4 rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-200">{error}</p>
       ) : null}
 
-      <div className="grid overflow-hidden rounded-2xl border border-zinc-200/80 bg-white shadow-sm lg:h-[min(42rem,calc(100dvh-16rem))] lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
-        <aside className="flex min-h-80 min-w-0 flex-col border-b border-zinc-200/80 lg:border-r lg:border-b-0">
+      <div className="grid overflow-hidden rounded-2xl border border-zinc-800/50 bg-zinc-900/50 backdrop-blur-md lg:h-[min(42rem,calc(100dvh-16rem))] lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+        <aside className="flex min-h-80 min-w-0 flex-col border-b border-zinc-800 lg:border-r lg:border-b-0">
           <AgentFilter agents={agents} value={agentId} onChange={(next) => void selectAgent(next)} />
           <div className="px-4 pt-3">
             <Input
@@ -211,11 +211,11 @@ export function ChatInbox({
           </div>
           <p className="px-5 py-3 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Входящие</p>
           {threads.length === 0 ? (
-            <p className="px-5 pb-6 text-sm leading-6 text-zinc-500">
+            <p className="px-5 pb-6 text-sm leading-6 text-zinc-400">
               Диалогов пока нет. Они появятся, когда клиент напишет в подключённый канал.
             </p>
           ) : visibleThreads.length === 0 ? (
-            <p className="px-5 pb-6 text-sm leading-6 text-zinc-500">Ничего не найдено.</p>
+            <p className="px-5 pb-6 text-sm leading-6 text-zinc-400">Ничего не найдено.</p>
           ) : (
             <ul className="min-h-0 flex-1 overflow-y-auto">
               {visibleThreads.map((thread) => {
@@ -227,17 +227,17 @@ export function ChatInbox({
                       onClick={() => openThread(thread.id)}
                       className={cn(
                         "flex w-full gap-3 px-4 py-3 text-left transition-colors",
-                        active ? "bg-zinc-50" : "hover:bg-zinc-50/70",
+                        active ? "bg-white/10" : "hover:bg-white/5",
                       )}
                     >
                       <ProviderMark provider={thread.provider} />
                       <span className="min-w-0 flex-1">
                         <span className="flex items-baseline justify-between gap-2">
-                          <span className="truncate font-heading text-sm font-semibold text-zinc-900">{thread.title}</span>
+                          <span className="truncate font-heading text-sm font-semibold text-white">{thread.title}</span>
                           <span className="shrink-0 text-[10px] text-zinc-400">{formatStamp(thread.lastMessageAt)}</span>
                         </span>
                         <span className="mt-0.5 block text-[11px] text-zinc-400">{providerLabel[thread.provider]}</span>
-                        <span className="mt-1 block truncate text-sm text-zinc-500">
+                        <span className="mt-1 block truncate text-sm text-zinc-400">
                           {thread.preview || "Нет сообщений"}
                         </span>
                       </span>
@@ -252,19 +252,19 @@ export function ChatInbox({
         <section className="flex min-h-[28rem] min-w-0 flex-col">
           {selected ? (
             <>
-              <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200/80 px-5 py-4">
+              <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-5 py-4">
                 <div className="flex min-w-0 items-center gap-3">
                   <ProviderMark provider={selected.provider} />
                   <div className="min-w-0">
                     <h2 className="truncate text-lg font-semibold">{selected.title}</h2>
-                    <p className="truncate text-xs text-zinc-500">
+                    <p className="truncate text-xs text-zinc-400">
                       {providerLabel[selected.provider]}
                       {selected.handle && selected.handle !== selected.title ? ` · ${selected.handle}` : ""}
                     </p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <label className="flex items-center gap-3 text-sm text-zinc-700">
+                  <label className="flex items-center gap-3 text-sm text-zinc-300">
                     ИИ-агент активен
                     <Switch
                       checked={selected.botActive}
@@ -301,11 +301,11 @@ export function ChatInbox({
                 </div>
               </header>
               {!selected.botActive ? (
-                <p className="border-b border-zinc-200/80 bg-amber-50 px-5 py-2 text-xs text-amber-800">
+                <p className="border-b border-zinc-800 bg-zinc-900 px-5 py-2 text-xs text-zinc-300">
                   Агент не отвечает в этом диалоге. Входящие сообщения сохраняются.
                 </p>
               ) : null}
-              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-[#F8FAFC] px-5 py-5">
+              <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-black/40 px-5 py-5">
                 {messages.length === 0 ? (
                   <p className="text-sm text-zinc-400">В этом диалоге пока нет сообщений.</p>
                 ) : (
@@ -317,12 +317,12 @@ export function ChatInbox({
                         className={cn(
                           "max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-6 shadow-sm",
                           outbound
-                            ? "ml-auto rounded-br-md bg-sky-100 text-sky-950"
-                            : "mr-auto rounded-bl-md bg-zinc-100 text-zinc-900",
+                            ? "ml-auto rounded-br-md bg-white text-black"
+                            : "mr-auto rounded-bl-md bg-zinc-800 text-zinc-100",
                         )}
                       >
                         <p className="whitespace-pre-wrap">{message.content}</p>
-                        <p className={cn("mt-1 text-[10px]", outbound ? "text-sky-700/70" : "text-zinc-400")}>
+                        <p className={cn("mt-1 text-[10px]", outbound ? "text-zinc-500" : "text-zinc-400")}>
                           {formatStamp(message.createdAt)}
                         </p>
                       </article>
@@ -334,8 +334,8 @@ export function ChatInbox({
           ) : (
             <div className="grid flex-1 place-items-center px-6 text-center">
               <div>
-                <MessagesSquare className="mx-auto size-6 text-zinc-300" strokeWidth={1.75} />
-                <p className="mt-3 text-sm text-zinc-500">Выберите диалог слева.</p>
+                <MessagesSquare className="mx-auto size-6 text-zinc-600" strokeWidth={1.75} />
+                <p className="mt-3 text-sm text-zinc-400">Выберите диалог слева.</p>
               </div>
             </div>
           )}
@@ -380,7 +380,7 @@ function AgentFilter({
   }
 
   return (
-    <div className="border-b border-zinc-100 px-4 py-3">
+    <div className="border-b border-zinc-800 px-4 py-3">
       <span id="chat-agent-filter-label" className="mb-2 block text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
         Агент
       </span>
@@ -390,7 +390,7 @@ function AgentFilter({
           aria-haspopup="listbox"
           aria-expanded={open}
           onClick={() => setOpen((current) => !current)}
-          className="flex w-full items-center gap-2 rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-left text-sm text-zinc-900 outline-none transition-colors hover:border-zinc-300 focus:border-zinc-300"
+          className="flex w-full items-center gap-2 rounded-xl border border-zinc-800 bg-black px-3 py-2.5 text-left text-sm text-white outline-none transition-colors hover:border-zinc-600 focus:border-white"
         >
           <span className="min-w-0 flex-1">
             {selected ? <AgentOptionLabel agent={selected} /> : <span className="font-medium">Все агенты</span>}
@@ -401,7 +401,7 @@ function AgentFilter({
           <ul
             role="listbox"
             aria-labelledby="chat-agent-filter-label"
-            className="absolute top-full right-0 left-0 z-20 mt-1 max-h-64 overflow-y-auto rounded-xl border border-zinc-200 bg-white py-1 shadow-lg"
+            className="absolute top-full right-0 left-0 z-20 mt-1 max-h-64 overflow-y-auto rounded-xl border border-zinc-800 bg-zinc-950 py-1"
           >
             <li>
               <FilterOption selected={value === "all"} onClick={() => choose("all")}>
@@ -438,8 +438,8 @@ function FilterOption({
       aria-selected={selected}
       onClick={onClick}
       className={cn(
-        "flex w-full px-3 py-2.5 text-left text-sm text-zinc-900",
-        selected ? "bg-zinc-50 font-medium" : "hover:bg-zinc-50",
+        "flex w-full px-3 py-2.5 text-left text-sm text-zinc-200",
+        selected ? "bg-white/10 font-medium text-white" : "hover:bg-white/5",
       )}
     >
       {children}
@@ -454,7 +454,7 @@ function AgentOptionLabel({ agent }: { agent: ChatAgentOption }) {
       {agent.channels.length > 0 ? (
         <span className="ml-auto flex shrink-0 items-center gap-2">
           {agent.channels.map((channel) => (
-            <span key={channel.provider} className="inline-flex max-w-28 items-center gap-1 text-[11px] text-zinc-500">
+            <span key={channel.provider} className="inline-flex max-w-28 items-center gap-1 text-[11px] text-zinc-400">
               <ChannelIcon provider={channel.provider} className="size-3.5 shrink-0" />
               {channel.label ? <span className="truncate">{channel.label}</span> : null}
             </span>
@@ -511,7 +511,7 @@ function writeChatUrl(agentId: string, conversationId: string | null) {
 function ProviderMark({ provider }: { provider: ChatProvider }) {
   if (provider === "unknown") {
     return (
-      <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-zinc-100 text-zinc-500">
+      <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-zinc-800 bg-black text-zinc-300">
         <MessagesSquare className="size-4" strokeWidth={2} />
       </span>
     );

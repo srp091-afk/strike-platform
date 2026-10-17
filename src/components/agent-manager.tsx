@@ -9,6 +9,7 @@ import { connectTelegram, disconnectTelegram, disconnectWhatsApp, saveWhatsAppPh
 import { ChannelIcon } from "@/components/channel-icons";
 import { Button } from "@/components/ui/button";
 import { DialogContent } from "@/components/ui/dialog";
+import { SelectField } from "@/components/ui/select-field";
 import { Switch } from "@/components/ui/switch";
 import { WhatsAppConnectDialog } from "@/components/whatsapp-connect-dialog";
 import {
@@ -38,7 +39,7 @@ type GreenDefaults = {
 };
 
 const fieldClass =
-  "w-full rounded-xl border border-transparent bg-zinc-50 px-4 py-3 text-sm text-zinc-900 outline-none transition-all duration-200 placeholder:text-zinc-400 hover:bg-zinc-100/80 focus:border-zinc-300 focus:bg-white";
+  "w-full rounded-xl border border-zinc-800 bg-black px-4 py-3 text-sm text-white outline-none transition-colors duration-200 placeholder:text-zinc-600 hover:border-zinc-700 focus:border-white";
 
 const initialState: SaveState = {
   ok: false,
@@ -128,7 +129,7 @@ export function AgentManager({
   return (
     <div>
       {loadError ? (
-        <p className="mb-6 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{loadError}</p>
+        <p className="mb-6 rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-200">{loadError}</p>
       ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -139,7 +140,7 @@ export function AgentManager({
       </div>
 
       {agents.length === 0 ? (
-        <p className="mt-6 rounded-2xl border border-zinc-200/80 bg-white px-6 py-10 text-sm text-zinc-500 shadow-sm">
+        <p className="mt-6 rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/50 px-6 py-10 text-sm text-zinc-400">
           Агентов пока нет. Создайте первого, чтобы подключить канал или открыть симулятор.
         </p>
       ) : (
@@ -147,13 +148,13 @@ export function AgentManager({
           {agents.map((agent) => (
             <li
               key={agent.id}
-              className="rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm transition-all duration-200 hover:shadow-md"
+              className="rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md transition-colors duration-200 hover:border-zinc-600"
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                 <div className="min-w-0 flex-1">
-                  <p className="font-heading text-xl font-semibold tracking-tight text-zinc-900">{agent.name}</p>
+                  <p className="font-heading text-xl font-semibold tracking-tight text-white">{agent.name}</p>
                   <p className="mt-1 text-xs font-medium uppercase tracking-widest text-zinc-400">{agent.model}</p>
-                  <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-zinc-500">
+                  <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-zinc-400">
                     {agent.system_prompt}
                   </p>
                 </div>
@@ -230,16 +231,16 @@ function SimulatorDialog({
   }, [onClose]);
 
   return (
-    <div className="fixed inset-0 z-[70] grid place-items-center bg-zinc-950/40 p-4" onMouseDown={onClose}>
+    <div className="fixed inset-0 z-[70] grid place-items-center bg-black/70 p-4" onMouseDown={onClose}>
       <DialogContent
         aria-labelledby="simulator-dialog-title"
-        className="flex h-[min(44rem,calc(100dvh-2rem))] w-full max-w-4xl flex-col overflow-hidden rounded-2xl bg-white"
+        className="flex h-[min(44rem,calc(100dvh-2rem))] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="flex items-center justify-between gap-3 border-b border-zinc-200/80 px-5 py-4">
+        <header className="flex items-center justify-between gap-3 border-b border-zinc-800/80 px-5 py-4">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Симулятор</p>
-            <h2 id="simulator-dialog-title" className="truncate font-heading text-lg font-semibold text-zinc-900">
+            <h2 id="simulator-dialog-title" className="truncate font-heading text-lg font-semibold text-white">
               {agent.name}
             </h2>
           </div>
@@ -331,7 +332,7 @@ function AgentDialog({
             });
           }}
         >
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200/80 bg-white px-6 py-4">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 bg-black px-6 py-4">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</p>
               <h2 id="agent-dialog-title" className="text-2xl font-semibold">
@@ -354,7 +355,7 @@ function AgentDialog({
 
           <div className="min-h-0 flex-1 overflow-y-auto">
             <div className="mx-auto grid max-w-6xl gap-6 p-6 lg:grid-cols-2">
-              <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+              <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
                 {persistedId ? <input type="hidden" name="id" value={persistedId} /> : null}
 
                 <label className="grid gap-2">
@@ -371,18 +372,15 @@ function AgentDialog({
 
                 <label className="grid min-w-0 gap-2">
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Модель</span>
-                  <select
-                    className={fieldClass}
+                  <SelectField
                     name="model"
                     value={draft.model}
-                    onChange={(event) => patchDraft({ model: event.target.value })}
-                  >
-                    {AGENT_MODELS.map((model) => (
-                      <option key={model.value} value={model.value}>
-                        {model.value} ({model.label})
-                      </option>
-                    ))}
-                  </select>
+                    options={AGENT_MODELS.map((model) => ({
+                      value: model.value,
+                      label: `${model.value} (${model.label})`,
+                    }))}
+                    onChange={(model) => patchDraft({ model })}
+                  />
                 </label>
 
                 <CreativityField
@@ -395,7 +393,7 @@ function AgentDialog({
                   onChange={(system_prompt) => patchDraft({ system_prompt })}
                 />
 
-                {error ? <p className="text-sm text-red-600">{error}</p> : null}
+                {error ? <p className="text-sm text-red-400">{error}</p> : null}
               </section>
 
               <div className="grid content-start gap-6">
@@ -531,7 +529,7 @@ function SystemPromptField({ value, onChange }: { value: string; onChange: (valu
     <div className="grid gap-2">
       <div className="flex items-center justify-between gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-          Системная инструкция <span className="text-red-600">#ROLE</span>
+          Системная инструкция <span className="text-white">#ROLE</span>
         </span>
         <Button
           type="button"
@@ -578,7 +576,7 @@ function SystemPromptDialog({
   return (
     <div
       data-channel-dialog=""
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-zinc-950/40 p-4"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
       onMouseDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -587,12 +585,12 @@ function SystemPromptDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="system-prompt-title"
-        className="flex h-[90vh] w-[90vw] flex-col rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.35)]"
+        className="flex h-[90vh] w-[90vw] flex-col rounded-2xl border border-zinc-800 bg-zinc-950 p-6"
       >
         <div>
           <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</p>
           <h2 id="system-prompt-title" className="mt-1 text-2xl font-semibold">
-            Системная инструкция <span className="text-red-600">#ROLE</span>
+            Системная инструкция <span className="text-white">#ROLE</span>
           </h2>
         </div>
         <textarea
@@ -613,9 +611,9 @@ function SystemPromptDialog({
 }
 
 const channelTone: Record<IntegrationProvider, string> = {
-  telegram: "bg-sky-50 text-sky-600",
-  whatsapp: "bg-emerald-50 text-emerald-600",
-  instagram: "bg-rose-50 text-rose-600",
+  telegram: "border border-zinc-700 bg-zinc-900 text-white",
+  whatsapp: "border border-zinc-700 bg-zinc-900 text-white",
+  instagram: "border border-zinc-700 bg-zinc-900 text-white",
 };
 
 function ChannelSettings({
@@ -645,10 +643,10 @@ function ChannelSettings({
   const [telegramOpen, setTelegramOpen] = useState(false);
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
       <div>
-        <h3 className="font-heading text-lg font-semibold text-zinc-900">Активные каналы</h3>
-        <p className="mt-1 text-sm leading-6 text-zinc-500">
+        <h3 className="font-heading text-lg font-semibold text-white">Активные каналы</h3>
+        <p className="mt-1 text-sm leading-6 text-zinc-400">
           У агента один номер WhatsApp и один Telegram-бот. Выключенный канал не вызывает модель.
         </p>
       </div>
@@ -657,9 +655,9 @@ function ChannelSettings({
       <input type="hidden" name="wa_api_token" value={credentials.apiToken} />
       <input type="hidden" name="wa_phone_number" value={phone} />
       <div className="grid gap-3">
-        <div className="grid gap-3 rounded-xl bg-zinc-50 px-4 py-3">
+        <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
           <label className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-3 text-sm font-medium text-zinc-800">
+            <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
               <span className={`grid size-9 place-items-center rounded-xl ${channelTone.whatsapp}`}>
                 <ChannelIcon provider="whatsapp" className="size-4" />
               </span>
@@ -680,9 +678,9 @@ function ChannelSettings({
             onCleared={onWhatsAppCleared}
           />
         </div>
-        <div className="grid gap-3 rounded-xl bg-zinc-50 px-4 py-3">
+        <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
           <label className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-3 text-sm font-medium text-zinc-800">
+            <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
               <span className={`grid size-9 place-items-center rounded-xl ${channelTone.telegram}`}>
                 <ChannelIcon provider="telegram" className="size-4" />
               </span>
@@ -696,8 +694,8 @@ function ChannelSettings({
           </label>
           <TelegramChannel agent={agent} onConnect={() => setTelegramOpen(true)} />
         </div>
-        <label className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-4 py-3">
-          <span className="flex items-center gap-3 text-sm font-medium text-zinc-800">
+        <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+          <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
             <span className={`grid size-9 place-items-center rounded-xl ${channelTone.instagram}`}>
               <ChannelIcon provider="instagram" className="size-4" />
             </span>
@@ -746,7 +744,7 @@ function WhatsAppChannel({
     return (
       <button
         type="button"
-        className="w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800"
+        className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)]"
         onClick={onConnect}
       >
         + Подключить номер
@@ -757,8 +755,8 @@ function WhatsAppChannel({
     return <WhatsAppPhoneField agentId={agentId} onSaved={onPhoneSaved} />;
   }
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5">
-      <p className="truncate text-sm font-medium text-zinc-900">{savedPhone}</p>
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black px-3 py-2.5">
+      <p className="truncate text-sm font-medium text-white">{savedPhone}</p>
       <DisconnectButton
         agentId={agentId}
         kind="whatsapp"
@@ -797,9 +795,9 @@ function WhatsAppPhoneField({ agentId, onSaved }: { agentId: string; onSaved: (p
 
   return (
     <div className="grid gap-2">
-      <div className="flex items-center gap-2 rounded-xl bg-white px-3 py-2">
+      <div className="flex items-center gap-2 rounded-xl border border-zinc-800 bg-black px-3 py-2">
         <input
-          className="min-w-0 flex-1 bg-transparent text-sm text-zinc-900 outline-none placeholder:text-zinc-400"
+          className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-zinc-600"
           value={value}
           inputMode="numeric"
           autoComplete="tel"
@@ -814,27 +812,27 @@ function WhatsAppPhoneField({ agentId, onSaved }: { agentId: string; onSaved: (p
         />
         <button
           type="button"
-          className="shrink-0 rounded-lg bg-zinc-900 px-3 py-1.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+          className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-black transition-shadow hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
           disabled={pending}
           onClick={savePhone}
         >
           {pending ? "Сохранение" : "Сохранить"}
         </button>
       </div>
-      {error ? <p className="text-xs text-red-600">{error}</p> : null}
+      {error ? <p className="text-xs text-red-400">{error}</p> : null}
     </div>
   );
 }
 
 function TelegramChannel({ agent, onConnect }: { agent: AgentRecord | null; onConnect: () => void }) {
   if (!agent) {
-    return <p className="text-xs leading-5 text-zinc-500">Сохраните агента, чтобы подключить бота.</p>;
+    return <p className="text-xs leading-5 text-zinc-400">Сохраните агента, чтобы подключить бота.</p>;
   }
   if (!agent.tgBotUsername) {
     return (
       <button
         type="button"
-        className="w-full rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white shadow-sm transition-all duration-200 hover:bg-zinc-800"
+        className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)]"
         onClick={onConnect}
       >
         Подключить
@@ -842,8 +840,8 @@ function TelegramChannel({ agent, onConnect }: { agent: AgentRecord | null; onCo
     );
   }
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl bg-white px-3 py-2.5">
-      <p className="truncate text-sm font-medium text-zinc-900">@{agent.tgBotUsername}</p>
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black px-3 py-2.5">
+      <p className="truncate text-sm font-medium text-white">@{agent.tgBotUsername}</p>
       <DisconnectButton agentId={agent.id} kind="telegram" label={`Отключить бота @${agent.tgBotUsername}`} />
     </div>
   );
@@ -881,9 +879,9 @@ function DisconnectButton({
 
   return (
     <div className="flex items-center gap-2">
-      {error ? <span className="text-xs text-red-600">{error}</span> : null}
+      {error ? <span className="text-xs text-red-400">{error}</span> : null}
       <AlertDialog>
-        <AlertDialogTrigger type="button" className="text-red-500 transition-colors hover:text-red-600 disabled:opacity-40" disabled={pending} aria-label={label}>
+        <AlertDialogTrigger type="button" className="text-red-500 transition-colors hover:text-red-400 disabled:opacity-40" disabled={pending} aria-label={label}>
           <Trash className="size-4" />
         </AlertDialogTrigger>
         <AlertDialogContent>
@@ -942,7 +940,7 @@ function TelegramConnectDialog({ agentId, onClose }: { agentId: string; onClose:
   return (
     <div
       data-channel-dialog=""
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-zinc-950/40 p-4"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
       onKeyDown={(event) => {
         if (event.key === "Enter") event.preventDefault();
       }}
@@ -954,7 +952,7 @@ function TelegramConnectDialog({ agentId, onClose }: { agentId: string; onClose:
         role="dialog"
         aria-modal="true"
         aria-labelledby="telegram-connect-title"
-        className="w-full max-w-md rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.35)]"
+        className="w-full max-w-md rounded-2xl border border-zinc-800/50 bg-zinc-950 p-6"
       >
         <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Telegram</p>
         <h2 id="telegram-connect-title" className="mt-1 text-2xl font-semibold">
@@ -971,18 +969,18 @@ function TelegramConnectDialog({ agentId, onClose }: { agentId: string; onClose:
             onChange={(event) => setToken(event.target.value)}
           />
         </label>
-        {error ? <p className="mt-3 text-sm text-red-600">{error}</p> : null}
+        {error ? <p className="mt-3 text-sm text-red-400">{error}</p> : null}
         <div className="mt-5 flex justify-end gap-2">
           <button
             type="button"
-            className="rounded-xl border border-zinc-200 bg-white px-4 py-2.5 text-sm font-medium text-zinc-700"
+            className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white"
             onClick={onClose}
           >
             Закрыть
           </button>
           <button
             type="button"
-            className="rounded-xl bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white disabled:opacity-50"
+            className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-50"
             disabled={pending || token.trim().length < 20}
             onClick={onSubmit}
           >
@@ -1001,8 +999,8 @@ function ResponseDelayField({ value, onChange }: { value: string; onChange: (val
   const selected = Number(value);
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
-      <h3 className="font-heading text-lg font-semibold text-zinc-900">Задержка ответа</h3>
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
+      <h3 className="font-heading text-lg font-semibold text-white">Задержка ответа</h3>
       <label className="grid gap-2">
         <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
           Задержка (в секундах)
@@ -1010,7 +1008,7 @@ function ResponseDelayField({ value, onChange }: { value: string; onChange: (val
             type="button"
             aria-expanded={open}
             aria-label="Что значит задержка ответа"
-            className="grid h-4 w-4 shrink-0 place-items-center rounded-full border border-zinc-300 text-[10px] font-semibold normal-case tracking-normal text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-800"
+            className="grid h-4 w-4 shrink-0 place-items-center rounded-full border border-zinc-700 text-[10px] font-semibold normal-case tracking-normal text-zinc-400 transition-colors hover:border-zinc-400 hover:text-white"
             onClick={(event) => {
               event.preventDefault();
               setOpen((current) => !current);
@@ -1062,27 +1060,21 @@ function HumanHandoffField({
   onChange: (value: HandoffDuration) => void;
 }) {
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
       <div className="grid gap-2">
-        <h3 className="font-heading text-lg font-semibold text-zinc-900">Вмешательство оператора</h3>
-        <p className="text-sm leading-6 text-zinc-500">
+        <h3 className="font-heading text-lg font-semibold text-white">Вмешательство оператора</h3>
+        <p className="text-sm leading-6 text-zinc-400">
           На какое время бот замолчит, если вы ответите клиенту вручную с телефона или ПК.
         </p>
       </div>
       <label className="grid gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Пауза</span>
-        <select
-          className={fieldClass}
+        <SelectField
           name="human_handoff_duration"
           value={value}
-          onChange={(event) => onChange(event.target.value as HandoffDuration)}
-        >
-          {HANDOFF_DURATIONS.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+          options={HANDOFF_DURATIONS.map((option) => ({ value: option.value, label: option.label }))}
+          onChange={(next) => onChange(next as HandoffDuration)}
+        />
       </label>
     </section>
   );
@@ -1097,16 +1089,16 @@ function LeadNotificationsField({ value, onChange }: { value: string; onChange: 
   }
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
-      <h3 className="font-heading text-lg font-semibold text-zinc-900">Уведомления о лидах</h3>
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
+      <h3 className="font-heading text-lg font-semibold text-white">Уведомления о лидах</h3>
       {enabled ? null : <input type="hidden" name="telegram_chat_id" value="" />}
-      <label className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-4 py-3">
-        <span className="text-sm font-medium text-zinc-800">Включить уведомления</span>
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+        <span className="text-sm font-medium text-zinc-200">Включить уведомления</span>
         <Switch checked={enabled} onCheckedChange={toggle} aria-label="Включить уведомления" />
       </label>
       {enabled ? (
         <>
-          <p className="text-sm leading-6 text-zinc-500">
+          <p className="text-sm leading-6 text-zinc-400">
             Сюда будут приходить горячие лиды. Создайте группу в Telegram и добавьте в неё нашего бота @StrikeNotifyBot.
           </p>
           <label className="grid gap-2">
@@ -1143,10 +1135,10 @@ function MessageLimitsField({
   onChange: (patch: Partial<AgentDraft>) => void;
 }) {
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
       <div className="grid gap-2">
-        <h3 className="font-heading text-lg font-semibold text-zinc-900">Защита от зацикливания (Лимиты)</h3>
-        <p className="text-sm leading-6 text-zinc-500">
+        <h3 className="font-heading text-lg font-semibold text-white">Защита от зацикливания (Лимиты)</h3>
+        <p className="text-sm leading-6 text-zinc-400">
           Если указан 0, лимит отключен. При превышении лимита бот автоматически перейдет в статус &apos;На паузе&apos; для
           этого диалога.
         </p>
@@ -1203,14 +1195,14 @@ function LimitInput({
 function SplitMessagesField({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) {
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-sm">
-      <h3 className="font-heading text-lg font-semibold text-zinc-900">Форматирование</h3>
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
+      <h3 className="font-heading text-lg font-semibold text-white">Форматирование</h3>
       <input type="hidden" name="split_messages" value={enabled ? "true" : "false"} />
-      <label className="flex items-center justify-between gap-3 rounded-xl bg-zinc-50 px-4 py-3">
-        <span className="text-sm font-medium text-zinc-800">Дробить текст на отдельные сообщения</span>
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+        <span className="text-sm font-medium text-zinc-200">Дробить текст на отдельные сообщения</span>
         <Switch checked={enabled} onCheckedChange={onChange} aria-label="Дробить текст на отдельные сообщения" />
       </label>
-      <p className="text-sm leading-6 text-zinc-500">
+      <p className="text-sm leading-6 text-zinc-400">
         Если включено, абзацы будут отправляться отдельными сообщениями (пузырями) с учетом задержки между ними
       </p>
     </section>
@@ -1228,7 +1220,7 @@ function CreativityField({ value, onChange }: { value: string; onChange: (value:
           type="button"
           aria-expanded={open}
           aria-label="Что значит креативность ответов"
-          className="grid h-4 w-4 shrink-0 place-items-center rounded-full border border-zinc-300 text-[10px] font-semibold normal-case tracking-normal text-zinc-500 transition-colors hover:border-zinc-400 hover:text-zinc-800"
+          className="grid h-4 w-4 shrink-0 place-items-center rounded-full border border-zinc-700 text-[10px] font-semibold normal-case tracking-normal text-zinc-400 transition-colors hover:border-zinc-400 hover:text-white"
           onClick={(event) => {
             event.preventDefault();
             setOpen((current) => !current);

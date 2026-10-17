@@ -2,10 +2,11 @@
 @config "../../tailwind.config.ts";
 
 :root {
-  --background: #f8fafc;
-  --foreground: #09090b;
+  --background: #000000;
+  --foreground: #a1a1aa;
   --strike: #e11d48;
   --radius: 0.75rem;
+  color-scheme: dark;
 }
 
 @theme inline {
@@ -13,31 +14,44 @@
   --color-foreground: var(--foreground);
   --color-strike: #e11d48;
   --color-strike-dark: #be123c;
-  --color-ink: #09090b;
+  --color-ink: #a1a1aa;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-heading: var(--font-jakarta), var(--font-inter), ui-sans-serif, sans-serif;
   --font-display: var(--font-jakarta), var(--font-inter), ui-sans-serif, sans-serif;
-  --shadow-card: 0 4px 20px -2px rgba(0, 0, 0, 0.05);
+  --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 
 @layer base {
   html {
-    @apply bg-background text-ink antialiased;
+    @apply bg-black text-zinc-400 antialiased;
+    color-scheme: dark;
   }
 
   body {
-    @apply min-h-screen bg-background font-sans text-ink;
+    @apply min-h-screen bg-black font-sans text-zinc-400;
+    background-image: radial-gradient(ellipse 78% 52% at 50% 28%, rgba(113, 113, 122, 0.22), transparent 68%);
+    background-attachment: fixed;
   }
 
   h1,
   h2,
   h3,
   h4 {
-    @apply font-heading tracking-tight text-zinc-900;
+    @apply font-heading tracking-tight text-white;
   }
 
   ::selection {
-    background: #e11d48;
-    color: #ffffff;
+    background: #ffffff;
+    color: #000000;
+  }
+
+  input[type="file"]::file-selector-button {
+    margin-right: 0.75rem;
+    border: 0;
+    border-radius: 0.5rem;
+    background: #ffffff;
+    color: #000000;
+    font-weight: 600;
+    padding: 0.35rem 0.75rem;
   }
 }

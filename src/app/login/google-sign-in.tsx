@@ -35,7 +35,7 @@ export function GoogleSignInButton() {
       <Button type="button" size="lg" className="w-full" disabled={pending} onClick={signIn}>
         Войти через Google
       </Button>
-      {error ? <p className="text-sm text-rose-600">{error}</p> : null}
+      {error ? <p className="text-sm text-red-300">{error}</p> : null}
     </div>
   );
 }

@@ -1,11 +1,9 @@
-import { Bot, Globe, LayoutDashboard, Megaphone, MessagesSquare } from "lucide-react";
-
 export const navItems = [
-  { href: "/", label: "Дашборд", icon: LayoutDashboard },
-  { href: "/agents", label: "Агенты", icon: Bot },
-  { href: "/funnels", label: "Сайты", icon: Globe },
-  { href: "/ads/new", label: "AI-Кампании", icon: Megaphone },
-  { href: "/chats", label: "Чаты", icon: MessagesSquare },
+  { href: "/", label: "Дашборд" },
+  { href: "/agents", label: "Агенты" },
+  { href: "/funnels", label: "Сайты" },
+  { href: "/ads/new", label: "AI-Кампании" },
+  { href: "/chats", label: "Чаты" },
 ] as const;
 
 export function isNavActive(pathname: string, href: string) {

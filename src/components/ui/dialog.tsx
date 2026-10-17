@@ -8,7 +8,7 @@ function DialogContent({ className, ...props }: React.ComponentProps<"div">) {
       role="dialog"
       aria-modal="true"
       data-slot="dialog-content"
-      className={cn("m-0 h-screen w-screen max-w-none rounded-none bg-zinc-50", className)}
+      className={cn("m-0 h-screen w-screen max-w-none rounded-none bg-black", className)}
       {...props}
     />
   );

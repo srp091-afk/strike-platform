@@ -7,6 +7,12 @@ import { Button } from "@/components/ui/button";
 
 const initialState: NameState = { ok: false, error: null, savedName: null };
 
+const readonlyClass =
+  "h-11 w-full rounded-xl border border-zinc-800 bg-zinc-950 px-3 text-sm text-zinc-400 outline-none";
+
+const fieldClass =
+  "h-11 w-full rounded-xl border border-zinc-800 bg-black px-3 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-white";
+
 export function SettingsForm({
   email,
   googleName,
@@ -20,36 +26,28 @@ export function SettingsForm({
   const shownName = state.savedName ?? displayName;
 
   return (
-    <form action={action} className="max-w-lg space-y-5 rounded-2xl border border-zinc-200/80 bg-white p-6 shadow-[0_4px_20px_-2px_rgba(0,0,0,0.05)]">
+    <form action={action} className="max-w-lg space-y-5 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
       <label className="block space-y-2">
-        <span className="text-sm font-medium text-zinc-700">Email</span>
-        <input
-          readOnly
-          value={email}
-          className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-sm text-zinc-600 outline-none"
-        />
+        <span className="text-sm font-medium text-zinc-400">Email</span>
+        <input readOnly value={email} className={readonlyClass} />
       </label>
       <label className="block space-y-2">
-        <span className="text-sm font-medium text-zinc-700">Имя в Google</span>
-        <input
-          readOnly
-          value={googleName}
-          className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 px-3 text-sm text-zinc-600 outline-none"
-        />
+        <span className="text-sm font-medium text-zinc-400">Имя в Google</span>
+        <input readOnly value={googleName} className={readonlyClass} />
       </label>
       <label className="block space-y-2">
-        <span className="text-sm font-medium text-zinc-700">Отображаемое имя</span>
+        <span className="text-sm font-medium text-zinc-400">Отображаемое имя</span>
         <input
           name="display_name"
           key={shownName}
           defaultValue={shownName}
           maxLength={80}
           required
-          className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none transition-all duration-200 focus:border-zinc-300"
+          className={fieldClass}
         />
       </label>
-      {state.error ? <p className="text-sm text-rose-600">{state.error}</p> : null}
-      {state.ok ? <p className="text-sm text-emerald-700">Имя сохранено.</p> : null}
+      {state.error ? <p className="text-sm text-red-300">{state.error}</p> : null}
+      {state.ok ? <p className="text-sm text-zinc-300">Имя сохранено.</p> : null}
       <Button type="submit" disabled={pending}>
         {pending ? "Сохранение" : "Сохранить"}
       </Button>
