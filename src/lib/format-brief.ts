@@ -3,16 +3,25 @@ import "server-only";
 import type { AdFormattedBrief } from "@/lib/ad-types";
 import { getOpenAI } from "@/lib/openai";
 
-const formatPrompt =
-  "Роль: Редактор-копирайтер. Возьми сырые заметки из чата с клиентом и преврати их в 3 лаконичных, презентабельных и стилистически ровных абзаца для вывода в UI-карточку. Исправь падежи, убери мусорные слова, сделай текст дорогим и профессиональным. Не додумывай факты, только причеши формулировки.";
+const formatPrompt = `Роль: Редактор-копирайтер. Возьми сырые заметки из чата с клиентом и преврати их в 4 лаконичных, презентабельных и стилистически ровных блока для вывода в UI-карточку.
+Исправь падежи, убери мусорные слова, сделай текст дорогим и профессиональным. Не додумывай факты, только причеши формулировки.
+
+Поля JSON:
+- product — продукт / ниша
+- audience — целевая аудитория
+- key_advantages — ключевые преимущества бизнеса (сильные стороны, чем выделяются среди конкурентов). Явно извлеки их из сырого текста, если клиент их назвал.
+- offer — главная выгода / оффер
+
+ГЛОБАЛЬНОЕ ПРАВИЛО ВАЛЮТЫ: только $ / USD или €. Без рублей и реалий СНГ.`;
 
 const formatSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["product", "audience", "offer"],
+  required: ["product", "audience", "key_advantages", "offer"],
   properties: {
     product: { type: "string" },
     audience: { type: "string" },
+    key_advantages: { type: "string" },
     offer: { type: "string" },
   },
 } as const;
@@ -22,9 +31,10 @@ export function parseFormattedBrief(value: unknown): AdFormattedBrief | null {
   const row = value as Record<string, unknown>;
   const product = text(row.product);
   const audience = text(row.audience);
+  const key_advantages = text(row.key_advantages);
   const offer = text(row.offer);
   if (!product || !audience || !offer) return null;
-  return { product, audience, offer };
+  return { product, audience, key_advantages, offer };
 }
 
 export async function formatBriefSummary(briefSummary: string): Promise<AdFormattedBrief> {
@@ -59,7 +69,9 @@ export async function formatBriefSummary(briefSummary: string): Promise<AdFormat
   }
 
   const briefCard = parseFormattedBrief(parsed);
-  if (!briefCard) throw new Error("Модель вернула бриф неверной структуры.");
+  if (!briefCard || !briefCard.key_advantages) {
+    throw new Error("Модель вернула бриф неверной структуры.");
+  }
   return briefCard;
 }
 

@@ -1,12 +1,15 @@
 import "server-only";
 
-import type { AdLeadQuestion, AdStrategy } from "@/lib/ad-types";
+import type { AdFormattedBrief, AdLeadQuestion, AdStrategy } from "@/lib/ad-types";
 import { getOpenAI } from "@/lib/openai";
 
 const strategyPrompt = `Роль: Ты — легендарный direct-response копирайтер и топовый performance-маркетолог (уровня Дэвида Огилви и Гэри Халберта). Твоя задача — взять сырой бриф клиента и превратить его в конверсионную, неординарную и пробивающую баннерную слепоту рекламную стратегию.
 Ты пишешь так, что люди достают кредитки. Никакой воды, шаблонов вроде "индивидуальный подход" или "высокое качество". Только нейромаркетинг, боли, триггеры и жесткие офферы.
 
-Входные данные: {brief_summary}
+Входные данные:
+- brief_summary: {brief_summary}
+- formatted_brief.key_advantages (ключевые преимущества бизнеса): {key_advantages}
+Опирайся на key_advantages при сборке выгод (benefits) и welcome_screen_bullets.
 
 Твоя задача — сгенерировать ответ СТРОГО в формате JSON с точным соблюдением количества элементов в массивах:
 
@@ -61,6 +64,16 @@ const strategyPrompt = `Роль: Ты — легендарный direct-respons
     "call_to_action": "Текст на кнопке (например, 'Получить предложение')"
   }
 }
+
+КРИТИЧЕСКОЕ ПРАВИЛО ДЛЯ ВЫГОД (БЛОК БУЛЛИТОВ):
+Выгоды должны опираться на 'Ключевые преимущества', собранные в брифе.
+Каждая выгода (буллит) для креатива должна быть максимально сжатой, ударной и содержать СТРОГО НЕ БОЛЕЕ 5 СЛОВ.
+КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНЫ деепричастные обороты и длинные объяснения.
+ПЛОХОЙ ПРИМЕР: 'Больше свободного времени на игры с детьми вместо домашних дел.'
+ХОРОШИЙ ПРИМЕР: 'Больше времени на семью.'
+ПЛОХОЙ ПРИМЕР: 'Вечер вдвоем без обязательного пункта сначала убраться.'
+ХОРОШИЙ ПРИМЕР: 'Свободные вечера без уборки.'
+Считай слова. Если слов больше 5 — переписывай.
 
 Дополнительно: все строки — живой русский текст по этому брифу. Не оставляй плейсхолдеры из примера. Заголовки креативов — до 5 слов. Заголовки Facebook — до 40 символов. В questions от 2 до 4 вопросов, у каждого от 2 до 4 вариантов ответа.`;
 
@@ -228,15 +241,18 @@ export function parseAdStrategy(value: unknown): AdStrategy | null {
   };
 }
 
-export async function generateAdStrategy(briefSummary: string): Promise<AdStrategy> {
+export async function generateAdStrategy(
+  briefSummary: string,
+  formattedBrief?: AdFormattedBrief | null,
+): Promise<AdStrategy> {
   const brief = briefSummary.replace(/\s+/g, " ").trim().slice(0, 12000);
   if (brief.length < 12) throw new Error("Бриф ещё не собран.");
 
-  const first = await requestStrategy(brief);
+  const first = await requestStrategy(brief, formattedBrief);
   const parsed = readStrategy(first);
   if (parsed) return parsed;
 
-  const second = await requestStrategy(brief);
+  const second = await requestStrategy(brief, formattedBrief);
   const again = readStrategy(second);
   if (again) return again;
   throw new Error("Модель вернула стратегию неверной структуры.");
@@ -248,7 +264,25 @@ export function publicModelError(error: unknown) {
   return message.slice(0, 300);
 }
 
-async function requestStrategy(brief: string) {
+async function requestStrategy(brief: string, formattedBrief?: AdFormattedBrief | null) {
+  const keyAdvantages =
+    formattedBrief?.key_advantages?.trim() ||
+    "Ключевые преимущества не выделены отдельно — извлеки их из brief_summary.";
+  const system = strategyPrompt
+    .replace("{brief_summary}", brief)
+    .replace("{key_advantages}", keyAdvantages);
+  const userPayload = {
+    brief_summary: brief,
+    formatted_brief: formattedBrief
+      ? {
+          product: formattedBrief.product,
+          audience: formattedBrief.audience,
+          key_advantages: formattedBrief.key_advantages,
+          offer: formattedBrief.offer,
+        }
+      : null,
+  };
+
   const completion = await getOpenAI().chat.completions.create({
     model: "gpt-4o",
     temperature: 0.7,
@@ -261,8 +295,11 @@ async function requestStrategy(brief: string) {
       },
     },
     messages: [
-      { role: "system", content: strategyPrompt.replace("{brief_summary}", brief) },
-      { role: "user", content: "Собери рекламную стратегию по брифу и верни только JSON." },
+      { role: "system", content: system },
+      {
+        role: "user",
+        content: `Собери рекламную стратегию по брифу и верни только JSON.\n${JSON.stringify(userPayload)}`,
+      },
     ],
   });
   const raw = completion.choices[0]?.message?.content?.trim() ?? "";

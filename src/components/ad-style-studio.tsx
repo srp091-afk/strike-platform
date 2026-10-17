@@ -98,6 +98,8 @@ export function AdStyleStudio({
         <div className="my-4 border-t border-zinc-800/60" />
         <BriefFact label="Целевая аудитория" value={formattedBrief?.audience} pending={formattedPending} />
         <div className="my-4 border-t border-zinc-800/60" />
+        <BriefFact label="Ключевые преимущества" value={formattedBrief?.key_advantages} pending={formattedPending} />
+        <div className="my-4 border-t border-zinc-800/60" />
         <BriefFact label="Уникальное предложение" value={formattedBrief?.offer} pending={formattedPending} />
       </aside>
 

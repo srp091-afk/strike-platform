@@ -105,6 +105,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
         setFormattedBrief({
           product: payload.product.trim(),
           audience: payload.audience.trim(),
+          key_advantages: payload.key_advantages.trim(),
           offer: payload.offer.trim(),
         });
       })
@@ -123,9 +124,12 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
 
   useEffect(() => {
     if (stage !== "style" || briefSummary.length < 12) return;
-    if (strategyRequest.current === briefSummary) return;
-    strategyRequest.current = briefSummary;
+    if (formattedPending) return;
+    const strategyKey = `${briefSummary}::${formattedBrief?.key_advantages ?? ""}`;
+    if (strategyRequest.current === strategyKey) return;
+    strategyRequest.current = strategyKey;
     const summary = briefSummary;
+    const briefCard = formattedBrief;
     let active = true;
     setStrategyPending(true);
     setStrategyJson("");
@@ -134,11 +138,11 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     void fetch("/api/generate-strategy", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ brief_summary: summary }),
+      body: JSON.stringify({ brief_summary: summary, formatted_brief: briefCard }),
     })
       .then(async (response) => {
         const payload = (await response.json()) as { error?: string };
-        if (!active && strategyRequest.current !== summary) return;
+        if (!active || strategyRequest.current !== strategyKey) return;
         if (!response.ok || !isStrategyPayload(payload)) {
           setStrategyJson("");
           setStrategyError(typeof payload.error === "string" && payload.error.trim() ? payload.error : "Не удалось собрать стратегию.");
@@ -148,18 +152,18 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
         setStrategyJson(JSON.stringify(payload));
       })
       .catch(() => {
-        if (!active && strategyRequest.current !== summary) return;
+        if (!active || strategyRequest.current !== strategyKey) return;
         setStrategyJson("");
         setStrategyError("Не удалось связаться с сервером.");
       })
       .finally(() => {
-        if (strategyRequest.current === summary) setStrategyPending(false);
+        if (strategyRequest.current === strategyKey) setStrategyPending(false);
       });
 
     return () => {
       active = false;
     };
-  }, [stage, briefSummary]);
+  }, [stage, briefSummary, formattedBrief, formattedPending]);
 
   useEffect(() => {
     return () => recognitionRef.current?.stop();
@@ -515,6 +519,8 @@ function isFormattedBrief(value: unknown): value is AdFormattedBrief {
     row.product.trim().length > 0 &&
     typeof row.audience === "string" &&
     row.audience.trim().length > 0 &&
+    typeof row.key_advantages === "string" &&
+    row.key_advantages.trim().length > 0 &&
     typeof row.offer === "string" &&
     row.offer.trim().length > 0
   );

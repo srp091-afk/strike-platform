@@ -160,6 +160,7 @@ async function directArt(input: {
 ГЛОБАЛЬНОЕ ПРАВИЛО ВАЛЮТЫ: только $ / USD или €. Запрещены рубли (руб, ₽, RUB) и реалии СНГ.
 Тексты на креативе (headline/subheadline/benefit/cta) — на языке: ${language}.
 image_prompt — строго на английском, готов к Flux.1.
+Опирайся на formatted_brief.key_advantages при выборе benefit: короткая ударная выгода СТРОГО НЕ БОЛЕЕ 5 слов, без деепричастных оборотов.
 
 CRITICAL TYPOGRAPHY RULE: Flux.1 is generating the images. You must explicitly include the exact marketing text inside the image prompt using quotes.
 - Do NOT generate images without text.
@@ -172,7 +173,7 @@ CRITICAL TYPOGRAPHY RULE: Flux.1 is generating the images. You must explicitly i
 {
   "headline": "краткий заголовок (1-5 слов)",
   "subheadline": "подзаголовок",
-  "benefit": "одна конкретная выгода с цифрой если уместно",
+  "benefit": "выгода из key_advantages, строго до 5 слов",
   "cta": "короткий CTA",
   "image_prompt": "English visual prompt with quoted on-image text, layout, lighting, typography placement, subject"
 }`,
@@ -194,8 +195,9 @@ CRITICAL TYPOGRAPHY RULE: Flux.1 is generating the images. You must explicitly i
                 buttons: input.strategy.creatives.buttons,
               }
             : null,
+          key_advantages: input.brief?.key_advantages ?? null,
           instruction:
-            "Make this creative visually and verbally distinct from other variants in the same batch. Prefer concrete numbers over soft adjectives.",
+            "Make this creative visually and verbally distinct from other variants in the same batch. Prefer concrete numbers over soft adjectives. Base benefit bullets on key_advantages; max 5 words.",
         }),
       },
     ],
@@ -237,9 +239,10 @@ export function parseFormattedBriefRow(value: unknown): AdFormattedBrief | null 
   const row = value as Record<string, unknown>;
   const product = readText(row.product);
   const audience = readText(row.audience);
+  const key_advantages = readText(row.key_advantages);
   const offer = readText(row.offer);
   if (!product || !audience || !offer) return null;
-  return { product, audience, offer };
+  return { product, audience, key_advantages, offer };
 }
 
 export function resolveStyleId(value: string): StudioStyleKey | null {

@@ -1,6 +1,7 @@
 export interface AdFormattedBrief {
   product: string;
   audience: string;
+  key_advantages: string;
   offer: string;
 }
 

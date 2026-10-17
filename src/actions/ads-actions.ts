@@ -98,8 +98,8 @@ export async function createAdCampaign(
     if (templateError) return { error: templateError.message, projectId: null };
     if (!template) return { error: "Выберите визуальный стиль.", projectId: null };
 
-    const strategy = await resolveStrategy(summary, submittedStrategy);
     const formattedBrief = await resolveFormattedBrief(summary, submittedFormatted);
+    const strategy = await resolveStrategy(summary, submittedStrategy, formattedBrief);
 
     const inserted = await insertProject(supabase, {
       user_id: userId,
@@ -214,7 +214,11 @@ async function resolveFormattedBrief(summary: string, submitted: string) {
   }
 }
 
-async function resolveStrategy(summary: string, submitted: string) {
+async function resolveStrategy(
+  summary: string,
+  submitted: string,
+  formattedBrief: Awaited<ReturnType<typeof resolveFormattedBrief>>,
+) {
   if (submitted) {
     try {
       const parsed = parseAdStrategy(JSON.parse(submitted) as unknown);
@@ -225,7 +229,7 @@ async function resolveStrategy(summary: string, submitted: string) {
   }
 
   try {
-    return await generateAdStrategy(summary);
+    return await generateAdStrategy(summary, formattedBrief);
   } catch (error) {
     throw new Error(publicModelError(error));
   }
