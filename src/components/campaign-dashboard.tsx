@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FocusEvent } from "react";
 import { createPortal } from "react-dom";
 
+import { Style1_VS } from "@/components/creatives/templates/Style1_VS";
 import { RefreshCreativesDialog, type RefreshCreativesPayload } from "@/components/refresh-creatives-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
@@ -444,7 +445,7 @@ export function CampaignDashboard({
               {refreshing ? (
                 <CreativeSkeletons />
               ) : (
-                <ActiveCreatives generation={activeGeneration} onZoom={setZoom} />
+                <ActiveCreatives generation={activeGeneration} strategy={strategy} onZoom={setZoom} />
               )}
             </TabsContent>
             <TabsContent value="archive" className="grid gap-3">
@@ -625,9 +626,11 @@ function EditableRow({
 
 function ActiveCreatives({
   generation,
+  strategy,
   onZoom,
 }: {
   generation: AdGeneration | null;
+  strategy: AdStrategy | null;
   onZoom: (src: string) => void;
 }) {
   if (!generation || generation.images.length === 0) {
@@ -635,29 +638,52 @@ function ActiveCreatives({
     return <EmptyPanel text="Активных креативов пока нет." />;
   }
 
+  const headlines = strategy?.creatives.headlines ?? [];
+  const subheadlines = strategy?.creatives.subheadlines ?? [];
+  const bullets = strategy?.creatives.benefits ?? [];
+  const buttons = strategy?.creatives.buttons ?? [];
+
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      {generation.images.map((imageUrl, index) => (
-        <article key={`${generation.id}-${index}`} className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-black">
-          <img src={imageUrl} alt="" className="aspect-[4/5] w-full object-cover" />
-          <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
-            <div className="flex w-[min(16rem,80%)] flex-col gap-2">
-              <Button type="button" variant="outline" onClick={() => onZoom(imageUrl)}>
-                <ZoomIn className="size-4" />
-                Увеличить
-              </Button>
-              <Button
-                type="button"
-                className="bg-white text-black hover:bg-zinc-200 hover:shadow-none"
-                onClick={() => toast.success("Перегенерация в разработке")}
-              >
-                <RefreshCw className="size-4" />
-                Перегенерировать (1 токен)
-              </Button>
+      {generation.images.map((imageUrl, index) => {
+        const nextUrl = generation.images[index + 1] ?? generation.images[0] ?? imageUrl;
+        const headline = headlines[index % Math.max(headlines.length, 1)] ?? strategy?.strategy.hook_concept ?? "Оффер";
+        const subheadline =
+          subheadlines[index % Math.max(subheadlines.length, 1)] ?? strategy?.strategy.core_offer_angle ?? undefined;
+        const buttonText = buttons[index % Math.max(buttons.length, 1)] ?? "Узнать подробнее";
+
+        return (
+          <article
+            key={`${generation.id}-${index}`}
+            className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-black"
+          >
+            {/* Style1 hardcoded for first template pass — CreativeWrapper lives inside Style1_VS. */}
+            <Style1_VS
+              headline={headline}
+              subheadline={subheadline}
+              bullets={bullets.length > 0 ? bullets : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"]}
+              buttonText={buttonText}
+              images={[imageUrl, nextUrl]}
+            />
+            <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+              <div className="flex w-[min(16rem,80%)] flex-col gap-2">
+                <Button type="button" variant="outline" onClick={() => onZoom(imageUrl)}>
+                  <ZoomIn className="size-4" />
+                  Увеличить
+                </Button>
+                <Button
+                  type="button"
+                  className="bg-white text-black hover:bg-zinc-200 hover:shadow-none"
+                  onClick={() => toast.success("Перегенерация в разработке")}
+                >
+                  <RefreshCw className="size-4" />
+                  Перегенерировать (1 токен)
+                </Button>
+              </div>
             </div>
-          </div>
-        </article>
-      ))}
+          </article>
+        );
+      })}
     </div>
   );
 }

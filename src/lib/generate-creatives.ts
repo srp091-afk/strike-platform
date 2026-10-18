@@ -23,6 +23,9 @@ const languageLabels: Record<CreativeLanguage, string> = {
 
 const FLUX_SCHNELL = "black-forest-labs/flux-schnell";
 
+const FLUX_NO_TEXT_PREFIX =
+  "CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE. ";
+
 export async function generateImage(prompt: string): Promise<string> {
   return generateImageWithFlux(prompt);
 }
@@ -33,10 +36,12 @@ export async function generateImageWithFlux(prompt: string): Promise<string> {
       throw new Error("REPLICATE_API_TOKEN is not set");
     }
 
+    const safePrompt = prompt.startsWith("CRITICAL RULE:") ? prompt : `${FLUX_NO_TEXT_PREFIX}${prompt}`;
+
     // Official flux-schnell schema: prompt, aspect_ratio, output_format, output_quality, …
     // https://replicate.com/black-forest-labs/flux-schnell/api
     const input = {
-      prompt,
+      prompt: safePrompt,
       aspect_ratio: "4:5",
       output_format: "webp" as const,
       output_quality: 90,
@@ -245,19 +250,20 @@ async function directArt(input: {
     messages: [
       {
         role: "system",
-        content: `Роль: ты — арт-директор performance-креативов для Meta Ads.
+        content: `CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE.
+
+Роль: ты — арт-директор performance-креативов для Meta Ads.
 Выбери уникальную комбинацию текстов для одного креатива и собери финальный image prompt на английском.
 ГЛОБАЛЬНОЕ ПРАВИЛО ВАЛЮТЫ: только $ / USD или €. Запрещены рубли (руб, ₽, RUB) и реалии СНГ.
-Тексты на креативе (headline/subheadline/benefit/cta) — на языке: ${language}.
-image_prompt — строго на английском, готов к Flux.1.
+Тексты на креативе (headline/subheadline/benefit/cta) — на языке: ${language}. Эти тексты пойдут в React-шаблон, НЕ на картинку.
+image_prompt — строго на английском, готов к Flux.1: только чистая фотография фона, без типографики.
 Опирайся на formatted_brief.key_advantages при выборе benefit: короткая ударная выгода СТРОГО НЕ БОЛЕЕ 5 слов, без деепричастных оборотов.
 
-CRITICAL TYPOGRAPHY RULE: Flux.1 is generating the images. You must explicitly include the exact marketing text inside the image prompt using quotes.
-- Do NOT generate images without text.
-- Use the exact short headlines or offers from the brief.
-- Format example: A high-end editorial photo of a modern living room, with bold, minimalist typography overlaid reading "RENOVATION IN 5 DAYS".
-- Keep the text short (1-5 words maximum). Flux renders short text perfectly.
-- Ensure the prompt is ALWAYS written in English, even if the target audience is different, but the text inside the quotes should be the exact text needed for the creative.
+CRITICAL IMAGE RULE (Flux background only):
+- NEVER put text, letters, numbers, logos with words, watermarks, or captions in image_prompt.
+- Describe only subject, lighting, composition, mood, and camera language.
+- Format example: A high-end editorial photograph of a modern living room at dusk, soft volumetric light, 4:5 vertical crop, no typography, no signage.
+- image_prompt MUST be English. Marketing copy lives only in headline/subheadline/benefit/cta fields.
 
 Верни JSON:
 {
@@ -265,7 +271,7 @@ CRITICAL TYPOGRAPHY RULE: Flux.1 is generating the images. You must explicitly i
   "subheadline": "подзаголовок",
   "benefit": "выгода из key_advantages, строго до 5 слов",
   "cta": "короткий CTA",
-  "image_prompt": "English visual prompt with quoted on-image text, layout, lighting, typography placement, subject"
+  "image_prompt": "English visual prompt for a clean background photograph only — no text, letters, numbers, or words"
 }`,
       },
       {
