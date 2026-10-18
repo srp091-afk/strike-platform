@@ -3,6 +3,7 @@
 import { Globe, Loader2, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { GenerationCostBadge } from "@/components/generation-cost-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select-field";
@@ -64,8 +65,6 @@ export function AdStyleStudio({
   const selected = studioStyles.find((style) => style.key === selectedStyle) ?? studioStyles[0];
   const templateId = templateIdFor(selected.category, templates);
   const font = fontStyles.find((item) => item.value === fontStyle) ?? fontStyles[0];
-  const totalCredits = creativesCount * 10;
-  const dollarCost = (creativesCount * 0.4).toFixed(2);
 
   return (
     <>
@@ -204,11 +203,7 @@ export function AdStyleStudio({
       </section>
 
       <footer className="flex flex-col gap-3 border-t border-zinc-800/80 pt-4 sm:flex-row sm:items-center sm:justify-between lg:col-span-12">
-        <div className="flex items-center gap-3 rounded-full border border-zinc-800 bg-zinc-950/80 px-5 py-2.5 backdrop-blur-md">
-          <span className="text-xs font-medium uppercase tracking-widest text-zinc-500">Стоимость</span>
-          <span className="text-sm font-semibold text-zinc-100">{totalCredits} кредитов</span>
-          <span className="text-xs text-zinc-600">~${dollarCost}</span>
-        </div>
+        <GenerationCostBadge creativesCount={creativesCount} />
         <div className="flex items-center justify-end gap-2">
           <Button
             type="button"

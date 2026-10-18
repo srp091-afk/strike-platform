@@ -22,6 +22,7 @@ const jakarta = Plus_Jakarta_Sans({
 
 const anton = Anton({
   weight: "400",
+  // @ts-expect-error Anton includes Cyrillic; next/font subset typings lag Google Fonts
   subsets: ["latin", "cyrillic"],
   variable: "--font-anton-face",
   display: "swap",

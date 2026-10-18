@@ -34,6 +34,7 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
     status: ProjectStatus;
     updatedAt: string | null;
     creativesReplaceAt: string | null;
+    styleKey: string | null;
   } | null = null;
   let generations: AdGeneration[] = [];
   let error: string | null = null;
@@ -77,6 +78,7 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
       generations={generations}
       updatedAt={project.updatedAt}
       creativesReplaceAt={project.creativesReplaceAt}
+      styleKey={project.styleKey}
     />
   );
 }
@@ -212,6 +214,7 @@ async function loadProject(id: string) {
             ? data.created_at
             : null,
       creativesReplaceAt: typeof data.creatives_replace_at === "string" ? data.creatives_replace_at : null,
+      styleKey: typeof data.style_key === "string" ? data.style_key : null,
     },
     generations,
   };

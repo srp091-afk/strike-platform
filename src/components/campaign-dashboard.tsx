@@ -1,10 +1,12 @@
 "use client";
 
-import { Check, Clock, Copy, Download, Folder, Loader2, RefreshCw, ZoomIn } from "lucide-react";
+import { Check, Clock, Copy, Download, Folder, Loader2, RefreshCw, Sparkles, ZoomIn } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useState, type FocusEvent } from "react";
 import { createPortal } from "react-dom";
 
+import { RefreshCreativesDialog, type RefreshCreativesPayload } from "@/components/refresh-creatives-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,9 +24,10 @@ export function CampaignDashboard({
   name: initialName,
   strategy: initialStrategy,
   status = "ready",
-  generations,
+  generations: initialGenerations,
   updatedAt: initialUpdatedAt,
   creativesReplaceAt: initialReplaceAt,
+  styleKey = null,
 }: {
   projectId: string;
   name: string;
@@ -33,14 +36,24 @@ export function CampaignDashboard({
   generations: AdGeneration[];
   updatedAt: string | null;
   creativesReplaceAt: string | null;
+  styleKey?: string | null;
 }) {
+  const router = useRouter();
   const [zoom, setZoom] = useState<string | null>(null);
   const [name, setName] = useState(initialName);
   const [savedName, setSavedName] = useState(initialName);
   const [strategy, setStrategy] = useState<AdStrategy | null>(initialStrategy);
   const [updatedAt, setUpdatedAt] = useState(initialUpdatedAt);
   const [creativesReplaceAt, setCreativesReplaceAt] = useState(initialReplaceAt);
+  const [generations, setGenerations] = useState(initialGenerations);
   const [saving, setSaving] = useState(false);
+  const [refreshOpen, setRefreshOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  const [activeTab, setActiveTab] = useState("active");
+
+  useEffect(() => {
+    setGenerations(initialGenerations);
+  }, [initialGenerations]);
 
   const activeGeneration = generations.find((generation) => generation.is_active) ?? null;
   const archivedGenerations = generations.filter((generation) => !generation.is_active);
@@ -103,6 +116,46 @@ export function CampaignDashboard({
     await patchProject({ creatives_replace_at: value });
   }
 
+  async function startRefresh(payload: RefreshCreativesPayload) {
+    setRefreshOpen(false);
+    setRefreshing(true);
+    setActiveTab("active");
+    setGenerations((current) =>
+      current.map((generation) => (generation.is_active ? { ...generation, is_active: false } : generation)),
+    );
+    try {
+      const response = await fetch("/api/generate-creatives", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          styleId: payload.styleId,
+          quantity: payload.quantity,
+          creativesCount: payload.quantity,
+        }),
+      });
+      const body = (await response.json()) as {
+        error?: string;
+        updated_at?: string | null;
+        creatives_replace_at?: string | null;
+      };
+      if (!response.ok) {
+        toast.error(typeof body.error === "string" ? body.error : "Не удалось обновить креативы.");
+        setGenerations(initialGenerations);
+        return;
+      }
+      if (typeof body.updated_at === "string") setUpdatedAt(body.updated_at);
+      if (typeof body.creatives_replace_at === "string") setCreativesReplaceAt(body.creatives_replace_at);
+      toast.success("Новые креативы готовы");
+      router.refresh();
+    } catch {
+      toast.error("Не удалось связаться с сервером.");
+      setGenerations(initialGenerations);
+    } finally {
+      setRefreshing(false);
+    }
+  }
+
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-10">
       <LinkBack />
@@ -140,12 +193,21 @@ export function CampaignDashboard({
           <Button
             type="button"
             variant="outline"
-            disabled={saving || !strategy}
+            disabled={saving || refreshing || !strategy}
             onClick={() => {
               if (strategy) void patchProject({ name: name.trim(), strategy_data: strategy });
             }}
           >
             {saving ? "Сохраняем…" : "Сохранить"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            disabled={refreshing || !strategy}
+            onClick={() => setRefreshOpen(true)}
+          >
+            {refreshing ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+            + Обновить креативы
           </Button>
           <Button
             type="button"
@@ -373,13 +435,17 @@ export function CampaignDashboard({
         </Card>
 
         <section className="lg:col-span-2">
-          <Tabs defaultValue="active">
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
             <TabsList>
               <TabsTrigger value="active">Активные креативы</TabsTrigger>
               <TabsTrigger value="archive">Архив генераций</TabsTrigger>
             </TabsList>
             <TabsContent value="active">
-              <ActiveCreatives generation={activeGeneration} onZoom={setZoom} />
+              {refreshing ? (
+                <CreativeSkeletons />
+              ) : (
+                <ActiveCreatives generation={activeGeneration} onZoom={setZoom} />
+              )}
             </TabsContent>
             <TabsContent value="archive" className="grid gap-3">
               {archivedGenerations.length === 0 ? (
@@ -409,6 +475,15 @@ export function CampaignDashboard({
           </Tabs>
         </section>
       </div>
+      <RefreshCreativesDialog
+        open={refreshOpen}
+        pending={refreshing}
+        initialStyle={styleKey}
+        onClose={() => {
+          if (!refreshing) setRefreshOpen(false);
+        }}
+        onConfirm={(payload) => void startRefresh(payload)}
+      />
       {zoom ? <ZoomImage src={zoom} onClose={() => setZoom(null)} /> : null}
     </div>
   );
