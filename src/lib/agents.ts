@@ -12,6 +12,7 @@ import {
   type AgentRecord,
 } from "@/lib/agent-models";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
+import type { ChatAgentOption } from "@/lib/chat-types";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const WORKSPACE_EMAIL = "owner@strike.local";
@@ -75,6 +76,36 @@ async function createWorkspaceUser(
   }
 
   return data.user.id;
+}
+
+/** Slim list for chat filters / nav previews — no prompts or channel secrets. */
+export async function listChatAgents(): Promise<ChatAgentOption[]> {
+  const supabase = createSupabaseAdminClient();
+  const userId = await getAuthenticatedUserId();
+  const listed = await supabase
+    .from("agents")
+    .select("id, name, is_active, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (listed.error) {
+    throw new Error(listed.error.message);
+  }
+
+  return (listed.data ?? []).map((row) => {
+    const channels: ChatAgentOption["channels"] = [];
+    if (row.wa_is_active === true) {
+      channels.push({ provider: "whatsapp", label: row.wa_phone_number ? String(row.wa_phone_number) : "" });
+    }
+    if (row.tg_is_active === true) {
+      const username = row.tg_bot_username ? String(row.tg_bot_username) : "";
+      channels.push({
+        provider: "telegram",
+        label: username && !username.startsWith("@") ? `@${username}` : username,
+      });
+    }
+    return { id: String(row.id), name: String(row.name ?? "Агент"), channels };
+  });
 }
 
 export async function listAgents(): Promise<AgentRecord[]> {

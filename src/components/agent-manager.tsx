@@ -4,6 +4,7 @@ import { Maximize, Play, Trash } from "lucide-react";
 import { startTransition, useActionState, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
+import { mutate as swrMutate } from "swr";
 import { PlaygroundChat } from "@/components/playground-chat";
 import { deleteAgent, saveAgent, type SaveState } from "@/app/agents/actions";
 import { connectTelegram, disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
@@ -57,10 +58,12 @@ export function AgentManager({
   agents,
   greenDefaults,
   loadError,
+  onSaved,
 }: {
   agents: AgentRecord[];
   greenDefaults: GreenDefaults;
   loadError: string | null;
+  onSaved?: () => void;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState<AgentRecord | null>(null);
@@ -91,8 +94,12 @@ export function AgentManager({
 
   useEffect(() => {
     if (!state.savedId) return;
-    router.refresh();
-  }, [state.savedId, router]);
+    if (onSaved) onSaved();
+    else {
+      void swrMutate("/api/agents");
+      router.refresh();
+    }
+  }, [state.savedId, router, onSaved]);
 
   useEffect(() => {
     setEditing((current) => {
@@ -875,6 +882,7 @@ function DisconnectButton({
           setError(result.error);
           return;
         }
+        void swrMutate("/api/agents");
         router.refresh();
       }
       onDisconnected?.();
@@ -937,6 +945,7 @@ function TelegramConnectDialog({ agentId, onClose }: { agentId: string; onClose:
         return;
       }
       onClose();
+      void swrMutate("/api/agents");
       router.refresh();
     });
   }

@@ -29,6 +29,7 @@ export function SiteHeader({ account }: { account: AccountProfile | null }) {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch
                 aria-current={active ? "page" : undefined}
                 className={cn(
                   "relative flex h-16 shrink-0 items-center px-3 text-sm font-medium text-zinc-400 transition-colors hover:text-zinc-200",

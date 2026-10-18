@@ -19,18 +19,19 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "@/components/ui/toaster";
 import { formatRuDate } from "@/lib/ad-project-media";
+import type { AdsProjectCard } from "@/lib/ad-project-types";
+
+export type { AdsProjectCard };
 
 const visibleCreatives = 6;
 
-export type AdsProjectCard = {
-  id: string;
-  name: string;
-  updatedAt: string | null;
-  creativesReplaceAt: string | null;
-  previewImages: string[];
-};
-
-export function AdsProjectsList({ initialProjects }: { initialProjects: AdsProjectCard[] }) {
+export function AdsProjectsList({
+  initialProjects,
+  onMutate,
+}: {
+  initialProjects: AdsProjectCard[];
+  onMutate?: () => void;
+}) {
   const [projects, setProjects] = useState(initialProjects);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
@@ -51,6 +52,7 @@ export function AdsProjectsList({ initialProjects }: { initialProjects: AdsProje
         return;
       }
       toast.success("Проект удалён");
+      onMutate?.();
     } catch {
       setProjects(previous);
       toast.error("Не удалось связаться с сервером.");

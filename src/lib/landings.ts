@@ -6,10 +6,13 @@ import {
   emptyDocument,
   type LandingDocument,
   type LandingItem,
+  type LandingListItem,
   type LandingRecord,
   type LandingSection,
   type LandingSectionType,
 } from "@/lib/landing-types";
+
+export type { LandingListItem };
 
 const TRANSLIT: Record<string, string> = {
   а: "a",
@@ -61,6 +64,27 @@ export function slugifyLanding(value: string) {
   return slug || "landing";
 }
 
+/** List preview without heavy `bullets` JSON documents. */
+export async function listLandingsPreview(): Promise<LandingListItem[]> {
+  const supabase = createSupabaseAdminClient();
+  const withStatus = await supabase
+    .from("landings")
+    .select("id, title, subtitle, created_at, agents(name), status:bullets->>status")
+    .order("created_at", { ascending: false });
+
+  if (!withStatus.error) {
+    return (withStatus.data ?? []).map((row) => mapLandingPreview(row as Record<string, unknown>));
+  }
+
+  const basic = await supabase
+    .from("landings")
+    .select("id, title, subtitle, created_at, agents(name)")
+    .order("created_at", { ascending: false });
+
+  if (basic.error) throw new Error(basic.error.message);
+  return (basic.data ?? []).map((row) => mapLandingPreview(row as Record<string, unknown>));
+}
+
 export async function listLandings(): Promise<LandingRecord[]> {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
@@ -70,6 +94,22 @@ export async function listLandings(): Promise<LandingRecord[]> {
 
   if (error) throw new Error(error.message);
   return (data ?? []).map((row) => mapLanding(row));
+}
+
+function mapLandingPreview(row: Record<string, unknown>): LandingListItem {
+  const agent = Array.isArray(row.agents) ? row.agents[0] : row.agents;
+  const agentName =
+    agent && typeof agent === "object" && "name" in agent && typeof agent.name === "string" ? agent.name : null;
+  const statusRaw = typeof row.status === "string" ? row.status : null;
+
+  return {
+    id: String(row.id),
+    title: String(row.title ?? ""),
+    subtitle: String(row.subtitle ?? ""),
+    createdAt: String(row.created_at ?? ""),
+    agentName,
+    status: statusRaw === "published" ? "published" : "draft",
+  };
 }
 
 export async function getLanding(id: string): Promise<LandingRecord | null> {

@@ -61,6 +61,16 @@ export type LandingRecord = {
   createdAt: string;
 };
 
+/** Lightweight list card — no document / welcome payloads. */
+export type LandingListItem = {
+  id: string;
+  title: string;
+  subtitle: string;
+  createdAt: string;
+  agentName: string | null;
+  status: "draft" | "published";
+};
+
 export const EMPTY_CONTENT: LandingSectionContent = {
   eyebrow: "",
   headline: "",

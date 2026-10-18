@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import type { LandingRecord } from "@/lib/landing-types";
+import type { LandingListItem } from "@/lib/landing-types";
 
 const chips = [
   { label: "🛠 Ремонт квартир", prompt: "Нужен сайт для студии ремонта квартир под ключ в премиальном сегменте. Прогреть собственника и привести в чат с ИИ." },
@@ -18,7 +18,7 @@ export function FunnelHome({
   landings,
   loadError,
 }: {
-  landings: LandingRecord[];
+  landings: LandingListItem[];
   loadError: string | null;
 }) {
   const router = useRouter();
@@ -106,7 +106,7 @@ export function FunnelHome({
                 >
                   <div className="flex items-center justify-between gap-3">
                     <span className="rounded-full border border-zinc-800 bg-black px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-                      {landing.document.status === "published" ? "Опубликован" : "Черновик"}
+                      {landing.status === "published" ? "Опубликован" : "Черновик"}
                     </span>
                     <span className="text-xs text-zinc-400">{formatDate(landing.createdAt)}</span>
                   </div>
