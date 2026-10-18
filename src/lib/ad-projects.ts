@@ -1,6 +1,6 @@
 import "server-only";
 
-import { imageUrlsFromGenerationImages } from "@/lib/ad-project-media";
+import { imageUrlsFromCreativesData, imageUrlsFromGenerationImages } from "@/lib/ad-project-media";
 import type { AdsProjectCard } from "@/lib/ad-project-types";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -10,19 +10,20 @@ type ProjectRow = {
   created_at: string | null;
   updated_at?: string | null;
   creatives_replace_at?: string | null;
+  creatives_data?: unknown;
 };
 
 export async function listAdProjectCards(userId: string): Promise<AdsProjectCard[]> {
   const supabase = createSupabaseAdminClient();
   const full = await supabase
     .from("ad_projects")
-    .select("id, name, created_at, updated_at, creatives_replace_at")
+    .select("id, name, created_at, updated_at, creatives_replace_at, creatives_data")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   let rows: ProjectRow[] | null = full.data as ProjectRow[] | null;
   if (full.error) {
-    if (!/updated_at|creatives_replace_at/i.test(full.error.message)) {
+    if (!/updated_at|creatives_replace_at|creatives_data/i.test(full.error.message)) {
       throw new Error(full.error.message);
     }
     const basic = await supabase
@@ -37,11 +38,13 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
       created_at: typeof row.created_at === "string" ? row.created_at : null,
       updated_at: typeof row.created_at === "string" ? row.created_at : null,
       creatives_replace_at: null,
+      creatives_data: null,
     }));
   }
 
   const projectIds = (rows ?? []).map((row) => String(row.id));
-  const previewByProject = new Map<string, string[]>();
+  const activePreviewByProject = new Map<string, string[]>();
+  const anyPreviewByProject = new Map<string, string[]>();
 
   if (projectIds.length > 0) {
     const generations = await supabase
@@ -53,16 +56,22 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
     if (!generations.error) {
       for (const row of generations.data ?? []) {
         const projectId = String(row.project_id);
-        if (previewByProject.has(projectId)) continue;
-        if (row.is_active !== true) continue;
         const images = imageUrlsFromGenerationImages(row.images);
-        if (images.length > 0) previewByProject.set(projectId, images);
+        if (images.length === 0) continue;
+        if (!anyPreviewByProject.has(projectId)) {
+          anyPreviewByProject.set(projectId, images);
+        }
+        if (row.is_active === true && !activePreviewByProject.has(projectId)) {
+          activePreviewByProject.set(projectId, images);
+        }
       }
     }
   }
 
   return (rows ?? []).map((row) => {
     const id = String(row.id);
+    const fromGeneration = activePreviewByProject.get(id) ?? anyPreviewByProject.get(id) ?? [];
+    const fromCreatives = imageUrlsFromCreativesData(row.creatives_data);
     return {
       id,
       name: typeof row.name === "string" && row.name.trim() ? row.name : "Без названия",
@@ -73,7 +82,7 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
             ? row.created_at
             : null,
       creativesReplaceAt: typeof row.creatives_replace_at === "string" ? row.creatives_replace_at : null,
-      previewImages: previewByProject.get(id) ?? [],
+      previewImages: fromGeneration.length > 0 ? fromGeneration : fromCreatives,
     };
   });
 }
