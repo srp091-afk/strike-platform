@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Inter, Plus_Jakarta_Sans } from "next/font/google";
+import { Anton, Inter, Montserrat, Plus_Jakarta_Sans } from "next/font/google";
 import { Suspense } from "react";
 
 import { SiteFooter } from "@/components/site-footer";
@@ -20,6 +20,19 @@ const jakarta = Plus_Jakarta_Sans({
   display: "swap",
 });
 
+const anton = Anton({
+  weight: "400",
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-anton-face",
+  display: "swap",
+});
+
+const montserrat = Montserrat({
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-montserrat-face",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: {
     default: "STRIKE",
@@ -34,7 +47,10 @@ export const viewport: Viewport = {
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
-    <html lang="ru" className={`${inter.variable} ${jakarta.variable} h-full bg-black`}>
+    <html
+      lang="ru"
+      className={`${inter.variable} ${jakarta.variable} ${anton.variable} ${montserrat.variable} h-full bg-black`}
+    >
       <body className="flex min-h-full flex-col bg-black font-sans text-zinc-400">
         <Suspense fallback={<div className="sticky top-0 z-50 h-16 border-b border-zinc-800 bg-black" />}>
           <SiteHeaderData />

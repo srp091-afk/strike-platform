@@ -18,6 +18,8 @@
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-heading: var(--font-jakarta), var(--font-inter), ui-sans-serif, sans-serif;
   --font-display: var(--font-jakarta), var(--font-inter), ui-sans-serif, sans-serif;
+  --font-anton: var(--font-anton-face), Impact, ui-sans-serif, sans-serif;
+  --font-montserrat: var(--font-montserrat-face), var(--font-inter), ui-sans-serif, sans-serif;
   --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.04);
 }
 

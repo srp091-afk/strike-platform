@@ -14,6 +14,8 @@ const config: Config = {
         sans: ["var(--font-inter)", "ui-sans-serif", "system-ui", "sans-serif"],
         heading: ["var(--font-jakarta)", "var(--font-inter)", "ui-sans-serif", "sans-serif"],
         display: ["var(--font-jakarta)", "var(--font-inter)", "ui-sans-serif", "sans-serif"],
+        anton: ["var(--font-anton-face)", "Impact", "ui-sans-serif", "sans-serif"],
+        montserrat: ["var(--font-montserrat-face)", "var(--font-inter)", "ui-sans-serif", "sans-serif"],
       },
       boxShadow: {
         card: "0 0 0 1px rgba(255,255,255,0.04)",
