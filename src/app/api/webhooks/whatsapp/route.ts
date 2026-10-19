@@ -1,4 +1,4 @@
-import type { NextRequest } from "next/server";
+import { after, type NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { normalizeAgentModel, readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
@@ -10,22 +10,49 @@ import { readGreenMedia, resolveWhatsAppMedia, visionModel, type VisionImage, ty
 
 type AdminClient = SupabaseClient;
 
-export const maxDuration = 180;
+/** Vercel Pro max — OpenAI + Green delivery can exceed the default 60/180s window. */
+export const maxDuration = 300;
+
+type IncomingJob = {
+  userId: string;
+  agentId: string;
+  integrationId: string;
+  conversationId: string;
+  credentials: GreenCredentials;
+  from: string;
+  contactName: string | null;
+  messageId: string | null;
+  sentAt: string | null;
+  text: string;
+  media: WhatsAppMedia | null;
+};
 
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
     const type = stringValue(asRecord(body).typeWebhook);
     if (type === "incomingMessageReceived") {
-      await handleIncoming(request, body);
+      // Ack GREEN-API immediately; heavy OpenAI/media work runs in after().
+      const job = await enqueueIncoming(request, body);
+      if (job) {
+        after(() =>
+          processIncomingAi(job).catch((error) => {
+            console.error("[whatsapp webhook] after", error instanceof Error ? error.message : error);
+          }),
+        );
+      }
     } else if (readOutgoing(body)) {
-      await handleOutgoing(request, body);
+      after(() =>
+        handleOutgoing(request, body).catch((error) => {
+          console.error("[whatsapp webhook] outgoing", error instanceof Error ? error.message : error);
+        }),
+      );
     }
   } catch (error) {
     console.error("[whatsapp webhook]", error);
   }
 
-  return Response.json({ ok: true });
+  return Response.json({ ok: true, success: true }, { status: 200 });
 }
 
 async function handleOutgoing(request: NextRequest, body: unknown) {
@@ -78,111 +105,135 @@ async function handleOutgoing(request: NextRequest, body: unknown) {
   await pauseBotForHandoff(supabase, conversationId, await readAgentHandoffDuration(supabase, channel.agentId));
 }
 
-async function handleIncoming(request: NextRequest, body: unknown) {
+/**
+ * Fast path: resolve channel, claim message id in DB (stops GREEN-API retries),
+ * return a job for after() or null when nothing else to do.
+ */
+async function enqueueIncoming(request: NextRequest, body: unknown): Promise<IncomingJob | null> {
   const parsed = readIncoming(body);
-  if (!parsed) return;
+  if (!parsed) return null;
 
   const supabase = createWebhookAdmin();
   const channel = await resolveWhatsAppAccount(request, body, supabase);
-  if (!channel) return;
+  if (!channel) return null;
 
-  if (parsed.messageId) {
-    const { data: existing, error: duplicateError } = await supabase
-      .from("messages")
-      .select("id")
-      .eq("external_message_id", parsed.messageId)
-      .limit(1);
-
-    if (duplicateError) throw new Error(duplicateError.message);
-    if (existing && existing.length > 0) return;
+  // Claim before any slow media/OpenAI work — retries must see this row immediately.
+  if (parsed.messageId && (await messageExists(supabase, parsed.messageId))) {
+    console.log("[whatsapp webhook] skip duplicate idMessage", parsed.messageId);
+    return null;
   }
 
-  let incoming = parsed;
-  let image: VisionImage | null = null;
-  if (parsed.media) {
-    const resolved = await resolveWhatsAppMedia(parsed.media, channel.credentials);
-    incoming = { ...parsed, text: resolved.text };
-    image = resolved.image;
+  const previewSeed = parsed.text.trim() || (parsed.media ? "Медиасообщение" : "");
+  if (!previewSeed && !parsed.media) return null;
+
+  const priorId = await findConversationId(supabase, channel.integrationId, parsed.from);
+  const conversation = await upsertConversation(supabase, {
+    userId: channel.userId,
+    agentId: channel.agentId,
+    integrationId: channel.integrationId,
+    externalChatId: parsed.from,
+    contactName: parsed.contactName,
+    preview: previewSeed || "Сообщение",
+  });
+  const conversationId = conversation.id;
+
+  const claimed = await claimUserMessage(supabase, {
+    userId: channel.userId,
+    conversationId,
+    content: previewSeed || "Сообщение",
+    externalMessageId: parsed.messageId,
+    createdAt: parsed.sentAt,
+  });
+  if (!claimed) {
+    console.log("[whatsapp webhook] skip duplicate claim", parsed.messageId);
+    return null;
   }
-  if (!incoming.text.trim()) return;
 
   if (!channel.canReply) {
     console.log("Остановка: ответы WhatsApp выключены");
-    const conversation = await upsertConversation(supabase, {
-      userId: channel.userId,
-      agentId: channel.agentId,
-      integrationId: channel.integrationId,
-      externalChatId: incoming.from,
-      contactName: incoming.contactName,
-      preview: incoming.text,
-    });
-    await insertMessage(supabase, {
-      userId: channel.userId,
-      conversationId: conversation.id,
-      role: "user",
-      content: incoming.text,
-      status: "sent",
-      externalMessageId: incoming.messageId,
-      createdAt: incoming.sentAt,
-    });
+    return null;
+  }
+
+  if (await processingLockIsFresh(supabase, conversationId)) {
+    console.log("Остановка: is_processing = true (enqueue)");
+    await bindConversationAgent(supabase, conversationId, channel.agentId);
+    return null;
+  }
+
+  if (priorId) {
+    const assistantAt = await latestAssistantAt(supabase, priorId);
+    if (isLateClientMessage(parsed.sentAt, assistantAt)) {
+      console.log("Остановка: позднее сообщение клиента (enqueue)");
+      return null;
+    }
+  }
+
+  if (!conversation.botActive) {
+    await logChatPause(supabase, conversationId);
+    return null;
+  }
+
+  return {
+    userId: channel.userId,
+    agentId: channel.agentId,
+    integrationId: channel.integrationId,
+    conversationId,
+    credentials: channel.credentials,
+    from: parsed.from,
+    contactName: parsed.contactName,
+    messageId: parsed.messageId,
+    sentAt: parsed.sentAt,
+    text: parsed.text,
+    media: parsed.media,
+  };
+}
+
+/** Slow path (after ack): media download, OpenAI, Green send. */
+async function processIncomingAi(job: IncomingJob) {
+  const supabase = createWebhookAdmin();
+
+  // Second line of defense if a retry slipped past enqueue.
+  if (job.messageId && !(await messageExists(supabase, job.messageId))) {
+    console.log("[whatsapp webhook] message claim missing, abort", job.messageId);
     return;
   }
 
-  const { data: agent, error: agentError } = await loadWhatsAppAgent(supabase, channel.agentId);
-
+  const { data: agent, error: agentError } = await loadWhatsAppAgent(supabase, job.agentId);
   if (agentError) throw new Error(agentError.message);
   if (!agent || !agent.is_active) {
     throw new Error("Агент не найден или выключен.");
   }
-
-  const priorId = await findConversationId(supabase, channel.integrationId, incoming.from);
-  if (priorId && (await processingLockIsFresh(supabase, priorId))) {
-    console.log("Остановка: is_processing = true");
-    await bindConversationAgent(supabase, priorId, channel.agentId);
-    await insertMessage(supabase, {
-      userId: channel.userId,
-      conversationId: priorId,
-      role: "user",
-      content: incoming.text,
-      status: "sent",
-      externalMessageId: incoming.messageId,
-      createdAt: incoming.sentAt,
-    });
-    return;
-  }
-
-  const assistantAt = priorId ? await latestAssistantAt(supabase, priorId) : null;
-  const late = isLateClientMessage(incoming.sentAt, assistantAt);
-
-  const conversation = await upsertConversation(supabase, {
-    userId: channel.userId,
-    agentId: agent.id as string,
-    integrationId: channel.integrationId,
-    externalChatId: incoming.from,
-    contactName: incoming.contactName,
-    preview: incoming.text,
-    touchPreview: !late,
-  });
-  const conversationId = conversation.id;
-
-  await insertMessage(supabase, {
-    userId: channel.userId,
-    conversationId,
-    role: "user",
-    content: incoming.text,
-    status: "sent",
-    externalMessageId: incoming.messageId,
-    createdAt: incoming.sentAt,
-  });
-  if (late) return;
-  await syncOpeningHistory(supabase, conversationId, channel.userId, incoming.from, channel.credentials);
-  if (!conversation.botActive) {
-    await logChatPause(supabase, conversationId);
-    return;
-  }
   if (!whatsappChannelEnabled(agent.active_channels)) return;
 
-  const locked = await acquireProcessingLock(supabase, conversationId);
+  let text = job.text;
+  let image: VisionImage | null = null;
+  if (job.media) {
+    const resolved = await resolveWhatsAppMedia(job.media, job.credentials);
+    text = resolved.text;
+    image = resolved.image;
+    if (text.trim() && job.messageId) {
+      await supabase
+        .from("messages")
+        .update({ content: text.slice(0, 8000) })
+        .eq("external_message_id", job.messageId)
+        .eq("conversation_id", job.conversationId);
+    }
+  }
+  if (!text.trim()) return;
+
+  const assistantAt = await latestAssistantAt(supabase, job.conversationId);
+  if (isLateClientMessage(job.sentAt, assistantAt)) {
+    console.log("Остановка: позднее сообщение клиента");
+    return;
+  }
+
+  await syncOpeningHistory(supabase, job.conversationId, job.userId, job.from, job.credentials);
+  if (!(await readBotActive(supabase, job.conversationId))) {
+    await logChatPause(supabase, job.conversationId);
+    return;
+  }
+
+  const locked = await acquireProcessingLock(supabase, job.conversationId);
   if (!locked) {
     console.log("Остановка: is_processing = true");
     return;
@@ -190,11 +241,11 @@ async function handleIncoming(request: NextRequest, body: unknown) {
 
   try {
     await new Promise((resolve) => setTimeout(resolve, readDebounceMs(agent.response_delay)));
-    if (!(await readBotActive(supabase, conversationId))) {
-      await logChatPause(supabase, conversationId);
+    if (!(await readBotActive(supabase, job.conversationId))) {
+      await logChatPause(supabase, job.conversationId);
       return;
     }
-    if (await dialogueOverLimit(supabase, conversationId, agent)) {
+    if (await dialogueOverLimit(supabase, job.conversationId, agent)) {
       console.log("Остановка: превышен лимит сообщений");
       return;
     }
@@ -202,7 +253,7 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     const { data: history, error: historyError } = await supabase
       .from("messages")
       .select("role, content, created_at")
-      .eq("conversation_id", conversationId)
+      .eq("conversation_id", job.conversationId)
       .order("created_at", { ascending: false })
       .limit(40);
 
@@ -229,23 +280,23 @@ async function handleIncoming(request: NextRequest, body: unknown) {
       ],
       chat: {
         supabase,
-        conversationId,
+        conversationId: job.conversationId,
         agentId: String(agent.id),
         channel: "whatsapp",
-        clientHandle: incoming.from,
-        clientName: incoming.contactName,
+        clientHandle: job.from,
+        clientName: job.contactName,
       },
     });
 
     const reply = completion.text;
     if (!reply) throw new Error("Модель вернула пустой ответ.");
-    if (!completion.pausedByTool && !(await readBotActive(supabase, conversationId))) return;
+    if (!completion.pausedByTool && !(await readBotActive(supabase, job.conversationId))) return;
 
     const responseDelay = Number(agent.response_delay);
     const chunks = replyChunks(reply, agent.split_messages);
     if (chunks.length === 0) throw new Error("Модель вернула пустой ответ.");
 
-    let preview = chunks[0];
+    let preview = chunks[0]!;
     for (const chunk of chunks) {
       let delivered = false;
       let outboundId: string | null = null;
@@ -253,15 +304,15 @@ async function handleIncoming(request: NextRequest, body: unknown) {
         if (responseDelay > 0) {
           await new Promise((resolve) => setTimeout(resolve, responseDelay * 1000));
         }
-        outboundId = await sendGreenMessage(incoming.from, chunk, channel.credentials);
+        outboundId = await sendGreenMessage(job.from, chunk, job.credentials);
         delivered = true;
       } catch (error) {
         console.error("[whatsapp webhook] green", error instanceof Error ? error.message : error);
       }
 
       await insertMessage(supabase, {
-        userId: channel.userId,
-        conversationId,
+        userId: job.userId,
+        conversationId: job.conversationId,
         role: "assistant",
         content: chunk,
         status: delivered ? "sent" : "failed",
@@ -275,19 +326,19 @@ async function handleIncoming(request: NextRequest, body: unknown) {
     const { error: previewError } = await supabase
       .from("conversations")
       .update({
-        user_id: channel.userId,
+        user_id: job.userId,
         last_message_preview: preview.slice(0, 140),
         last_message_at: new Date().toISOString(),
         agent_id: agent.id,
       })
-      .eq("id", conversationId);
+      .eq("id", job.conversationId);
 
     if (previewError) {
       console.error("[whatsapp webhook] conversations update", previewError);
       throw new Error(previewError.message);
     }
   } finally {
-    await releaseProcessingLock(supabase, conversationId);
+    await releaseProcessingLock(supabase, job.conversationId);
   }
 }
 
@@ -433,6 +484,50 @@ async function messageExists(
     throw new Error(error.message);
   }
   return Boolean(data && data.length > 0);
+}
+
+/**
+ * Atomically claim an incoming GREEN-API message id.
+ * Returns false when this idMessage was already stored (retry / race).
+ */
+async function claimUserMessage(
+  supabase: AdminClient,
+  row: {
+    userId: string;
+    conversationId: string;
+    content: string;
+    externalMessageId: string | null;
+    createdAt: string | null;
+  },
+): Promise<boolean> {
+  if (!row.userId) throw new Error("У сообщения нет user_id владельца.");
+  if (row.externalMessageId && (await messageExists(supabase, row.externalMessageId))) {
+    return false;
+  }
+
+  const payload: {
+    user_id: string;
+    conversation_id: string;
+    role: "user";
+    content: string;
+    status: "sent";
+    external_message_id: string | null;
+    created_at?: string;
+  } = {
+    user_id: row.userId,
+    conversation_id: row.conversationId,
+    role: "user",
+    content: row.content.slice(0, 8000),
+    status: "sent",
+    external_message_id: row.externalMessageId,
+  };
+  if (row.createdAt) payload.created_at = row.createdAt;
+
+  const { error } = await supabase.from("messages").insert(payload);
+  if (!error) return true;
+  if (error.code === "23505") return false;
+  console.error("[whatsapp webhook] claim insert", error);
+  throw new Error(error.message);
 }
 
 async function insertMessage(
