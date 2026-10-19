@@ -197,6 +197,8 @@ export function AdStyleStudio({
               >
                 {style.key === "before-after-vs" ? (
                   <VsPreview />
+                ) : style.key === "split-action" ? (
+                  <SplitActionPreview />
                 ) : style.key === "dark-editorial-grid" ? (
                   <EditorialPreview />
                 ) : (
@@ -276,6 +278,28 @@ function VsPreview() {
       </div>
       <p className="absolute bottom-4 left-4 text-[10px] tracking-widest text-zinc-400 uppercase">До</p>
       <p className="absolute right-4 bottom-4 text-[10px] tracking-widest text-zinc-200 uppercase">После</p>
+    </div>
+  );
+}
+
+function SplitActionPreview() {
+  return (
+    <div className="relative aspect-[4/5] overflow-hidden bg-black text-white">
+      <div className="absolute inset-x-0 top-0 space-y-1 bg-black px-3 py-4 text-center">
+        <p className="text-[9px] tracking-[0.2em] text-amber-300 uppercase">Акцент</p>
+        <p className="text-sm font-semibold leading-none">Сплит + CTA</p>
+      </div>
+      <div className="absolute inset-x-0 top-[22%] bottom-[18%] grid grid-cols-2">
+        <div className="bg-zinc-800" />
+        <div className="bg-zinc-600" />
+      </div>
+      <div className="absolute inset-x-2 bottom-[18%] rounded bg-black/80 px-2 py-1.5 text-[8px] text-zinc-300">
+        ✓ Буллит · ✓ Буллит
+      </div>
+      <div className="absolute inset-x-0 bottom-0 flex items-center justify-between gap-2 bg-black px-3 py-3">
+        <span className="rounded bg-amber-300 px-2 py-1 text-[8px] font-bold text-black">Бейдж</span>
+        <span className="rounded bg-amber-300 px-3 py-1 text-[9px] font-bold text-black">CTA</span>
+      </div>
     </div>
   );
 }

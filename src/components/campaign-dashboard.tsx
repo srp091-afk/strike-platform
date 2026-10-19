@@ -7,6 +7,7 @@ import { useEffect, useState, type FocusEvent } from "react";
 import { createPortal } from "react-dom";
 
 import { Style1_VS } from "@/components/creatives/templates/Style1_VS";
+import { Style2_SplitAction } from "@/components/creatives/templates/Style2_SplitAction";
 import { RefreshCreativesDialog, type RefreshCreativesPayload } from "@/components/refresh-creatives-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
@@ -17,6 +18,7 @@ import { toast } from "@/components/ui/toaster";
 import { DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import { formatRuDate, toDateInputValue } from "@/lib/ad-project-media";
 import type { AdGeneration, AdStrategy } from "@/lib/ad-types";
+import { isSplitActionStyle } from "@/lib/studio-styles";
 import { cn } from "@/lib/utils";
 
 export type ProjectStatus = "ready" | "processing" | "error";
@@ -461,6 +463,7 @@ export function CampaignDashboard({
                 <ActiveCreatives
                   generation={activeGeneration}
                   strategy={strategy}
+                  styleKey={styleKey}
                   accentColor={accentColor}
                   onZoom={setZoom}
                 />
@@ -646,11 +649,13 @@ function EditableRow({
 function ActiveCreatives({
   generation,
   strategy,
+  styleKey,
   accentColor,
   onZoom,
 }: {
   generation: AdGeneration | null;
   strategy: AdStrategy | null;
+  styleKey?: string | null;
   accentColor: string;
   onZoom: (src: string) => void;
 }) {
@@ -670,6 +675,7 @@ function ActiveCreatives({
   const subheadlines = strategy?.creatives.subheadlines ?? [];
   const bullets = strategy?.creatives.benefits ?? [];
   const buttons = strategy?.creatives.buttons ?? [];
+  const useStyle2 = isSplitActionStyle(styleKey);
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -680,21 +686,35 @@ function ActiveCreatives({
         const subheadline =
           subheadlines[index % Math.max(subheadlines.length, 1)] ?? strategy?.strategy.core_offer_angle ?? undefined;
         const buttonText = buttons[index % Math.max(buttons.length, 1)] ?? "Узнать подробнее";
+        const bulletList =
+          bullets.length > 0 ? bullets : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"];
+        const badge = strategy?.strategy.hook_concept ?? "Оффер";
 
         return (
           <article
             key={`${generation.id}-${index}`}
             className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-black"
           >
-            {/* Style1 VS — images[0]=До, images[1]=После (CreativeWrapper inside template). */}
-            <Style1_VS
-              headline={headline}
-              subheadline={subheadline}
-              bullets={bullets.length > 0 ? bullets : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"]}
-              buttonText={buttonText}
-              images={[before, after]}
-              accentColor={accentColor}
-            />
+            {useStyle2 ? (
+              <Style2_SplitAction
+                headline={headline}
+                subheadline={subheadline}
+                bullets={bulletList}
+                badge={badge}
+                buttonText={buttonText}
+                images={[before, after]}
+                accentColor={accentColor}
+              />
+            ) : (
+              <Style1_VS
+                headline={headline}
+                subheadline={subheadline}
+                bullets={bulletList}
+                buttonText={buttonText}
+                images={[before, after]}
+                accentColor={accentColor}
+              />
+            )}
             <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
               <div className="flex w-[min(16rem,80%)] flex-col gap-2">
                 <Button type="button" variant="outline" onClick={() => onZoom(after || before)}>

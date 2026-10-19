@@ -176,6 +176,8 @@ export function RefreshCreativesDialog({
                   >
                     {style.key === "before-after-vs" ? (
                       <VsPreview />
+                    ) : style.key === "split-action" ? (
+                      <SplitActionPreview />
                     ) : style.key === "dark-editorial-grid" ? (
                       <EditorialPreview />
                     ) : (
@@ -230,6 +232,24 @@ function VsPreview() {
       </div>
       <div className="absolute left-1/2 top-1/2 grid size-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-rose-500 bg-black text-xs font-bold">
         VS
+      </div>
+    </div>
+  );
+}
+
+function SplitActionPreview() {
+  return (
+    <div className="relative aspect-[4/5] overflow-hidden bg-black text-white">
+      <div className="absolute inset-x-0 top-0 bg-black px-3 py-4 text-center text-[10px] font-semibold">
+        Split Action
+      </div>
+      <div className="absolute inset-x-0 top-[20%] bottom-[16%] grid grid-cols-2">
+        <div className="bg-zinc-800" />
+        <div className="bg-zinc-600" />
+      </div>
+      <div className="absolute inset-x-0 bottom-0 flex justify-between bg-black px-3 py-3">
+        <span className="rounded bg-amber-300 px-2 py-1 text-[8px] font-bold text-black">Badge</span>
+        <span className="rounded bg-amber-300 px-3 py-1 text-[8px] font-bold text-black">CTA</span>
       </div>
     </div>
   );

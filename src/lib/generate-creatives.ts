@@ -7,6 +7,8 @@ import { accentColorForPrompt, DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/
 import type { AdCreative, AdCreativeTexts, AdFormattedBrief, AdStrategy } from "@/lib/ad-types";
 import { getOpenAI } from "@/lib/openai";
 import {
+  isDualImageStyle,
+  isSplitActionStyle,
   isSplitVsStyle,
   resolveStudioStyleKey,
   studioStyles,
@@ -53,6 +55,8 @@ export async function generateImageWithFlux(prompt: string): Promise<string> {
       output_format: "webp" as const,
       output_quality: 90,
       num_outputs: 1,
+      // Explicit random seed so batch variants never share a fixed seed.
+      seed: Math.floor(Math.random() * 2_147_483_647),
     };
 
     console.log("[generateImageWithFlux] request", {
@@ -227,19 +231,22 @@ async function composeCreative(input: {
   accentLabel: string;
   accentHex: string;
 }): Promise<AdCreative> {
-  const split = isSplitVsStyle(input.styleId);
+  const dual = isDualImageStyle(input.styleId);
+  const sampled = sampleStrategyCopy(input.strategy);
   const art = await directArt({
     index: input.index,
     language: input.language,
     masterPrompt: input.masterPrompt,
     brief: input.brief,
     strategy: input.strategy,
-    split,
+    dual,
+    styleId: input.styleId,
     accentLabel: input.accentLabel,
     accentHex: input.accentHex,
+    sampled,
   });
 
-  if (split) {
+  if (dual) {
     const [beforeUrl, afterUrl] = await Promise.all([
       generateImage(art.prompt_before),
       generateImage(art.prompt_after),
@@ -285,32 +292,83 @@ type ArtDirection = AdCreativeTexts & {
   prompt_after: string;
 };
 
+type SampledCopy = {
+  headline: string | null;
+  subheadline: string | null;
+  bullets: string[];
+  button: string | null;
+};
+
+function pickRandom<T>(items: T[]): T | undefined {
+  if (items.length === 0) return undefined;
+  return items[Math.floor(Math.random() * items.length)];
+}
+
+function pickRandomSubset<T>(items: T[], count: number): T[] {
+  if (items.length === 0) return [];
+  const shuffled = [...items];
+  for (let i = shuffled.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = shuffled[i]!;
+    shuffled[i] = shuffled[j]!;
+    shuffled[j] = tmp;
+  }
+  return shuffled.slice(0, Math.min(count, shuffled.length));
+}
+
+function sampleStrategyCopy(strategy: AdStrategy | null): SampledCopy {
+  if (!strategy) {
+    return { headline: null, subheadline: null, bullets: [], button: null };
+  }
+  const headlines = strategy.creatives.headlines.filter((item) => item.trim());
+  const subheadlines = strategy.creatives.subheadlines.filter((item) => item.trim());
+  const benefits = strategy.creatives.benefits.filter((item) => item.trim());
+  const buttons = strategy.creatives.buttons.filter((item) => item.trim());
+  return {
+    headline: pickRandom(headlines) ?? null,
+    subheadline: pickRandom(subheadlines) ?? null,
+    bullets: pickRandomSubset(benefits, Math.min(4, Math.max(2, benefits.length || 0))),
+    button: pickRandom(buttons) ?? null,
+  };
+}
+
 async function directArt(input: {
   index: number;
   language: CreativeLanguage;
   masterPrompt: string;
   brief: AdFormattedBrief | null;
   strategy: AdStrategy | null;
-  split: boolean;
+  dual: boolean;
+  styleId: StudioStyleKey;
   accentLabel: string;
   accentHex: string;
+  sampled: SampledCopy;
 }): Promise<ArtDirection> {
   const language = languageLabels[input.language] ?? "English";
   const accentRule = `Акцентный цвет рекламного макета: ${input.accentLabel} (HEX ${input.accentHex}). При генерации промпта для Flux добавляй тонкие отсветы, освещение или детали фона в этом оттенке, чтобы картинка гармонировала с версткой.`;
-  const systemPrompt = input.split
+  const visualDiversityRule =
+    "Для каждого креатива генерируй АБСОЛЮТНО НОВОЕ, уникальное визуальное описание (меняй ракурсы, освещение, атмосферу, композицию), даже если тексты повторяются. Визуал должен быть разнообразным.";
+  const styleLabel = isSplitVsStyle(input.styleId)
+    ? "стиль 1 — сплит До/После (VS)"
+    : isSplitActionStyle(input.styleId)
+      ? "стиль 2 — двусторонний сплит с акцентом"
+      : "стандартный стиль";
+
+  const systemPrompt = input.dual
     ? `CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE.
 
-Роль: ты — арт-директор performance-креативов для Meta Ads (стиль 1 — сплит До/После).
-Выбери тексты для React-шаблона и ДВА независимых Flux-промпта фона.
+Роль: ты — арт-директор performance-креативов для Meta Ads (${styleLabel}).
+Собери тексты для React-шаблона и ДВА независимых Flux-промпта фона.
 ГЛОБАЛЬНОЕ ПРАВИЛО ВАЛЮТЫ: только $ / USD или €. Запрещены рубли (руб, ₽, RUB) и реалии СНГ.
 Тексты (headline/subheadline/benefit/cta) — на языке: ${language}. Они пойдут в HTML-шаблон, НЕ на картинку.
-Опирайся на formatted_brief.key_advantages при выборе benefit: короткая ударная выгода СТРОГО НЕ БОЛЕЕ 5 слов.
+Если в sampled_copy уже выбран headline/subheadline/bullets/button — используй их как основу (можно слегка отполировать формулировку, но смысл сохрани).
 ${accentRule}
+${visualDiversityRule}
 
 CRITICAL IMAGE RULE:
 - NEVER put text, letters, numbers, logos with words, watermarks, or captions in either Flux prompt.
-- prompt_before: мрачный / холодный / проблемный кадр «до» продукта (pain state).
-- prompt_after: светлый / тёплый / успешный кадр «после» с ощущением решения (без текста на фото).
+- prompt_before: мрачный / холодный / проблемный кадр «до» (pain state).
+- prompt_after: светлый / тёплый / успешный кадр «после» (без текста на фото).
 - Both prompts MUST be English, vertical 4:5 photographic backgrounds only.
 - Weave subtle accent-color light / reflections (${input.accentHex}) into the scene — not text, not UI chrome.
 
@@ -318,7 +376,7 @@ CRITICAL IMAGE RULE:
 {
   "headline": "краткий заголовок (1-5 слов)",
   "subheadline": "подзаголовок",
-  "benefit": "выгода из key_advantages, строго до 5 слов",
+  "benefit": "выгода, строго до 5 слов (или склейка первого буллита)",
   "cta": "короткий CTA",
   "prompt_before": "English Flux prompt — bleak problem-state photo, no text",
   "prompt_after": "English Flux prompt — bright success-state photo, no text"
@@ -326,17 +384,17 @@ CRITICAL IMAGE RULE:
     : `CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE.
 
 Роль: ты — арт-директор performance-креативов для Meta Ads.
-Выбери уникальную комбинацию текстов для одного креатива и собери финальный image prompt на английском.
+Выбери тексты для React-шаблона и собери финальный image prompt на английском.
 ГЛОБАЛЬНОЕ ПРАВИЛО ВАЛЮТЫ: только $ / USD или €. Запрещены рубли (руб, ₽, RUB) и реалии СНГ.
 Тексты на креативе (headline/subheadline/benefit/cta) — на языке: ${language}. Эти тексты пойдут в React-шаблон, НЕ на картинку.
+Если в sampled_copy уже выбран headline/subheadline/bullets/button — используй их как основу.
 image_prompt — строго на английском, готов к Flux.1: только чистая фотография фона, без типографики.
-Опирайся на formatted_brief.key_advantages при выборе benefit: короткая ударная выгода СТРОГО НЕ БОЛЕЕ 5 слов, без деепричастных оборотов.
 ${accentRule}
+${visualDiversityRule}
 
 CRITICAL IMAGE RULE (Flux background only):
 - NEVER put text, letters, numbers, logos with words, watermarks, or captions in image_prompt.
 - Describe only subject, lighting, composition, mood, and camera language.
-- Format example: A high-end editorial photograph of a modern living room at dusk, soft volumetric light, 4:5 vertical crop, no typography, no signage.
 - image_prompt MUST be English. Marketing copy lives only in headline/subheadline/benefit/cta fields.
 - Add subtle accent-color lighting / reflections (${input.accentHex}) so the photo matches the layout accent.
 
@@ -344,14 +402,14 @@ CRITICAL IMAGE RULE (Flux background only):
 {
   "headline": "краткий заголовок (1-5 слов)",
   "subheadline": "подзаголовок",
-  "benefit": "выгода из key_advantages, строго до 5 слов",
+  "benefit": "выгода, строго до 5 слов",
   "cta": "короткий CTA",
   "image_prompt": "English visual prompt for a clean background photograph only — no text, letters, numbers, or words"
 }`;
 
   const completion = await getOpenAI().chat.completions.create({
     model: "gpt-4o",
-    temperature: 0.85,
+    temperature: 0.95,
     response_format: { type: "json_object" },
     messages: [
       {
@@ -362,35 +420,39 @@ CRITICAL IMAGE RULE (Flux background only):
         role: "user",
         content: JSON.stringify({
           creative_index: input.index + 1,
-          style_id: input.split ? "1" : undefined,
+          style_id: isSplitVsStyle(input.styleId) ? "1" : isSplitActionStyle(input.styleId) ? "2" : input.styleId,
           style_master_prompt: input.masterPrompt,
           formatted_brief: input.brief,
+          sampled_copy: input.sampled,
           strategy: input.strategy
             ? {
                 insight: input.strategy.strategy.target_audience_insight,
                 offer_angle: input.strategy.strategy.core_offer_angle,
                 hook: input.strategy.strategy.hook_concept,
-                headlines: input.strategy.creatives.headlines,
-                subheadlines: input.strategy.creatives.subheadlines,
-                benefits: input.strategy.creatives.benefits,
-                buttons: input.strategy.creatives.buttons,
               }
             : null,
           key_advantages: input.brief?.key_advantages ?? null,
           accent_color: input.accentLabel,
           accent_hex: input.accentHex,
-          instruction: input.split
-            ? "Return two contrasting Flux backgrounds (prompt_before vs prompt_after). No on-image text. Texts go only in headline/subheadline/benefit/cta. Reflect accent color in lighting."
-            : "Make this creative visually and verbally distinct from other variants in the same batch. Prefer concrete numbers over soft adjectives. Base benefit bullets on key_advantages; max 5 words. Reflect accent color in lighting.",
+          instruction: input.dual
+            ? "Use sampled_copy texts. Return two contrasting Flux backgrounds (prompt_before vs prompt_after). Absolutely unique visual description for this creative_index. No on-image text."
+            : "Use sampled_copy texts. Absolutely unique visual description for this creative_index even if copy repeats. Reflect accent color in lighting.",
         }),
       },
     ],
   });
 
-  return parseArtDirection(completion.choices[0]?.message?.content ?? "", input.split);
+  const parsed = parseArtDirection(completion.choices[0]?.message?.content ?? "", input.dual);
+  return {
+    ...parsed,
+    headline: input.sampled.headline?.trim() || parsed.headline,
+    subheadline: input.sampled.subheadline?.trim() || parsed.subheadline,
+    benefit: input.sampled.bullets[0]?.trim() || parsed.benefit,
+    cta: input.sampled.button?.trim() || parsed.cta,
+  };
 }
 
-function parseArtDirection(content: string, split: boolean): ArtDirection {
+function parseArtDirection(content: string, dual: boolean): ArtDirection {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
@@ -405,14 +467,14 @@ function parseArtDirection(content: string, split: boolean): ArtDirection {
   const cta = readText(row.cta);
   const imagePrompt = readText(row.image_prompt);
   const promptBefore =
-    readText(row.prompt_before) || readText(row.flux_prompt_before) || (split ? "" : imagePrompt);
+    readText(row.prompt_before) || readText(row.flux_prompt_before) || (dual ? "" : imagePrompt);
   const promptAfter =
-    readText(row.prompt_after) || readText(row.flux_prompt_after) || (split ? "" : imagePrompt);
+    readText(row.prompt_after) || readText(row.flux_prompt_after) || (dual ? "" : imagePrompt);
 
   if (!headline) throw new Error("Арт-директор не собрал тексты.");
-  if (split) {
+  if (dual) {
     if (!promptBefore || !promptAfter) {
-      throw new Error("Арт-директор не собрал prompt_before / prompt_after для сплита До/После.");
+      throw new Error("Арт-директор не собрал prompt_before / prompt_after для dual-split стиля.");
     }
   } else if (!imagePrompt && !promptBefore) {
     throw new Error("Арт-директор не собрал image_prompt.");
