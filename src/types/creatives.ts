@@ -6,6 +6,6 @@ export interface CreativeTemplateProps {
   buttonText: string;
   /** Image URLs — splits need 2–3, single-panel layouts need 1. */
   images: string[];
-  /** HEX accent for buttons, checks, borders. */
-  accentColor?: string;
+  /** HEX (or resolved) accent for buttons, checks, borders — applied via inline styles. */
+  accentColor: string;
 }

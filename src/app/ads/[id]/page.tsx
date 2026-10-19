@@ -35,6 +35,7 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
     updatedAt: string | null;
     creativesReplaceAt: string | null;
     styleKey: string | null;
+    accentColor: string | null;
   } | null = null;
   let generations: AdGeneration[] = [];
   let error: string | null = null;
@@ -79,6 +80,7 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
       updatedAt={project.updatedAt}
       creativesReplaceAt={project.creativesReplaceAt}
       styleKey={project.styleKey}
+      accentColor={project.accentColor}
     />
   );
 }
@@ -120,14 +122,16 @@ async function loadProjectRow(
 ) {
   const full = await supabase
     .from("ad_projects")
-    .select("id, name, status, strategy_data, creatives_data, style_key, updated_at, creatives_replace_at, created_at")
+    .select(
+      "id, name, status, strategy_data, creatives_data, style_key, accent_color, updated_at, creatives_replace_at, created_at",
+    )
     .eq("id", id)
     .eq("user_id", userId)
     .maybeSingle();
 
   if (!full.error) return full.data;
   if (
-    /creatives_data|style_key|updated_at|creatives_replace_at/i.test(full.error.message) &&
+    /creatives_data|style_key|accent_color|updated_at|creatives_replace_at/i.test(full.error.message) &&
     !/strategy_data/i.test(full.error.message)
   ) {
     const mid = await supabase
@@ -141,6 +145,7 @@ async function loadProjectRow(
         ...mid.data,
         creatives_data: null,
         style_key: null,
+        accent_color: null,
         updated_at: mid.data.created_at,
         creatives_replace_at: null,
       };
@@ -162,6 +167,7 @@ async function loadProjectRow(
     strategy_data: null,
     creatives_data: null,
     style_key: null,
+    accent_color: null,
     updated_at: basic.data.created_at,
     creatives_replace_at: null,
   };
@@ -219,9 +225,19 @@ async function loadProject(id: string) {
             : null,
       creativesReplaceAt: typeof data.creatives_replace_at === "string" ? data.creatives_replace_at : null,
       styleKey: typeof data.style_key === "string" ? data.style_key : null,
+      accentColor: readAccentColor(data.accent_color, data.creatives_data),
     },
     generations,
   };
+}
+
+function readAccentColor(column: unknown, creativesData: unknown): string | null {
+  if (typeof column === "string" && column.trim()) return column.trim();
+  if (!Array.isArray(creativesData) || creativesData.length === 0) return null;
+  const first = creativesData[0];
+  if (!first || typeof first !== "object") return null;
+  const accent = (first as { accent_color?: unknown }).accent_color;
+  return typeof accent === "string" && accent.trim() ? accent.trim() : null;
 }
 
 function generationFromCreativesData(

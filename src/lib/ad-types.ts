@@ -25,6 +25,8 @@ export interface AdCreative {
   };
   texts: AdCreativeTexts;
   style_id: string;
+  /** User accent (HEX or label) for React templates. */
+  accent_color: string;
 }
 
 export interface AdLeadQuestion {

@@ -3,6 +3,7 @@ import "server-only";
 import { randomUUID } from "crypto";
 import Replicate from "replicate";
 
+import { accentColorForPrompt, DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import type { AdCreative, AdCreativeTexts, AdFormattedBrief, AdStrategy } from "@/lib/ad-types";
 import { getOpenAI } from "@/lib/openai";
 import {
@@ -193,9 +194,12 @@ export async function buildCreatives(input: {
   styleId: StudioStyleKey;
   brief: AdFormattedBrief | null;
   strategy: AdStrategy | null;
+  accentColor?: string | null;
 }): Promise<AdCreative[]> {
   const style = studioStyles.find((item) => item.key === input.styleId);
   if (!style) throw new Error("Неизвестный визуальный стиль.");
+  const accentLabel = accentColorForPrompt(input.accentColor);
+  const accentHex = resolveAccentHex(input.accentColor, DEFAULT_ACCENT_COLOR);
 
   const tasks = Array.from({ length: input.count }, (_, index) =>
     composeCreative({
@@ -205,6 +209,8 @@ export async function buildCreatives(input: {
       masterPrompt: style.masterPrompt,
       brief: input.brief,
       strategy: input.strategy,
+      accentLabel,
+      accentHex,
     }),
   );
 
@@ -218,6 +224,8 @@ async function composeCreative(input: {
   masterPrompt: string;
   brief: AdFormattedBrief | null;
   strategy: AdStrategy | null;
+  accentLabel: string;
+  accentHex: string;
 }): Promise<AdCreative> {
   const split = isSplitVsStyle(input.styleId);
   const art = await directArt({
@@ -227,6 +235,8 @@ async function composeCreative(input: {
     brief: input.brief,
     strategy: input.strategy,
     split,
+    accentLabel: input.accentLabel,
+    accentHex: input.accentHex,
   });
 
   if (split) {
@@ -248,6 +258,7 @@ async function composeCreative(input: {
         cta: art.cta,
       },
       style_id: input.styleId,
+      accent_color: input.accentHex,
     };
   }
 
@@ -264,6 +275,7 @@ async function composeCreative(input: {
       cta: art.cta,
     },
     style_id: input.styleId,
+    accent_color: input.accentHex,
   };
 }
 
@@ -280,8 +292,11 @@ async function directArt(input: {
   brief: AdFormattedBrief | null;
   strategy: AdStrategy | null;
   split: boolean;
+  accentLabel: string;
+  accentHex: string;
 }): Promise<ArtDirection> {
   const language = languageLabels[input.language] ?? "English";
+  const accentRule = `Акцентный цвет рекламного макета: ${input.accentLabel} (HEX ${input.accentHex}). При генерации промпта для Flux добавляй тонкие отсветы, освещение или детали фона в этом оттенке, чтобы картинка гармонировала с версткой.`;
   const systemPrompt = input.split
     ? `CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE.
 
@@ -290,12 +305,14 @@ async function directArt(input: {
 ГЛОБАЛЬНОЕ ПРАВИЛО ВАЛЮТЫ: только $ / USD или €. Запрещены рубли (руб, ₽, RUB) и реалии СНГ.
 Тексты (headline/subheadline/benefit/cta) — на языке: ${language}. Они пойдут в HTML-шаблон, НЕ на картинку.
 Опирайся на formatted_brief.key_advantages при выборе benefit: короткая ударная выгода СТРОГО НЕ БОЛЕЕ 5 слов.
+${accentRule}
 
 CRITICAL IMAGE RULE:
 - NEVER put text, letters, numbers, logos with words, watermarks, or captions in either Flux prompt.
 - prompt_before: мрачный / холодный / проблемный кадр «до» продукта (pain state).
 - prompt_after: светлый / тёплый / успешный кадр «после» с ощущением решения (без текста на фото).
 - Both prompts MUST be English, vertical 4:5 photographic backgrounds only.
+- Weave subtle accent-color light / reflections (${input.accentHex}) into the scene — not text, not UI chrome.
 
 Верни JSON:
 {
@@ -314,12 +331,14 @@ CRITICAL IMAGE RULE:
 Тексты на креативе (headline/subheadline/benefit/cta) — на языке: ${language}. Эти тексты пойдут в React-шаблон, НЕ на картинку.
 image_prompt — строго на английском, готов к Flux.1: только чистая фотография фона, без типографики.
 Опирайся на formatted_brief.key_advantages при выборе benefit: короткая ударная выгода СТРОГО НЕ БОЛЕЕ 5 слов, без деепричастных оборотов.
+${accentRule}
 
 CRITICAL IMAGE RULE (Flux background only):
 - NEVER put text, letters, numbers, logos with words, watermarks, or captions in image_prompt.
 - Describe only subject, lighting, composition, mood, and camera language.
 - Format example: A high-end editorial photograph of a modern living room at dusk, soft volumetric light, 4:5 vertical crop, no typography, no signage.
 - image_prompt MUST be English. Marketing copy lives only in headline/subheadline/benefit/cta fields.
+- Add subtle accent-color lighting / reflections (${input.accentHex}) so the photo matches the layout accent.
 
 Верни JSON:
 {
@@ -358,9 +377,11 @@ CRITICAL IMAGE RULE (Flux background only):
               }
             : null,
           key_advantages: input.brief?.key_advantages ?? null,
+          accent_color: input.accentLabel,
+          accent_hex: input.accentHex,
           instruction: input.split
-            ? "Return two contrasting Flux backgrounds (prompt_before vs prompt_after). No on-image text. Texts go only in headline/subheadline/benefit/cta."
-            : "Make this creative visually and verbally distinct from other variants in the same batch. Prefer concrete numbers over soft adjectives. Base benefit bullets on key_advantages; max 5 words.",
+            ? "Return two contrasting Flux backgrounds (prompt_before vs prompt_after). No on-image text. Texts go only in headline/subheadline/benefit/cta. Reflect accent color in lighting."
+            : "Make this creative visually and verbally distinct from other variants in the same batch. Prefer concrete numbers over soft adjectives. Base benefit bullets on key_advantages; max 5 words. Reflect accent color in lighting.",
         }),
       },
     ],

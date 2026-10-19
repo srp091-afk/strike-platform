@@ -1,6 +1,7 @@
 import { Check, X } from "lucide-react";
 
 import { CreativeWrapper } from "@/components/creatives/CreativeWrapper";
+import { DEFAULT_ACCENT_COLOR, resolveAccentHex, withAccentAlpha } from "@/lib/accent-color";
 import type { CreativeTemplateProps } from "@/types/creatives";
 
 const FAKE_PAINS = ["Нет системы", "Слив бюджета", "Хаос в заявках"];
@@ -11,8 +12,9 @@ export function Style1_VS({
   bullets,
   buttonText,
   images,
-  accentColor = "#E11D48",
+  accentColor,
 }: CreativeTemplateProps) {
+  const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
   const beforeSrc = images[0] ?? "";
   const afterSrc = images[1] ?? images[0] ?? "";
   const painItems = FAKE_PAINS.slice(0, Math.max(3, bullets.length || 3));
@@ -27,10 +29,7 @@ export function Style1_VS({
         <header className="shrink-0 bg-black px-10 pb-6 pt-10 text-center">
           <h1 className="font-anton text-6xl leading-none tracking-wide text-white uppercase">{headline}</h1>
           {subheadline ? (
-            <p
-              className="mt-3 font-montserrat text-2xl font-semibold leading-snug"
-              style={{ color: accentColor }}
-            >
+            <p className="mt-3 font-montserrat text-2xl font-semibold leading-snug" style={{ color: accent }}>
               {subheadline}
             </p>
           ) : null}
@@ -66,7 +65,7 @@ export function Style1_VS({
 
           <div
             className="absolute left-1/2 top-1/2 z-20 grid size-24 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-4 bg-black font-anton text-4xl tracking-wider text-white"
-            style={{ borderColor: accentColor }}
+            style={{ borderColor: accent }}
           >
             VS
           </div>
@@ -84,14 +83,14 @@ export function Style1_VS({
                 ))}
               </ul>
             </div>
-            <div
-              className="rounded-2xl border-2 bg-black/70 p-5 backdrop-blur-md"
-              style={{ borderColor: accentColor }}
-            >
+            <div className="rounded-2xl border-2 bg-black/70 p-5 backdrop-blur-md" style={{ borderColor: accent }}>
               <ul className="space-y-3">
                 {winItems.map((item) => (
                   <li key={item} className="flex items-start gap-3 font-montserrat text-lg leading-snug text-white">
-                    <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-emerald-500/20 text-emerald-400">
+                    <span
+                      className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full"
+                      style={{ backgroundColor: withAccentAlpha(accent, 0.2), color: accent }}
+                    >
                       <Check className="size-4" strokeWidth={3} />
                     </span>
                     <span>{item}</span>
@@ -103,10 +102,7 @@ export function Style1_VS({
         </div>
 
         <footer className="flex shrink-0 items-center justify-center bg-black px-10 py-8">
-          <p
-            className="font-montserrat text-3xl font-bold tracking-wide uppercase"
-            style={{ color: accentColor }}
-          >
+          <p className="font-montserrat text-3xl font-bold tracking-wide uppercase" style={{ color: accent }}>
             {buttonText}
           </p>
         </footer>

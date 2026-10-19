@@ -14,6 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
+import { DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import { formatRuDate, toDateInputValue } from "@/lib/ad-project-media";
 import type { AdGeneration, AdStrategy } from "@/lib/ad-types";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,7 @@ export function CampaignDashboard({
   updatedAt: initialUpdatedAt,
   creativesReplaceAt: initialReplaceAt,
   styleKey = null,
+  accentColor: initialAccent = null,
 }: {
   projectId: string;
   name: string;
@@ -38,6 +40,7 @@ export function CampaignDashboard({
   updatedAt: string | null;
   creativesReplaceAt: string | null;
   styleKey?: string | null;
+  accentColor?: string | null;
 }) {
   const router = useRouter();
   const [zoom, setZoom] = useState<string | null>(null);
@@ -51,6 +54,13 @@ export function CampaignDashboard({
   const [refreshOpen, setRefreshOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState("active");
+  const [accentColor, setAccentColor] = useState(
+    resolveAccentHex(initialAccent, DEFAULT_ACCENT_COLOR),
+  );
+
+  useEffect(() => {
+    setAccentColor(resolveAccentHex(initialAccent, DEFAULT_ACCENT_COLOR));
+  }, [initialAccent]);
 
   useEffect(() => {
     setGenerations(initialGenerations);
@@ -133,12 +143,14 @@ export function CampaignDashboard({
           styleId: payload.styleId,
           quantity: payload.quantity,
           creativesCount: payload.quantity,
+          accentColor: payload.accentColor,
         }),
       });
       const body = (await response.json()) as {
         error?: string;
         updated_at?: string | null;
         creatives_replace_at?: string | null;
+        accent_color?: string | null;
       };
       if (!response.ok) {
         toast.error(typeof body.error === "string" ? body.error : "Не удалось обновить креативы.");
@@ -147,6 +159,7 @@ export function CampaignDashboard({
       }
       if (typeof body.updated_at === "string") setUpdatedAt(body.updated_at);
       if (typeof body.creatives_replace_at === "string") setCreativesReplaceAt(body.creatives_replace_at);
+      if (typeof body.accent_color === "string") setAccentColor(resolveAccentHex(body.accent_color));
       toast.success("Новые креативы готовы");
       router.refresh();
     } catch {
@@ -445,7 +458,12 @@ export function CampaignDashboard({
               {refreshing ? (
                 <CreativeSkeletons />
               ) : (
-                <ActiveCreatives generation={activeGeneration} strategy={strategy} onZoom={setZoom} />
+                <ActiveCreatives
+                  generation={activeGeneration}
+                  strategy={strategy}
+                  accentColor={accentColor}
+                  onZoom={setZoom}
+                />
               )}
             </TabsContent>
             <TabsContent value="archive" className="grid gap-3">
@@ -480,6 +498,7 @@ export function CampaignDashboard({
         open={refreshOpen}
         pending={refreshing}
         initialStyle={styleKey}
+        initialAccent={accentColor}
         onClose={() => {
           if (!refreshing) setRefreshOpen(false);
         }}
@@ -627,10 +646,12 @@ function EditableRow({
 function ActiveCreatives({
   generation,
   strategy,
+  accentColor,
   onZoom,
 }: {
   generation: AdGeneration | null;
   strategy: AdStrategy | null;
+  accentColor: string;
   onZoom: (src: string) => void;
 }) {
   const imageSets =
@@ -672,6 +693,7 @@ function ActiveCreatives({
               bullets={bullets.length > 0 ? bullets : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"]}
               buttonText={buttonText}
               images={[before, after]}
+              accentColor={accentColor}
             />
             <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
               <div className="flex w-[min(16rem,80%)] flex-col gap-2">

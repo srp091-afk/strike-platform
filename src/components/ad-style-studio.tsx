@@ -3,6 +3,7 @@
 import { Globe, Loader2, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 
+import { AccentColorField, DEFAULT_ACCENT_COLOR } from "@/components/accent-color-field";
 import { GenerationCostBadge } from "@/components/generation-cost-badge";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -53,6 +54,7 @@ export function AdStyleStudio({
   const [fontStyle, setFontStyle] = useState<FontStyle>("premium");
   const [category, setCategory] = useState<(typeof styleFilters)[number]>("Все");
   const [selectedStyle, setSelectedStyle] = useState<StudioStyleKey>("before-after-vs");
+  const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR);
 
   const visibleStyles = studioStyles.filter((style) => category === "Все" || style.category === category);
 
@@ -74,6 +76,7 @@ export function AdStyleStudio({
       <input type="hidden" name="font_style" value={fontStyle} />
       <input type="hidden" name="style_key" value={selected.key} />
       <input type="hidden" name="style_name" value={selected.name} />
+      <input type="hidden" name="accent_color" value={accentColor} />
 
       {strategyError ? (
         <Alert variant="destructive" className="lg:col-span-12">
@@ -155,6 +158,8 @@ export function AdStyleStudio({
             <p className="mt-1.5 text-[11px] text-zinc-500">{font.pair}</p>
           </div>
         </div>
+
+        <AccentColorField value={accentColor} onChange={setAccentColor} disabled={busy} />
 
         <div className="flex flex-wrap gap-2">
           {styleFilters.map((filter) => {

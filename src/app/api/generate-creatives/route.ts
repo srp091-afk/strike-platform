@@ -1,3 +1,4 @@
+import { accentColorForPrompt, DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import { buildCreatives, parseFormattedBriefRow, publicCreativesError, resolveStyleId } from "@/lib/generate-creatives";
 import { parseAdStrategy } from "@/lib/ad-strategy";
 import { isRealCreativeImageUrl, plusDaysIso } from "@/lib/ad-project-media";
@@ -29,6 +30,7 @@ export async function POST(request: Request) {
   const creativesCount = Number(record.quantity ?? record.creativesCount);
   const creativeLanguageRaw = typeof record.creativeLanguage === "string" ? record.creativeLanguage.trim() : "";
   const styleIdRaw = typeof record.styleId === "string" ? record.styleId.trim() : "";
+  const accentColorRaw = typeof record.accentColor === "string" ? record.accentColor.trim() : "";
 
   if (!isUuid(projectId)) {
     return Response.json({ error: "Некорректный projectId." }, { status: 400 });
@@ -46,7 +48,7 @@ export async function POST(request: Request) {
   const supabase = createSupabaseAdminClient();
   const { data: project, error: projectError } = await supabase
     .from("ad_projects")
-    .select("id, name, formatted_brief, strategy_data, style_key, creative_language")
+    .select("id, name, formatted_brief, strategy_data, style_key, creative_language, accent_color")
     .eq("id", projectId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -75,6 +77,13 @@ export async function POST(request: Request) {
       ? storedLanguage
       : "ru";
 
+  const storedAccent =
+    typeof (project as { accent_color?: unknown }).accent_color === "string"
+      ? String((project as { accent_color: string }).accent_color).trim()
+      : "";
+  const accentLabel = accentColorForPrompt(accentColorRaw || storedAccent || DEFAULT_ACCENT_COLOR);
+  const accentHex = resolveAccentHex(accentColorRaw || storedAccent || DEFAULT_ACCENT_COLOR);
+
   try {
     const creatives = await buildCreatives({
       count: creativesCount,
@@ -82,6 +91,7 @@ export async function POST(request: Request) {
       styleId,
       brief: parseFormattedBriefRow(project.formatted_brief),
       strategy,
+      accentColor: accentLabel,
     });
 
     // Each creative stores [url] or [before, after]. Persist nested sets for the dashboard.
@@ -124,20 +134,30 @@ export async function POST(request: Request) {
       style_key: styleId,
       creative_language: creativeLanguage,
       creatives_count: creativesCount,
+      accent_color: accentHex,
     };
 
     let updateError = (
       await supabase.from("ad_projects").update(projectPatch).eq("id", projectId).eq("user_id", userId)
     ).error;
 
-    if (updateError && /updated_at|creatives_replace_at|creatives_count|style_key|creative_language/i.test(updateError.message)) {
+    if (
+      updateError &&
+      /updated_at|creatives_replace_at|creatives_count|style_key|creative_language|accent_color/i.test(updateError.message)
+    ) {
+      const { accent_color: _accent, ...withoutAccent } = projectPatch;
       updateError = (
-        await supabase
-          .from("ad_projects")
-          .update({ creatives_data: creatives, status: "ready" })
-          .eq("id", projectId)
-          .eq("user_id", userId)
+        await supabase.from("ad_projects").update(withoutAccent).eq("id", projectId).eq("user_id", userId)
       ).error;
+      if (updateError && /updated_at|creatives_replace_at|creatives_count|style_key|creative_language/i.test(updateError.message)) {
+        updateError = (
+          await supabase
+            .from("ad_projects")
+            .update({ creatives_data: creatives, status: "ready" })
+            .eq("id", projectId)
+            .eq("user_id", userId)
+        ).error;
+      }
     }
 
     if (updateError) {
@@ -180,6 +200,7 @@ export async function POST(request: Request) {
       images: imageUrls,
       updated_at: nowIso,
       creatives_replace_at: replaceAt,
+      accent_color: accentHex,
     });
   } catch (error) {
     console.error("[generate-creatives] fatal", error);

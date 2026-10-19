@@ -3,6 +3,7 @@
 import * as XLSX from "xlsx";
 
 import { generateAdStrategy, parseAdStrategy, publicModelError } from "@/lib/ad-strategy";
+import { DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import { plusDaysIso } from "@/lib/ad-project-media";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { formatBriefSummary, parseFormattedBrief, publicFormatError } from "@/lib/format-brief";
@@ -58,6 +59,7 @@ export async function createAdCampaign(
   const creativeLanguage = text(formData.get("creative_language"));
   const fontStyle = text(formData.get("font_style"));
   const styleKey = text(formData.get("style_key"));
+  const accentColor = resolveAccentHex(text(formData.get("accent_color")) || DEFAULT_ACCENT_COLOR);
 
   if (summary.length < 12) return { error: "Бриф ещё не собран.", projectId: null };
   if (!isUuid(templateId)) return { error: "Выберите визуальный стиль.", projectId: null };
@@ -114,10 +116,12 @@ export async function createAdCampaign(
       creative_language: creativeLanguage,
       font_style: fontStyle,
       style_key: styleKey,
+      accent_color: accentColor,
       updated_at: now.toISOString(),
       creatives_replace_at: plusDaysIso(now, 14),
     });
-    if (inserted.error || !inserted.data) {
+    let data = inserted.data;
+    if (inserted.error || !data) {
       const message = inserted.error?.message ?? "Не удалось создать проект.";
       if (/strategy_data/i.test(message)) {
         return { error: "В базе нет колонки strategy_data. Выполните миграцию в Supabase.", projectId: null };
@@ -125,9 +129,29 @@ export async function createAdCampaign(
       if (/formatted_brief/i.test(message)) {
         return { error: "В базе нет колонки formatted_brief. Выполните миграцию в Supabase.", projectId: null };
       }
-      return { error: message, projectId: null };
+      if (/accent_color/i.test(message)) {
+        const retry = await insertProject(supabase, {
+          user_id: userId,
+          name: campaignName(summary),
+          brief_summary: summary,
+          template_id: template.id,
+          strategy_data: strategy,
+          formatted_brief: formattedBrief,
+          creatives_count: creativesCount,
+          creative_language: creativeLanguage,
+          font_style: fontStyle,
+          style_key: styleKey,
+          updated_at: now.toISOString(),
+          creatives_replace_at: plusDaysIso(now, 14),
+        });
+        if (retry.error || !retry.data) {
+          return { error: retry.error?.message ?? message, projectId: null };
+        }
+        data = retry.data;
+      } else {
+        return { error: message, projectId: null };
+      }
     }
-    const data = inserted.data;
 
     projectId = String(data.id);
     const { error: briefError } = await supabase.from("ad_briefs").insert({
@@ -143,6 +167,7 @@ export async function createAdCampaign(
           font_style: fontStyle,
           style_key: styleKey,
           style_name: styleName,
+          accent_color: accentColor,
         },
       },
     });
@@ -173,6 +198,7 @@ async function insertProject(
     creative_language: string;
     font_style: string;
     style_key: string;
+    accent_color?: string;
     updated_at: string;
     creatives_replace_at: string;
   },
@@ -180,24 +206,16 @@ async function insertProject(
   const first = await supabase.from("ad_projects").insert(row).select("id").single();
   if (!first.error) return first;
 
-  const {
-    creatives_count: _count,
-    creative_language: _language,
-    font_style: _font,
-    style_key: _style,
-    updated_at: _updated,
-    creatives_replace_at: _replace,
-    formatted_brief,
-    ...core
-  } = row;
   const missingDates = /updated_at|creatives_replace_at/i.test(first.error.message);
-  const missingSettings = /creatives_count|creative_language|font_style|style_key/i.test(first.error.message);
+  const missingSettings = /creatives_count|creative_language|font_style|style_key|accent_color/i.test(
+    first.error.message,
+  );
   const missingFormatted = /formatted_brief/i.test(first.error.message);
   if (!missingSettings && !missingFormatted && !missingDates) return first;
 
   let payload: Record<string, unknown> = { ...row };
   if (missingDates) {
-    const { updated_at: _u, creatives_replace_at: _r, ...withoutDates } = payload as typeof row;
+    const { updated_at: _u, creatives_replace_at: _r, ...withoutDates } = payload;
     payload = withoutDates;
   }
   if (missingSettings) {
@@ -206,8 +224,9 @@ async function insertProject(
       creative_language: _l,
       font_style: _f,
       style_key: _s,
+      accent_color: _a,
       ...rest
-    } = payload as typeof row;
+    } = payload;
     payload = rest;
   }
   if (missingFormatted) {

@@ -4,6 +4,7 @@ import { Loader2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { AccentColorField, DEFAULT_ACCENT_COLOR } from "@/components/accent-color-field";
 import { GenerationCostBadge } from "@/components/generation-cost-badge";
 import { Button } from "@/components/ui/button";
 import { DEFAULT_CREDITS_BALANCE, creditsForCreatives } from "@/lib/credits";
@@ -15,6 +16,7 @@ const QUANTITIES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 export type RefreshCreativesPayload = {
   styleId: StudioStyleKey;
   quantity: number;
+  accentColor: string;
 };
 
 export function RefreshCreativesDialog({
@@ -23,6 +25,7 @@ export function RefreshCreativesDialog({
   onConfirm,
   pending = false,
   initialStyle,
+  initialAccent,
   creditsBalance = DEFAULT_CREDITS_BALANCE,
 }: {
   open: boolean;
@@ -30,6 +33,7 @@ export function RefreshCreativesDialog({
   onConfirm: (payload: RefreshCreativesPayload) => void;
   pending?: boolean;
   initialStyle?: string | null;
+  initialAccent?: string | null;
   creditsBalance?: number;
 }) {
   const [category, setCategory] = useState<(typeof styleFilters)[number]>("Все");
@@ -37,6 +41,7 @@ export function RefreshCreativesDialog({
     resolveInitialStyle(initialStyle),
   );
   const [quantity, setQuantity] = useState(3);
+  const [accentColor, setAccentColor] = useState(initialAccent?.trim() || DEFAULT_ACCENT_COLOR);
 
   const visibleStyles = studioStyles.filter((style) => category === "Все" || style.category === category);
   const cost = creditsForCreatives(quantity);
@@ -47,7 +52,8 @@ export function RefreshCreativesDialog({
     setSelectedStyle(resolveInitialStyle(initialStyle));
     setQuantity(3);
     setCategory("Все");
-  }, [open, initialStyle]);
+    setAccentColor(initialAccent?.trim() || DEFAULT_ACCENT_COLOR);
+  }, [open, initialStyle, initialAccent]);
 
   useEffect(() => {
     if (visibleStyles.some((style) => style.key === selectedStyle)) return;
@@ -129,6 +135,8 @@ export function RefreshCreativesDialog({
             </div>
           </div>
 
+          <AccentColorField value={accentColor} onChange={setAccentColor} disabled={pending} />
+
           <div>
             <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">Визуальный стиль</p>
             <div className="mb-3 flex flex-wrap gap-2">
@@ -188,7 +196,7 @@ export function RefreshCreativesDialog({
             type="button"
             disabled={pending || insufficient || !selectedStyle}
             className="rounded-xl bg-white px-6 py-2.5 font-bold text-black shadow-lg hover:bg-zinc-200 disabled:opacity-40"
-            onClick={() => onConfirm({ styleId: selectedStyle, quantity })}
+            onClick={() => onConfirm({ styleId: selectedStyle, quantity, accentColor })}
           >
             {pending ? (
               <>

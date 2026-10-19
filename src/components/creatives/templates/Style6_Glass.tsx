@@ -1,6 +1,7 @@
 import { Check, Flame } from "lucide-react";
 
 import { CreativeWrapper } from "@/components/creatives/CreativeWrapper";
+import { DEFAULT_ACCENT_COLOR, resolveAccentHex, withAccentAlpha } from "@/lib/accent-color";
 import type { CreativeTemplateProps } from "@/types/creatives";
 
 export function Style6_Glass({
@@ -10,8 +11,9 @@ export function Style6_Glass({
   badge,
   buttonText,
   images,
-  accentColor = "#F97316",
+  accentColor,
 }: CreativeTemplateProps) {
+  const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
   const bg = images[0] ?? "";
   const items = (bullets.length > 0 ? bullets : ["Премиальный результат", "Быстрый запуск", "Контроль метрик"]).slice(
     0,
@@ -39,14 +41,14 @@ export function Style6_Glass({
           <header className="text-center">
             {badge ? (
               <span
-                className="inline-flex items-center gap-2 rounded-full border px-5 py-2 font-montserrat text-base font-semibold tracking-wide text-white"
+                className="inline-flex items-center gap-2 rounded-full border px-5 py-2 font-montserrat text-base font-semibold tracking-wide"
                 style={{
-                  borderColor: `${accentColor}99`,
-                  backgroundColor: `${accentColor}33`,
-                  color: accentColor,
+                  borderColor: withAccentAlpha(accent, 0.6),
+                  backgroundColor: withAccentAlpha(accent, 0.2),
+                  color: accent,
                 }}
               >
-                <Flame className="size-5" strokeWidth={2.5} style={{ color: accentColor }} />
+                <Flame className="size-5" strokeWidth={2.5} style={{ color: accent }} />
                 {badge}
               </span>
             ) : null}
@@ -62,15 +64,15 @@ export function Style6_Glass({
 
           <div className="mt-auto flex flex-col gap-8">
             <div
-              className="rounded-2xl border bg-[#111]/70 p-8 backdrop-blur-md"
-              style={{ borderColor: `${accentColor}4D` }}
+              className="rounded-2xl border bg-black/70 p-8 backdrop-blur-md"
+              style={{ borderColor: withAccentAlpha(accent, 0.3) }}
             >
               <ul className="space-y-5">
                 {items.map((item) => (
                   <li key={item} className="flex items-start gap-4 font-montserrat text-2xl leading-snug text-white">
                     <span
                       className="mt-1 grid size-9 shrink-0 place-items-center rounded-full"
-                      style={{ backgroundColor: `${accentColor}33`, color: accentColor }}
+                      style={{ backgroundColor: withAccentAlpha(accent, 0.2), color: accent }}
                     >
                       <Check className="size-5" strokeWidth={3} />
                     </span>
@@ -82,7 +84,7 @@ export function Style6_Glass({
 
             <div
               className="flex h-24 items-center justify-center rounded-2xl font-montserrat text-3xl font-bold tracking-wide text-black uppercase shadow-lg"
-              style={{ backgroundColor: accentColor }}
+              style={{ backgroundColor: accent }}
             >
               {buttonText}
             </div>

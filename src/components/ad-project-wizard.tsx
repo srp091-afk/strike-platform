@@ -289,12 +289,13 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     const creativesCount = Number(String(formData.get("creatives_count") ?? "").trim());
     const creativeLanguage = String(formData.get("creative_language") ?? "").trim();
     const styleId = String(formData.get("style_key") ?? "").trim();
+    const accentColor = String(formData.get("accent_color") ?? "").trim();
 
     try {
       const response = await fetch("/api/generate-creatives", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, creativesCount, creativeLanguage, styleId }),
+        body: JSON.stringify({ projectId, creativesCount, creativeLanguage, styleId, accentColor }),
       });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
