@@ -14,8 +14,15 @@ export interface AdCreativeTexts {
 
 export interface AdCreative {
   id: string;
+  /** Primary / "before" URL (always set). */
   image_url: string;
+  /** `[url]` for single styles, `[before, after]` for Style1 VS split. */
+  image_urls: string[];
   prompt: string;
+  prompts?: {
+    before?: string;
+    after?: string;
+  };
   texts: AdCreativeTexts;
   style_id: string;
 }
@@ -63,6 +70,11 @@ export interface AdGeneration {
   style_name: string;
   status: AdGenerationStatus;
   is_active: boolean;
+  /**
+   * Flat legacy list OR nested pairs.
+   * Prefer `imageSets` — one entry per creative card: `[url]` or `[before, after]`.
+   */
   images: string[];
+  imageSets: string[][];
   created_at: string;
 }

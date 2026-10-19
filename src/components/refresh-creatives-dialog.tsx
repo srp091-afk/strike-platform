@@ -166,7 +166,13 @@ export function RefreshCreativesDialog({
                     )}
                     onClick={() => setSelectedStyle(style.key)}
                   >
-                    {style.key === "dark-editorial-grid" ? <EditorialPreview /> : <LuxuryPreview />}
+                    {style.key === "before-after-vs" ? (
+                      <VsPreview />
+                    ) : style.key === "dark-editorial-grid" ? (
+                      <EditorialPreview />
+                    ) : (
+                      <LuxuryPreview />
+                    )}
                     <span className="block px-3 pt-3 text-sm font-medium text-white">{style.name}</span>
                     <span className="block px-3 pt-1 pb-3 text-xs text-zinc-500">{style.note}</span>
                   </button>
@@ -204,7 +210,21 @@ function resolveInitialStyle(value: string | null | undefined): StudioStyleKey {
   if (value && studioStyles.some((style) => style.key === value)) {
     return value as StudioStyleKey;
   }
-  return studioStyles[0]?.key ?? "dark-editorial-grid";
+  return studioStyles[0]?.key ?? "before-after-vs";
+}
+
+function VsPreview() {
+  return (
+    <div className="relative aspect-[4/5] overflow-hidden bg-black text-white">
+      <div className="absolute inset-0 grid grid-cols-2">
+        <div className="bg-zinc-800" />
+        <div className="bg-zinc-600" />
+      </div>
+      <div className="absolute left-1/2 top-1/2 grid size-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-rose-500 bg-black text-xs font-bold">
+        VS
+      </div>
+    </div>
+  );
 }
 
 function EditorialPreview() {

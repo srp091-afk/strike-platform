@@ -84,13 +84,19 @@ export async function POST(request: Request) {
       strategy,
     });
 
-    const imageUrls = creatives
-      .map((creative) => creative.image_url.trim())
-      .filter((url) => isRealCreativeImageUrl(url));
+    // Each creative stores [url] or [before, after]. Persist nested sets for the dashboard.
+    const imageSets = creatives.map((creative) => {
+      const urls = (creative.image_urls?.length ? creative.image_urls : [creative.image_url])
+        .map((url) => url.trim())
+        .filter((url) => isRealCreativeImageUrl(url));
+      return urls.length > 0 ? urls : [creative.image_url].filter((url) => isRealCreativeImageUrl(url));
+    });
+    const imageUrls = imageSets.flat();
 
     console.log("[generate-creatives] built", {
       projectId,
       creativesCount: creatives.length,
+      imageSets,
       imageUrls,
     });
 
@@ -155,7 +161,7 @@ export async function POST(request: Request) {
         style_name: styleName,
         status: "ready",
         is_active: true,
-        images: imageUrls,
+        images: imageSets,
       })
       .select("id, images")
       .single();

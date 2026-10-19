@@ -633,7 +633,14 @@ function ActiveCreatives({
   strategy: AdStrategy | null;
   onZoom: (src: string) => void;
 }) {
-  if (!generation || generation.images.length === 0) {
+  const imageSets =
+    generation?.imageSets?.length
+      ? generation.imageSets
+      : generation?.images?.length
+        ? generation.images.map((url) => [url])
+        : [];
+
+  if (!generation || imageSets.length === 0) {
     if (generation?.status === "processing") return <CreativeSkeletons />;
     return <EmptyPanel text="Активных креативов пока нет." />;
   }
@@ -645,8 +652,9 @@ function ActiveCreatives({
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      {generation.images.map((imageUrl, index) => {
-        const nextUrl = generation.images[index + 1] ?? generation.images[0] ?? imageUrl;
+      {imageSets.map((urls, index) => {
+        const before = urls[0] ?? "";
+        const after = urls[1] ?? urls[0] ?? "";
         const headline = headlines[index % Math.max(headlines.length, 1)] ?? strategy?.strategy.hook_concept ?? "Оффер";
         const subheadline =
           subheadlines[index % Math.max(subheadlines.length, 1)] ?? strategy?.strategy.core_offer_angle ?? undefined;
@@ -657,17 +665,17 @@ function ActiveCreatives({
             key={`${generation.id}-${index}`}
             className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-black"
           >
-            {/* Style1 hardcoded for first template pass — CreativeWrapper lives inside Style1_VS. */}
+            {/* Style1 VS — images[0]=До, images[1]=После (CreativeWrapper inside template). */}
             <Style1_VS
               headline={headline}
               subheadline={subheadline}
               bullets={bullets.length > 0 ? bullets : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"]}
               buttonText={buttonText}
-              images={[imageUrl, nextUrl]}
+              images={[before, after]}
             />
             <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
               <div className="flex w-[min(16rem,80%)] flex-col gap-2">
-                <Button type="button" variant="outline" onClick={() => onZoom(imageUrl)}>
+                <Button type="button" variant="outline" onClick={() => onZoom(after || before)}>
                   <ZoomIn className="size-4" />
                   Увеличить
                 </Button>

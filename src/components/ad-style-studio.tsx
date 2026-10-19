@@ -52,7 +52,7 @@ export function AdStyleStudio({
   const [creativeLanguage, setCreativeLanguage] = useState<CreativeLanguage>("ru");
   const [fontStyle, setFontStyle] = useState<FontStyle>("premium");
   const [category, setCategory] = useState<(typeof styleFilters)[number]>("Все");
-  const [selectedStyle, setSelectedStyle] = useState<StudioStyleKey>("dark-editorial-grid");
+  const [selectedStyle, setSelectedStyle] = useState<StudioStyleKey>("before-after-vs");
 
   const visibleStyles = studioStyles.filter((style) => category === "Все" || style.category === category);
 
@@ -190,7 +190,13 @@ export function AdStyleStudio({
                 )}
                 onClick={() => setSelectedStyle(style.key)}
               >
-                {style.key === "dark-editorial-grid" ? <EditorialPreview /> : <LuxuryPreview />}
+                {style.key === "before-after-vs" ? (
+                  <VsPreview />
+                ) : style.key === "dark-editorial-grid" ? (
+                  <EditorialPreview />
+                ) : (
+                  <LuxuryPreview />
+                )}
                 <span className="block px-3 pt-3 text-sm font-medium text-white">{style.name}</span>
                 <span className="block px-3 pt-1 pb-3 text-xs text-zinc-500">{style.note}</span>
               </button>
@@ -250,6 +256,22 @@ export function AdStyleStudio({
         </div>
       ) : null}
     </>
+  );
+}
+
+function VsPreview() {
+  return (
+    <div className="relative aspect-[4/5] overflow-hidden bg-black text-white">
+      <div className="absolute inset-0 grid grid-cols-2">
+        <div className="bg-zinc-800" />
+        <div className="bg-zinc-600" />
+      </div>
+      <div className="absolute left-1/2 top-1/2 grid size-10 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-2 border-rose-500 bg-black text-xs font-bold">
+        VS
+      </div>
+      <p className="absolute bottom-4 left-4 text-[10px] tracking-widest text-zinc-400 uppercase">До</p>
+      <p className="absolute right-4 bottom-4 text-[10px] tracking-widest text-zinc-200 uppercase">После</p>
+    </div>
   );
 }
 

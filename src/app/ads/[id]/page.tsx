@@ -4,10 +4,10 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { CampaignDashboard, type ProjectStatus } from "@/components/campaign-dashboard";
-import type { AdCreative, AdGeneration, AdGenerationStatus, AdStrategy } from "@/lib/ad-types";
+import type { AdGeneration, AdGenerationStatus, AdStrategy } from "@/lib/ad-types";
 import { parseAdStrategy } from "@/lib/ad-strategy";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
-import { isRealCreativeImageUrl } from "@/lib/ad-project-media";
+import { imageSetsFromCreativesData, imageSetsFromGenerationImages } from "@/lib/ad-project-media";
 import { studioStyles } from "@/lib/studio-styles";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -93,20 +93,13 @@ function readGenerationStatus(value: unknown): AdGenerationStatus {
   return "processing";
 }
 
-function readImages(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  return value.flatMap((item) => {
-    const url = typeof item === "string" ? item.trim() : "";
-    return isRealCreativeImageUrl(url) ? [url] : [];
-  });
-}
-
 function readGeneration(row: Record<string, unknown>, projectId: string): AdGeneration | null {
   const id = typeof row.id === "string" ? row.id : "";
   if (!id) return null;
   const title = typeof row.title === "string" && row.title.trim() ? row.title.trim() : "Генерация";
   const styleName = typeof row.style_name === "string" && row.style_name.trim() ? row.style_name.trim() : "Без стиля";
   const createdAt = typeof row.created_at === "string" ? row.created_at : "";
+  const imageSets = imageSetsFromGenerationImages(row.images);
   return {
     id,
     project_id: typeof row.project_id === "string" ? row.project_id : projectId,
@@ -114,7 +107,8 @@ function readGeneration(row: Record<string, unknown>, projectId: string): AdGene
     style_name: styleName,
     status: readGenerationStatus(row.status),
     is_active: row.is_active === true,
-    images: readImages(row.images),
+    images: imageSets.flat(),
+    imageSets,
     created_at: createdAt,
   };
 }
@@ -193,8 +187,18 @@ async function loadProject(id: string) {
     return generation ? [generation] : [];
   });
 
-  // Fallback: older runs saved only ad_projects.creatives_data (image_url[]), not ad_generations.
-  if (!generations.some((generation) => generation.is_active && generation.images.length > 0)) {
+  // Prefer structured pairs from creatives_data when the active generation only has a flat URL list.
+  const active = generations.find((generation) => generation.is_active);
+  if (active && active.imageSets.every((set) => set.length < 2)) {
+    const fromCreatives = imageSetsFromCreativesData(data.creatives_data);
+    if (fromCreatives.some((set) => set.length >= 2)) {
+      active.imageSets = fromCreatives;
+      active.images = fromCreatives.flat();
+    }
+  }
+
+  // Fallback: older runs saved only ad_projects.creatives_data, not ad_generations.
+  if (!generations.some((generation) => generation.is_active && generation.imageSets.length > 0)) {
     const styleKey = typeof data.style_key === "string" ? data.style_key : "";
     const styleName = studioStyles.find((style) => style.key === styleKey)?.name ?? "Студия";
     const fromCreatives = generationFromCreativesData(data.creatives_data, projectId, styleName);
@@ -225,13 +229,8 @@ function generationFromCreativesData(
   projectId: string,
   styleName: string,
 ): AdGeneration | null {
-  if (!Array.isArray(value) || value.length === 0) return null;
-  const images = value.flatMap((item) => {
-    if (!item || typeof item !== "object") return [];
-    const url = (item as AdCreative).image_url;
-    return typeof url === "string" && isRealCreativeImageUrl(url) ? [url.trim()] : [];
-  });
-  if (images.length === 0) return null;
+  const imageSets = imageSetsFromCreativesData(value);
+  if (imageSets.length === 0) return null;
   return {
     id: `creatives-data-${projectId}`,
     project_id: projectId,
@@ -239,7 +238,8 @@ function generationFromCreativesData(
     style_name: styleName,
     status: "ready",
     is_active: true,
-    images,
+    images: imageSets.flat(),
+    imageSets,
     created_at: new Date().toISOString(),
   };
 }

@@ -5,7 +5,13 @@ import Replicate from "replicate";
 
 import type { AdCreative, AdCreativeTexts, AdFormattedBrief, AdStrategy } from "@/lib/ad-types";
 import { getOpenAI } from "@/lib/openai";
-import { isStudioStyleKey, studioStyles, type CreativeLanguage, type StudioStyleKey } from "@/lib/studio-styles";
+import {
+  isSplitVsStyle,
+  resolveStudioStyleKey,
+  studioStyles,
+  type CreativeLanguage,
+  type StudioStyleKey,
+} from "@/lib/studio-styles";
 
 const FALLBACK_IMAGE = "https://placehold.co/1080x1350/0A0A0A/EDED2D?text=Image+Generation+Failed";
 
@@ -213,17 +219,43 @@ async function composeCreative(input: {
   brief: AdFormattedBrief | null;
   strategy: AdStrategy | null;
 }): Promise<AdCreative> {
+  const split = isSplitVsStyle(input.styleId);
   const art = await directArt({
     index: input.index,
     language: input.language,
     masterPrompt: input.masterPrompt,
     brief: input.brief,
     strategy: input.strategy,
+    split,
   });
+
+  if (split) {
+    const [beforeUrl, afterUrl] = await Promise.all([
+      generateImage(art.prompt_before),
+      generateImage(art.prompt_after),
+    ]);
+    const image_urls = [beforeUrl, afterUrl].filter((url) => Boolean(url.trim()));
+    return {
+      id: randomUUID(),
+      image_url: image_urls[0] ?? beforeUrl,
+      image_urls: image_urls.length >= 2 ? image_urls.slice(0, 2) : [beforeUrl, afterUrl],
+      prompt: art.prompt_before,
+      prompts: { before: art.prompt_before, after: art.prompt_after },
+      texts: {
+        headline: art.headline,
+        subheadline: art.subheadline,
+        benefit: art.benefit,
+        cta: art.cta,
+      },
+      style_id: input.styleId,
+    };
+  }
+
   const imageUrl = await generateImage(art.image_prompt);
   return {
     id: randomUUID(),
     image_url: imageUrl,
+    image_urls: [imageUrl],
     prompt: art.image_prompt,
     texts: {
       headline: art.headline,
@@ -235,22 +267,46 @@ async function composeCreative(input: {
   };
 }
 
+type ArtDirection = AdCreativeTexts & {
+  image_prompt: string;
+  prompt_before: string;
+  prompt_after: string;
+};
+
 async function directArt(input: {
   index: number;
   language: CreativeLanguage;
   masterPrompt: string;
   brief: AdFormattedBrief | null;
   strategy: AdStrategy | null;
-}): Promise<AdCreativeTexts & { image_prompt: string }> {
+  split: boolean;
+}): Promise<ArtDirection> {
   const language = languageLabels[input.language] ?? "English";
-  const completion = await getOpenAI().chat.completions.create({
-    model: "gpt-4o",
-    temperature: 0.85,
-    response_format: { type: "json_object" },
-    messages: [
-      {
-        role: "system",
-        content: `CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE.
+  const systemPrompt = input.split
+    ? `CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE.
+
+Роль: ты — арт-директор performance-креативов для Meta Ads (стиль 1 — сплит До/После).
+Выбери тексты для React-шаблона и ДВА независимых Flux-промпта фона.
+ГЛОБАЛЬНОЕ ПРАВИЛО ВАЛЮТЫ: только $ / USD или €. Запрещены рубли (руб, ₽, RUB) и реалии СНГ.
+Тексты (headline/subheadline/benefit/cta) — на языке: ${language}. Они пойдут в HTML-шаблон, НЕ на картинку.
+Опирайся на formatted_brief.key_advantages при выборе benefit: короткая ударная выгода СТРОГО НЕ БОЛЕЕ 5 слов.
+
+CRITICAL IMAGE RULE:
+- NEVER put text, letters, numbers, logos with words, watermarks, or captions in either Flux prompt.
+- prompt_before: мрачный / холодный / проблемный кадр «до» продукта (pain state).
+- prompt_after: светлый / тёплый / успешный кадр «после» с ощущением решения (без текста на фото).
+- Both prompts MUST be English, vertical 4:5 photographic backgrounds only.
+
+Верни JSON:
+{
+  "headline": "краткий заголовок (1-5 слов)",
+  "subheadline": "подзаголовок",
+  "benefit": "выгода из key_advantages, строго до 5 слов",
+  "cta": "короткий CTA",
+  "prompt_before": "English Flux prompt — bleak problem-state photo, no text",
+  "prompt_after": "English Flux prompt — bright success-state photo, no text"
+}`
+    : `CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE.
 
 Роль: ты — арт-директор performance-креативов для Meta Ads.
 Выбери уникальную комбинацию текстов для одного креатива и собери финальный image prompt на английском.
@@ -272,12 +328,22 @@ CRITICAL IMAGE RULE (Flux background only):
   "benefit": "выгода из key_advantages, строго до 5 слов",
   "cta": "короткий CTA",
   "image_prompt": "English visual prompt for a clean background photograph only — no text, letters, numbers, or words"
-}`,
+}`;
+
+  const completion = await getOpenAI().chat.completions.create({
+    model: "gpt-4o",
+    temperature: 0.85,
+    response_format: { type: "json_object" },
+    messages: [
+      {
+        role: "system",
+        content: systemPrompt,
       },
       {
         role: "user",
         content: JSON.stringify({
           creative_index: input.index + 1,
+          style_id: input.split ? "1" : undefined,
           style_master_prompt: input.masterPrompt,
           formatted_brief: input.brief,
           strategy: input.strategy
@@ -292,17 +358,18 @@ CRITICAL IMAGE RULE (Flux background only):
               }
             : null,
           key_advantages: input.brief?.key_advantages ?? null,
-          instruction:
-            "Make this creative visually and verbally distinct from other variants in the same batch. Prefer concrete numbers over soft adjectives. Base benefit bullets on key_advantages; max 5 words.",
+          instruction: input.split
+            ? "Return two contrasting Flux backgrounds (prompt_before vs prompt_after). No on-image text. Texts go only in headline/subheadline/benefit/cta."
+            : "Make this creative visually and verbally distinct from other variants in the same batch. Prefer concrete numbers over soft adjectives. Base benefit bullets on key_advantages; max 5 words.",
         }),
       },
     ],
   });
 
-  return parseArtDirection(completion.choices[0]?.message?.content ?? "");
+  return parseArtDirection(completion.choices[0]?.message?.content ?? "", input.split);
 }
 
-function parseArtDirection(content: string): AdCreativeTexts & { image_prompt: string } {
+function parseArtDirection(content: string, split: boolean): ArtDirection {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
@@ -316,13 +383,29 @@ function parseArtDirection(content: string): AdCreativeTexts & { image_prompt: s
   const benefit = readText(row.benefit);
   const cta = readText(row.cta);
   const imagePrompt = readText(row.image_prompt);
-  if (!headline || !imagePrompt) throw new Error("Арт-директор не собрал тексты или prompt.");
+  const promptBefore =
+    readText(row.prompt_before) || readText(row.flux_prompt_before) || (split ? "" : imagePrompt);
+  const promptAfter =
+    readText(row.prompt_after) || readText(row.flux_prompt_after) || (split ? "" : imagePrompt);
+
+  if (!headline) throw new Error("Арт-директор не собрал тексты.");
+  if (split) {
+    if (!promptBefore || !promptAfter) {
+      throw new Error("Арт-директор не собрал prompt_before / prompt_after для сплита До/После.");
+    }
+  } else if (!imagePrompt && !promptBefore) {
+    throw new Error("Арт-директор не собрал image_prompt.");
+  }
+
+  const single = imagePrompt || promptBefore;
   return {
     headline,
     subheadline: subheadline || headline,
     benefit: benefit || subheadline || headline,
     cta: cta || "Learn more",
-    image_prompt: imagePrompt,
+    image_prompt: single,
+    prompt_before: promptBefore || single,
+    prompt_after: promptAfter || single,
   };
 }
 
@@ -342,5 +425,5 @@ export function parseFormattedBriefRow(value: unknown): AdFormattedBrief | null 
 }
 
 export function resolveStyleId(value: string): StudioStyleKey | null {
-  return isStudioStyleKey(value) ? value : null;
+  return resolveStudioStyleKey(value);
 }
