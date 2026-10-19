@@ -1,31 +1,17 @@
 export const studioStyles = [
   {
     key: "before-after-vs",
-    name: "До / После (VS)",
+    name: "Сплит (До / После)",
     category: "Сплит",
     note: "Два фона: проблема слева, результат справа",
     masterPrompt: `Visual system: Before/After split ad. Two contrasting photographic backgrounds for a vertical 4:5 Meta creative. Left ("before") is bleak, problem-state, colder and darker. Right ("after") is bright, resolved, aspirational success with the product benefit implied visually — never with text. No typography, no signage, no logos with words.`,
   },
   {
     key: "split-action",
-    name: "Двусторонний сплит с акцентом",
+    name: "Split Action",
     category: "Сплит",
     note: "Два вертикальных кадра + акцентная типографика и CTA",
     masterPrompt: `Visual system: Dual vertical split-action ad. Two side-by-side photographic panels for a 4:5 Meta creative. Left and right scenes should feel like a before/after or contrast pair without any on-image text. Strong subject clarity, bold lighting contrast, no typography, no signage.`,
-  },
-  {
-    key: "dark-editorial-grid",
-    name: "Dark Editorial Grid",
-    category: "Минимализм",
-    note: "Швейцарская сетка, акцентный бейдж, холст #0A0A0A",
-    masterPrompt: `Visual system: Dark Editorial Grid. Canvas #0A0A0A, Swiss grid, thin white rules, numbered badge, high-contrast typography, asymmetric columns, editorial magazine energy. No clutter, no stock-photo clichés. Vertical 4:5 ad format.`,
-  },
-  {
-    key: "dark-luxury-minimal",
-    name: "Dark Luxury Minimal",
-    category: "Премиум",
-    note: "Монохромная глубина и ультратонкие разделители",
-    masterPrompt: `Visual system: Dark Luxury Minimal. Deep monochrome gradients, soft spotlight, ultra-thin hairline dividers, generous negative space, atelier/premium quiet luxury mood. Vertical 4:5 ad format. No busy patterns.`,
   },
 ] as const;
 
@@ -54,7 +40,7 @@ export function isDualImageStyle(styleId: string | null | undefined): boolean {
   return isSplitVsStyle(styleId) || isSplitActionStyle(styleId);
 }
 
-export const styleFilters = ["Все", "Сплит", "Премиум", "Минимализм"] as const;
+export const styleFilters = ["Все", "Сплит"] as const;
 
 export const creativeLanguages = [
   { value: "ru", label: "Русский (RU)" },

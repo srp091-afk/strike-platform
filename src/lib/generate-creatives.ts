@@ -5,6 +5,7 @@ import Replicate from "replicate";
 
 import { accentColorForPrompt, DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import type { AdCreative, AdCreativeTexts, AdFormattedBrief, AdStrategy } from "@/lib/ad-types";
+import { limitBadgeWords } from "@/lib/badge-copy";
 import { getOpenAI } from "@/lib/openai";
 import {
   isDualImageStyle,
@@ -263,6 +264,7 @@ async function composeCreative(input: {
         subheadline: art.subheadline,
         benefit: art.benefit,
         cta: art.cta,
+        badge: art.badge,
       },
       style_id: input.styleId,
       accent_color: input.accentHex,
@@ -280,6 +282,7 @@ async function composeCreative(input: {
       subheadline: art.subheadline,
       benefit: art.benefit,
       cta: art.cta,
+      badge: art.badge,
     },
     style_id: input.styleId,
     accent_color: input.accentHex,
@@ -348,6 +351,7 @@ async function directArt(input: {
   const accentRule = `Акцентный цвет рекламного макета: ${input.accentLabel} (HEX ${input.accentHex}). При генерации промпта для Flux добавляй тонкие отсветы, освещение или детали фона в этом оттенке, чтобы картинка гармонировала с версткой.`;
   const visualDiversityRule =
     "Для каждого креатива генерируй АБСОЛЮТНО НОВОЕ, уникальное визуальное описание (меняй ракурсы, освещение, атмосферу, композицию), даже если тексты повторяются. Визуал должен быть разнообразным.";
+  const badgeRule = `Поле \`badge\` — это мощный маркетинговый триггер. Возьми текст из переданного поля Спецпредложения (hook / strategy.hook_concept) и выжми из него самую суть. ЛИМИТ: от 1 до 6 слов. Примеры идеального бейджа: 'ВОЗЬМЕМ ТОЛЬКО 2 ПРОЕКТА В ЭТОМ МЕСЯЦЕ', 'СКИДКА 20% ДО ПЯТНИЦЫ', 'БЕСПЛАТНЫЙ РАСЧЕТ И КОНСУЛЬТАЦИЯ В ПОДАРОК'. Категорически запрещено вставлять туда длинные абзацы и предложения!`;
   const styleLabel = isSplitVsStyle(input.styleId)
     ? "стиль 1 — сплит До/После (VS)"
     : isSplitActionStyle(input.styleId)
@@ -360,8 +364,9 @@ async function directArt(input: {
 Роль: ты — арт-директор performance-креативов для Meta Ads (${styleLabel}).
 Собери тексты для React-шаблона и ДВА независимых Flux-промпта фона.
 ГЛОБАЛЬНОЕ ПРАВИЛО ВАЛЮТЫ: только $ / USD или €. Запрещены рубли (руб, ₽, RUB) и реалии СНГ.
-Тексты (headline/subheadline/benefit/cta) — на языке: ${language}. Они пойдут в HTML-шаблон, НЕ на картинку.
+Тексты (headline/subheadline/benefit/cta/badge) — на языке: ${language}. Они пойдут в HTML-шаблон, НЕ на картинку.
 Если в sampled_copy уже выбран headline/subheadline/bullets/button — используй их как основу (можно слегка отполировать формулировку, но смысл сохрани).
+${badgeRule}
 ${accentRule}
 ${visualDiversityRule}
 
@@ -378,6 +383,7 @@ CRITICAL IMAGE RULE:
   "subheadline": "подзаголовок",
   "benefit": "выгода, строго до 5 слов (или склейка первого буллита)",
   "cta": "короткий CTA",
+  "badge": "триггер 1-6 слов из hook",
   "prompt_before": "English Flux prompt — bleak problem-state photo, no text",
   "prompt_after": "English Flux prompt — bright success-state photo, no text"
 }`
@@ -386,8 +392,9 @@ CRITICAL IMAGE RULE:
 Роль: ты — арт-директор performance-креативов для Meta Ads.
 Выбери тексты для React-шаблона и собери финальный image prompt на английском.
 ГЛОБАЛЬНОЕ ПРАВИЛО ВАЛЮТЫ: только $ / USD или €. Запрещены рубли (руб, ₽, RUB) и реалии СНГ.
-Тексты на креативе (headline/subheadline/benefit/cta) — на языке: ${language}. Эти тексты пойдут в React-шаблон, НЕ на картинку.
+Тексты на креативе (headline/subheadline/benefit/cta/badge) — на языке: ${language}. Эти тексты пойдут в React-шаблон, НЕ на картинку.
 Если в sampled_copy уже выбран headline/subheadline/bullets/button — используй их как основу.
+${badgeRule}
 image_prompt — строго на английском, готов к Flux.1: только чистая фотография фона, без типографики.
 ${accentRule}
 ${visualDiversityRule}
@@ -395,7 +402,7 @@ ${visualDiversityRule}
 CRITICAL IMAGE RULE (Flux background only):
 - NEVER put text, letters, numbers, logos with words, watermarks, or captions in image_prompt.
 - Describe only subject, lighting, composition, mood, and camera language.
-- image_prompt MUST be English. Marketing copy lives only in headline/subheadline/benefit/cta fields.
+- image_prompt MUST be English. Marketing copy lives only in headline/subheadline/benefit/cta/badge fields.
 - Add subtle accent-color lighting / reflections (${input.accentHex}) so the photo matches the layout accent.
 
 Верни JSON:
@@ -404,6 +411,7 @@ CRITICAL IMAGE RULE (Flux background only):
   "subheadline": "подзаголовок",
   "benefit": "выгода, строго до 5 слов",
   "cta": "короткий CTA",
+  "badge": "триггер 1-6 слов из hook",
   "image_prompt": "English visual prompt for a clean background photograph only — no text, letters, numbers, or words"
 }`;
 
@@ -442,17 +450,19 @@ CRITICAL IMAGE RULE (Flux background only):
     ],
   });
 
-  const parsed = parseArtDirection(completion.choices[0]?.message?.content ?? "", input.dual);
+  const hook = input.strategy?.strategy.hook_concept?.trim() ?? "";
+  const parsed = parseArtDirection(completion.choices[0]?.message?.content ?? "", input.dual, hook);
   return {
     ...parsed,
     headline: input.sampled.headline?.trim() || parsed.headline,
     subheadline: input.sampled.subheadline?.trim() || parsed.subheadline,
     benefit: input.sampled.bullets[0]?.trim() || parsed.benefit,
     cta: input.sampled.button?.trim() || parsed.cta,
+    badge: parsed.badge || limitBadgeWords(hook) || undefined,
   };
 }
 
-function parseArtDirection(content: string, dual: boolean): ArtDirection {
+function parseArtDirection(content: string, dual: boolean, hookFallback: string): ArtDirection {
   let parsed: unknown;
   try {
     parsed = JSON.parse(content);
@@ -465,6 +475,7 @@ function parseArtDirection(content: string, dual: boolean): ArtDirection {
   const subheadline = readText(row.subheadline);
   const benefit = readText(row.benefit);
   const cta = readText(row.cta);
+  const badge = limitBadgeWords(readText(row.badge) || hookFallback);
   const imagePrompt = readText(row.image_prompt);
   const promptBefore =
     readText(row.prompt_before) || readText(row.flux_prompt_before) || (dual ? "" : imagePrompt);
@@ -486,6 +497,7 @@ function parseArtDirection(content: string, dual: boolean): ArtDirection {
     subheadline: subheadline || headline,
     benefit: benefit || subheadline || headline,
     cta: cta || "Learn more",
+    badge: badge || undefined,
     image_prompt: single,
     prompt_before: promptBefore || single,
     prompt_after: promptAfter || single,

@@ -9,11 +9,14 @@ const strategyPrompt = `Роль: Ты — легендарный direct-respons
 Входные данные:
 - brief_summary: {brief_summary}
 - formatted_brief.key_advantages (ключевые преимущества бизнеса): {key_advantages}
+- formatted_brief.offer (Спецпредложение и Триггер / УТП): {offer}
 Опирайся на key_advantages при сборке выгод (benefits) и welcome_screen_bullets.
+Поле hook_concept ОБЯЗАНО опираться на formatted_brief.offer (акция / подарок / ограничение). Сохрани смысл спецпредложения клиента.
 
 ПРАВИЛА ГЕНЕРАЦИИ (КРИТИЧЕСКИ ВАЖНО):
 1. БЛОК СТРАТЕГИИ (target_audience_insight, core_offer_angle, hook_concept):
-ЗДЕСЬ НЕТ ОГРАНИЧЕНИЙ ПО ДЛИНЕ. Пиши глубоко, развернуто и нестандартно. Вскрывай истинные, неочевидные и глубинные боли аудитории. КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНЫ ленивые отписки вроде "Они хотят надежности и доступных решений". Расписывай портрет так, будто ты психолог.
+ЗДЕСЬ НЕТ ОГРАНИЧЕНИЙ ПО ДЛИНЕ для insight и offer_angle. Пиши глубоко, развернуто и нестандартно. Вскрывай истинные, неочевидные и глубинные боли аудитории. КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНЫ ленивые отписки вроде "Они хотят надежности и доступных решений". Расписывай портрет так, будто ты психолог.
+hook_concept = «Спецпредложение и Триггер (УТП)»: возьми текст из formatted_brief.offer (последний ответ брифа про акцию/подарок/лимит) и при необходимости слегка отполируй, НЕ выдумывая новую акцию.
 
 2. ЗАГОЛОВКИ (headlines) И ПОДЗАГОЛОВКИ (subheadlines):
 - ЗАГОЛОВОК (СТРОГО до 5-6 слов): цепляет внимание, бьет в боль, вызывает острую эмоцию, интригу или дерзость.
@@ -236,12 +239,25 @@ export async function generateAdStrategy(
 
   const first = await requestStrategy(brief, formattedBrief);
   const parsed = readStrategy(first);
-  if (parsed) return parsed;
+  if (parsed) return applyOfferToHook(parsed, formattedBrief);
 
   const second = await requestStrategy(brief, formattedBrief);
   const again = readStrategy(second);
-  if (again) return again;
+  if (again) return applyOfferToHook(again, formattedBrief);
   throw new Error("Модель вернула стратегию неверной структуры.");
+}
+
+/** Force brief offer (УТП / акция) into strategy.hook_concept — DB key stays hook_concept. */
+function applyOfferToHook(strategy: AdStrategy, formattedBrief?: AdFormattedBrief | null): AdStrategy {
+  const offer = formattedBrief?.offer?.trim();
+  if (!offer) return strategy;
+  return {
+    ...strategy,
+    strategy: {
+      ...strategy.strategy,
+      hook_concept: offer,
+    },
+  };
 }
 
 export function publicModelError(error: unknown) {
@@ -254,9 +270,13 @@ async function requestStrategy(brief: string, formattedBrief?: AdFormattedBrief 
   const keyAdvantages =
     formattedBrief?.key_advantages?.trim() ||
     "Ключевые преимущества не выделены отдельно — извлеки их из brief_summary.";
+  const offer =
+    formattedBrief?.offer?.trim() ||
+    "Спецпредложение не выделено отдельно — извлеки акцию/подарок/лимит из brief_summary в hook_concept.";
   const system = strategyPrompt
     .replace("{brief_summary}", brief)
-    .replace("{key_advantages}", keyAdvantages);
+    .replace("{key_advantages}", keyAdvantages)
+    .replace("{offer}", offer);
   const userPayload = {
     brief_summary: brief,
     formatted_brief: formattedBrief
@@ -267,6 +287,8 @@ async function requestStrategy(brief: string, formattedBrief?: AdFormattedBrief 
           offer: formattedBrief.offer,
         }
       : null,
+    mapping_rule:
+      "Save the client's special offer / trigger (formatted_brief.offer) into strategy.hook_concept. Do not invent a different promo.",
   };
 
   const completion = await getOpenAI().chat.completions.create({

@@ -6,8 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState, type FocusEvent } from "react";
 import { createPortal } from "react-dom";
 
-import { Style1_VS } from "@/components/creatives/templates/Style1_VS";
-import { Style2_SplitAction } from "@/components/creatives/templates/Style2_SplitAction";
+import { CreativeRender } from "@/components/creatives/CreativeRender";
 import { RefreshCreativesDialog, type RefreshCreativesPayload } from "@/components/refresh-creatives-dialog";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/components/ui/accordion";
 import { Badge } from "@/components/ui/badge";
@@ -18,10 +17,16 @@ import { toast } from "@/components/ui/toaster";
 import { DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import { formatRuDate, toDateInputValue } from "@/lib/ad-project-media";
 import type { AdGeneration, AdStrategy } from "@/lib/ad-types";
-import { isSplitActionStyle } from "@/lib/studio-styles";
+import { limitBadgeWords } from "@/lib/badge-copy";
 import { cn } from "@/lib/utils";
+import type { CreativeTemplateProps } from "@/types/creatives";
 
 export type ProjectStatus = "ready" | "processing" | "error";
+
+type ZoomCreative = {
+  styleId: string | null;
+  props: CreativeTemplateProps;
+};
 
 export function CampaignDashboard({
   projectId,
@@ -45,7 +50,7 @@ export function CampaignDashboard({
   accentColor?: string | null;
 }) {
   const router = useRouter();
-  const [zoom, setZoom] = useState<string | null>(null);
+  const [zoom, setZoom] = useState<ZoomCreative | null>(null);
   const [name, setName] = useState(initialName);
   const [savedName, setSavedName] = useState(initialName);
   const [strategy, setStrategy] = useState<AdStrategy | null>(initialStrategy);
@@ -267,9 +272,11 @@ export function CampaignDashboard({
                       }
                     />
                     <EditableText
-                      label="Крючок"
+                      label="Спецпредложение и Триггер (УТП)"
                       value={strategy.strategy.hook_concept}
                       multiline
+                      placeholder="Укажите акцию, подарок или ограничение (например: Скидка 20% до пятницы, Возьмем 2 проекта до конца месяца)"
+                      hint="Это поле питает бейдж на креативе. Ключ в данных — hook (hook_concept)."
                       onCommit={(value) =>
                         void saveStrategy({
                           ...strategy,
@@ -507,7 +514,7 @@ export function CampaignDashboard({
         }}
         onConfirm={(payload) => void startRefresh(payload)}
       />
-      {zoom ? <ZoomImage src={zoom} onClose={() => setZoom(null)} /> : null}
+      {zoom ? <ZoomCreativeModal creative={zoom} onClose={() => setZoom(null)} /> : null}
     </div>
   );
 }
@@ -516,11 +523,15 @@ function EditableText({
   label,
   value,
   multiline = false,
+  placeholder,
+  hint,
   onCommit,
 }: {
   label: string;
   value: string;
   multiline?: boolean;
+  placeholder?: string;
+  hint?: string;
   onCommit: (value: string) => void;
 }) {
   const [draft, setDraft] = useState(value);
@@ -542,18 +553,21 @@ function EditableText({
         <textarea
           value={draft}
           rows={4}
+          placeholder={placeholder}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
-          className="w-full resize-y rounded-lg border border-zinc-800 bg-black/40 px-3 py-2 text-sm leading-6 text-zinc-200 outline-none focus:border-zinc-500"
+          className="w-full resize-y rounded-lg border border-zinc-800 bg-black/40 px-3 py-2 text-sm leading-6 text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
         />
       ) : (
         <input
           value={draft}
+          placeholder={placeholder}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commit}
-          className="w-full rounded-lg border border-zinc-800 bg-black/40 px-3 py-2 text-sm leading-6 text-zinc-200 outline-none focus:border-zinc-500"
+          className="w-full rounded-lg border border-zinc-800 bg-black/40 px-3 py-2 text-sm leading-6 text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
         />
       )}
+      {hint ? <p className="text-[11px] leading-relaxed text-zinc-500">{hint}</p> : null}
     </div>
   );
 }
@@ -657,7 +671,7 @@ function ActiveCreatives({
   strategy: AdStrategy | null;
   styleKey?: string | null;
   accentColor: string;
-  onZoom: (src: string) => void;
+  onZoom: (creative: ZoomCreative) => void;
 }) {
   const imageSets =
     generation?.imageSets?.length
@@ -675,49 +689,39 @@ function ActiveCreatives({
   const subheadlines = strategy?.creatives.subheadlines ?? [];
   const bullets = strategy?.creatives.benefits ?? [];
   const buttons = strategy?.creatives.buttons ?? [];
-  const useStyle2 = isSplitActionStyle(styleKey);
+  const hook = strategy?.strategy.hook_concept ?? "";
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       {imageSets.map((urls, index) => {
         const before = urls[0] ?? "";
         const after = urls[1] ?? urls[0] ?? "";
-        const headline = headlines[index % Math.max(headlines.length, 1)] ?? strategy?.strategy.hook_concept ?? "Оффер";
-        const subheadline =
-          subheadlines[index % Math.max(subheadlines.length, 1)] ?? strategy?.strategy.core_offer_angle ?? undefined;
-        const buttonText = buttons[index % Math.max(buttons.length, 1)] ?? "Узнать подробнее";
-        const bulletList =
-          bullets.length > 0 ? bullets : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"];
-        const badge = strategy?.strategy.hook_concept ?? "Оффер";
+        const templateProps: CreativeTemplateProps = {
+          headline: headlines[index % Math.max(headlines.length, 1)] ?? (hook || "Оффер"),
+          subheadline:
+            subheadlines[index % Math.max(subheadlines.length, 1)] ??
+            strategy?.strategy.core_offer_angle ??
+            undefined,
+          bullets: bullets.length > 0 ? bullets : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"],
+          badge: limitBadgeWords(hook) || "Оффер",
+          buttonText: buttons[index % Math.max(buttons.length, 1)] ?? "Узнать подробнее",
+          images: [before, after],
+          accentColor,
+        };
 
         return (
           <article
             key={`${generation.id}-${index}`}
             className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-black"
           >
-            {useStyle2 ? (
-              <Style2_SplitAction
-                headline={headline}
-                subheadline={subheadline}
-                bullets={bulletList}
-                badge={badge}
-                buttonText={buttonText}
-                images={[before, after]}
-                accentColor={accentColor}
-              />
-            ) : (
-              <Style1_VS
-                headline={headline}
-                subheadline={subheadline}
-                bullets={bulletList}
-                buttonText={buttonText}
-                images={[before, after]}
-                accentColor={accentColor}
-              />
-            )}
+            <CreativeRender styleId={styleKey} {...templateProps} />
             <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
               <div className="flex w-[min(16rem,80%)] flex-col gap-2">
-                <Button type="button" variant="outline" onClick={() => onZoom(after || before)}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onZoom({ styleId: styleKey ?? null, props: templateProps })}
+                >
                   <ZoomIn className="size-4" />
                   Увеличить
                 </Button>
@@ -837,7 +841,7 @@ function CopyRow({ text }: { text: string }) {
   );
 }
 
-function ZoomImage({ src, onClose }: { src: string; onClose: () => void }) {
+function ZoomCreativeModal({ creative, onClose }: { creative: ZoomCreative; onClose: () => void }) {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -854,7 +858,9 @@ function ZoomImage({ src, onClose }: { src: string; onClose: () => void }) {
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <img src={src} alt="" className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain" />
+      <div className="w-[min(90vw,calc(90vh*4/5))] overflow-hidden rounded-xl shadow-2xl">
+        <CreativeRender styleId={creative.styleId} {...creative.props} />
+      </div>
     </div>,
     document.body,
   );

@@ -4,6 +4,7 @@ import { Clock, FolderPlus, Trash2 } from "lucide-react";
 import Link from "next/link";
 import { useEffect, useState } from "react";
 
+import { CreativeRender } from "@/components/creatives/CreativeRender";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -19,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { toast } from "@/components/ui/toaster";
 import { formatRuDate } from "@/lib/ad-project-media";
-import type { AdsProjectCard } from "@/lib/ad-project-types";
+import type { AdsPreviewCreative, AdsProjectCard } from "@/lib/ad-project-types";
 
 export type { AdsProjectCard };
 
@@ -99,8 +100,13 @@ function ProjectCard({
   deleting: boolean;
   onDelete: () => void;
 }) {
-  const shown = project.previewImages.slice(0, visibleCreatives);
-  const extra = project.previewImages.length - shown.length;
+  const previewCreatives = project.previewCreatives ?? [];
+  const previewImages = project.previewImages ?? [];
+  const shown = (
+    previewCreatives.length > 0 ? previewCreatives : previewImages.map((src) => fallbackPreview(src))
+  ).slice(0, visibleCreatives);
+  const total = previewCreatives.length > 0 ? previewCreatives.length : previewImages.length;
+  const extra = total - shown.length;
 
   return (
     <Card className="flex flex-col justify-between gap-6 border-zinc-800 bg-zinc-900/40 p-5 backdrop-blur-md sm:p-6 lg:flex-row lg:items-center">
@@ -142,16 +148,27 @@ function ProjectCard({
       </div>
       {shown.length > 0 ? (
         <div className="grid grid-cols-4 gap-2 sm:flex sm:justify-end">
-          {shown.map((src, thumbIndex) => {
+          {shown.map((creative, thumbIndex) => {
             const overflow = thumbIndex === shown.length - 1 && extra > 0;
             return (
               <div
-                key={`${project.id}-${src}-${thumbIndex}`}
-                className="relative aspect-[5/6] overflow-hidden rounded-md border border-zinc-800 sm:aspect-auto sm:h-24 sm:w-24"
+                key={`${project.id}-${creative.images[0] ?? thumbIndex}-${thumbIndex}`}
+                className="relative aspect-[4/5] w-16 overflow-hidden rounded-md border border-zinc-800 sm:w-20"
               >
-                <img src={src} alt="" className="h-full w-full object-cover" />
+                <div className="pointer-events-none absolute inset-0 origin-top-left scale-[1] [&>*]:!rounded-none">
+                  <CreativeRender
+                    styleId={creative.styleKey}
+                    headline={creative.headline}
+                    subheadline={creative.subheadline}
+                    bullets={creative.bullets}
+                    badge={creative.badge}
+                    buttonText={creative.buttonText}
+                    images={creative.images}
+                    accentColor={creative.accentColor}
+                  />
+                </div>
                 {overflow ? (
-                  <span className="absolute inset-0 grid place-items-center bg-black/60 text-sm font-medium text-white">
+                  <span className="absolute inset-0 z-10 grid place-items-center bg-black/60 text-sm font-medium text-white">
                     +{extra}
                   </span>
                 ) : null}
@@ -162,4 +179,15 @@ function ProjectCard({
       ) : null}
     </Card>
   );
+}
+
+function fallbackPreview(src: string): AdsPreviewCreative {
+  return {
+    images: [src, src],
+    headline: "Оффер",
+    bullets: ["Результат"],
+    buttonText: "CTA",
+    styleKey: "before-after-vs",
+    accentColor: "#E11D48",
+  };
 }

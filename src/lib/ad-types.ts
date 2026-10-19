@@ -10,6 +10,8 @@ export interface AdCreativeTexts {
   subheadline: string;
   benefit: string;
   cta: string;
+  /** Short marketing trigger badge (1–6 words), derived from hook. */
+  badge?: string;
 }
 
 export interface AdCreative {

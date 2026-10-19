@@ -102,7 +102,12 @@ export function AdStyleStudio({
         <div className="my-4 border-t border-zinc-800/60" />
         <BriefFact label="Ключевые преимущества" value={formattedBrief?.key_advantages} pending={formattedPending} />
         <div className="my-4 border-t border-zinc-800/60" />
-        <BriefFact label="Уникальное предложение" value={formattedBrief?.offer} pending={formattedPending} />
+        <BriefFact
+          label="Спецпредложение и Триггер (УТП)"
+          value={formattedBrief?.offer}
+          pending={formattedPending}
+          hint="Акция, подарок или ограничение из последнего ответа брифа"
+        />
       </aside>
 
       <section className="grid min-w-0 gap-6 lg:col-span-8">
@@ -195,15 +200,7 @@ export function AdStyleStudio({
                 )}
                 onClick={() => setSelectedStyle(style.key)}
               >
-                {style.key === "before-after-vs" ? (
-                  <VsPreview />
-                ) : style.key === "split-action" ? (
-                  <SplitActionPreview />
-                ) : style.key === "dark-editorial-grid" ? (
-                  <EditorialPreview />
-                ) : (
-                  <LuxuryPreview />
-                )}
+                {style.key === "split-action" ? <SplitActionPreview /> : <VsPreview />}
                 <span className="block px-3 pt-3 text-sm font-medium text-white">{style.name}</span>
                 <span className="block px-3 pt-1 pb-3 text-xs text-zinc-500">{style.note}</span>
               </button>
@@ -304,41 +301,17 @@ function SplitActionPreview() {
   );
 }
 
-function EditorialPreview() {
-  return (
-    <div className="relative aspect-[4/5] overflow-hidden bg-[#0A0A0A] text-white">
-      <div className="absolute inset-3 border border-white/20" />
-      <div className="absolute top-3 bottom-3 left-[58%] border-l border-white/20" />
-      <div className="absolute top-[62%] right-3 left-3 border-t border-white/20" />
-      <span className="absolute top-6 left-6 bg-white px-1.5 py-0.5 text-[9px] font-bold tracking-[0.16em] text-black uppercase">
-        01
-      </span>
-      <div className="absolute top-[28%] right-[46%] left-6">
-        <p className="text-[10px] tracking-[0.22em] text-zinc-500 uppercase">Editorial</p>
-        <p className="mt-2 text-lg leading-none font-semibold tracking-tight">Сетка держит взгляд</p>
-      </div>
-      <div className="absolute top-6 right-6 bottom-[42%] left-[62%] bg-zinc-800" />
-      <p className="absolute right-6 bottom-6 left-6 text-[10px] tracking-wide text-zinc-400 uppercase">Оффер · 90 дней</p>
-    </div>
-  );
-}
-
-function LuxuryPreview() {
-  return (
-    <div className="relative aspect-[4/5] overflow-hidden bg-gradient-to-b from-zinc-800 via-black to-zinc-950 text-white">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,rgba(255,255,255,0.14),transparent_46%)]" />
-      <div className="absolute inset-x-7 top-8 h-px bg-white/25" />
-      <div className="absolute inset-x-7 bottom-8 h-px bg-white/25" />
-      <div className="absolute inset-x-10 top-1/2 -translate-y-1/2 text-center">
-        <p className="text-[10px] tracking-[0.32em] text-zinc-400 uppercase">Atelier</p>
-        <p className="mt-3 text-xl font-light tracking-[0.18em] text-zinc-100 uppercase">Материал</p>
-        <p className="mx-auto mt-4 h-px w-10 bg-white/40" />
-      </div>
-    </div>
-  );
-}
-
-function BriefFact({ label, value, pending }: { label: string; value?: string; pending: boolean }) {
+function BriefFact({
+  label,
+  value,
+  pending,
+  hint,
+}: {
+  label: string;
+  value?: string;
+  pending: boolean;
+  hint?: string;
+}) {
   return (
     <div>
       <p className="mb-1.5 text-xs font-bold uppercase tracking-widest text-zinc-500">{label}</p>
@@ -349,6 +322,7 @@ function BriefFact({ label, value, pending }: { label: string; value?: string; p
       ) : (
         <p className="text-sm leading-relaxed text-zinc-200">—</p>
       )}
+      {hint ? <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">{hint}</p> : null}
     </div>
   );
 }
