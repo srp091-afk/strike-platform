@@ -3,10 +3,8 @@ import "server-only";
 import { DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import { parseAdStrategy } from "@/lib/ad-strategy";
 import {
-  imageSetsFromCreativesData,
   imageSetsFromGenerationImages,
   imageUrlsFromCreativesData,
-  imageUrlsFromGenerationImages,
   isRealCreativeImageUrl,
 } from "@/lib/ad-project-media";
 import type { AdsPreviewCreative, AdsProjectCard } from "@/lib/ad-project-types";
@@ -66,8 +64,8 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
   }
 
   const projectIds = (rows ?? []).map((row) => String(row.id));
-  const activeSetsByProject = new Map<string, string[][]>();
-  const anySetsByProject = new Map<string, string[][]>();
+  /** All creative image sets per project (active + archived), newest generations first. */
+  const allSetsByProject = new Map<string, string[][]>();
 
   if (projectIds.length > 0) {
     const generations = await supabase
@@ -81,19 +79,15 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
         const projectId = String(row.project_id);
         const sets = imageSetsFromGenerationImages(row.images);
         if (sets.length === 0) continue;
-        if (!anySetsByProject.has(projectId)) {
-          anySetsByProject.set(projectId, sets);
-        }
-        if (row.is_active === true && !activeSetsByProject.has(projectId)) {
-          activeSetsByProject.set(projectId, sets);
-        }
+        const existing = allSetsByProject.get(projectId) ?? [];
+        allSetsByProject.set(projectId, existing.concat(sets));
       }
     }
   }
 
   return (rows ?? []).map((row) => {
     const id = String(row.id);
-    const generationSets = activeSetsByProject.get(id) ?? anySetsByProject.get(id) ?? [];
+    const generationSets = allSetsByProject.get(id) ?? [];
     const fromCreativesUrls = imageUrlsFromCreativesData(row.creatives_data);
     const fromGenerationUrls = generationSets.flat();
     const previewImages = fromGenerationUrls.length > 0 ? fromGenerationUrls : fromCreativesUrls;
@@ -120,12 +114,15 @@ function buildPreviewCreatives(row: ProjectRow, generationSets: string[][]): Ads
     typeof row.style_key === "string" && row.style_key.trim() ? row.style_key.trim() : SPLIT_VS_STYLE_KEY;
   const accentColor = resolveAccentHex(row.accent_color, DEFAULT_ACCENT_COLOR);
   const strategy = parseAdStrategy(row.strategy_data);
-  const fromData = previewFromCreativesData(row.creatives_data, styleKey, accentColor, strategy);
-  if (fromData.length > 0) return fromData.slice(0, 6);
 
-  const creativeSets =
-    generationSets.length > 0 ? generationSets : imageSetsFromCreativesData(row.creatives_data);
-  return creativeSets.slice(0, 6).map((images, index) => previewFromStrategy(images, index, styleKey, accentColor, strategy));
+  // Prefer all generation sets (active + archived, already newest-first).
+  if (generationSets.length > 0) {
+    return generationSets.map((images, index) =>
+      previewFromStrategy(images, index, styleKey, accentColor, strategy),
+    );
+  }
+
+  return previewFromCreativesData(row.creatives_data, styleKey, accentColor, strategy);
 }
 
 function previewFromCreativesData(

@@ -24,7 +24,7 @@ import type { AdsPreviewCreative, AdsProjectCard } from "@/lib/ad-project-types"
 
 export type { AdsProjectCard };
 
-const visibleCreatives = 6;
+const visibleCreatives = 5;
 
 export function AdsProjectsList({
   initialProjects,
@@ -168,7 +168,7 @@ function ProjectCard({
                   />
                 </div>
                 {overflow ? (
-                  <span className="absolute inset-0 z-10 grid place-items-center bg-black/60 text-sm font-medium text-white">
+                  <span className="absolute inset-0 z-10 grid place-items-center bg-black/70 text-base font-semibold tracking-tight text-white backdrop-blur-[2px]">
                     +{extra}
                   </span>
                 ) : null}

@@ -276,7 +276,7 @@ export function CampaignDashboard({
                       value={strategy.strategy.hook_concept}
                       multiline
                       placeholder="Укажите акцию, подарок или ограничение (например: Скидка 20% до пятницы, Возьмем 2 проекта до конца месяца)"
-                      hint="Это поле питает бейдж на креативе. Ключ в данных — hook (hook_concept)."
+                      hint="Коротко опишите вашу акцию, дедлайн или бонус. Нейросеть автоматически сожмет этот текст до яркого триггера (до 6 слов) и разместит на акцентной плашке креатива для привлечения внимания."
                       onCommit={(value) =>
                         void saveStrategy({
                           ...strategy,
@@ -467,12 +467,13 @@ export function CampaignDashboard({
               {refreshing ? (
                 <CreativeSkeletons />
               ) : (
-                <ActiveCreatives
+                <CreativesGrid
                   generation={activeGeneration}
                   strategy={strategy}
                   styleKey={styleKey}
                   accentColor={accentColor}
                   onZoom={setZoom}
+                  emptyText="Активных креативов пока нет."
                 />
               )}
             </TabsContent>
@@ -481,23 +482,14 @@ export function CampaignDashboard({
                 <EmptyPanel text="Архив генераций пуст." />
               ) : (
                 archivedGenerations.map((generation) => (
-                  <div
+                  <ArchiveGenerationFolder
                     key={generation.id}
-                    className="flex items-center gap-3 rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-3"
-                  >
-                    <Folder className="size-5 shrink-0 text-zinc-300" />
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm text-zinc-200">
-                        {generation.title} ({generation.style_name})
-                      </p>
-                      <p className="mt-0.5 text-xs text-zinc-500">
-                        {formatCreated(generation.created_at)} · {imageCountLabel(generation.images.length)}
-                      </p>
-                    </div>
-                    <Button type="button" variant="outline" onClick={() => toast.success("Папка откроется в следующей версии")}>
-                      Открыть
-                    </Button>
-                  </div>
+                    generation={generation}
+                    strategy={strategy}
+                    styleKey={styleKey}
+                    accentColor={accentColor}
+                    onZoom={setZoom}
+                  />
                 ))
               )}
             </TabsContent>
@@ -660,18 +652,73 @@ function EditableRow({
   );
 }
 
-function ActiveCreatives({
+function ArchiveGenerationFolder({
   generation,
   strategy,
   styleKey,
   accentColor,
   onZoom,
 }: {
+  generation: AdGeneration;
+  strategy: AdStrategy | null;
+  styleKey?: string | null;
+  accentColor: string;
+  onZoom: (creative: ZoomCreative) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const creativeCount = generation.imageSets?.length
+    ? generation.imageSets.length
+    : generation.images.length;
+
+  return (
+    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <Folder className="size-5 shrink-0 text-zinc-300" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm text-zinc-200">
+            {generation.title} ({generation.style_name})
+          </p>
+          <p className="mt-0.5 text-xs text-zinc-500">
+            {formatCreated(generation.created_at)} · {imageCountLabel(creativeCount)}
+          </p>
+        </div>
+        <Button type="button" variant="outline" onClick={() => setOpen((value) => !value)}>
+          {open ? "Свернуть" : "Открыть"}
+        </Button>
+      </div>
+      {open ? (
+        <div className="border-t border-zinc-800 px-4 py-4">
+          <CreativesGrid
+            generation={generation}
+            strategy={strategy}
+            styleKey={styleKey}
+            accentColor={accentColor}
+            onZoom={onZoom}
+            readOnly
+            emptyText="В этой папке нет креативов."
+          />
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CreativesGrid({
+  generation,
+  strategy,
+  styleKey,
+  accentColor,
+  onZoom,
+  readOnly = false,
+  emptyText = "Креативов пока нет.",
+}: {
   generation: AdGeneration | null;
   strategy: AdStrategy | null;
   styleKey?: string | null;
   accentColor: string;
   onZoom: (creative: ZoomCreative) => void;
+  readOnly?: boolean;
+  emptyText?: string;
 }) {
   const imageSets =
     generation?.imageSets?.length
@@ -681,8 +728,8 @@ function ActiveCreatives({
         : [];
 
   if (!generation || imageSets.length === 0) {
-    if (generation?.status === "processing") return <CreativeSkeletons />;
-    return <EmptyPanel text="Активных креативов пока нет." />;
+    if (!readOnly && generation?.status === "processing") return <CreativeSkeletons />;
+    return <EmptyPanel text={emptyText} />;
   }
 
   const headlines = strategy?.creatives.headlines ?? [];
@@ -725,14 +772,16 @@ function ActiveCreatives({
                   <ZoomIn className="size-4" />
                   Увеличить
                 </Button>
-                <Button
-                  type="button"
-                  className="bg-white text-black hover:bg-zinc-200 hover:shadow-none"
-                  onClick={() => toast.success("Перегенерация в разработке")}
-                >
-                  <RefreshCw className="size-4" />
-                  Перегенерировать (1 токен)
-                </Button>
+                {!readOnly ? (
+                  <Button
+                    type="button"
+                    className="bg-white text-black hover:bg-zinc-200 hover:shadow-none"
+                    onClick={() => toast.success("Перегенерация в разработке")}
+                  >
+                    <RefreshCw className="size-4" />
+                    Перегенерировать (1 токен)
+                  </Button>
+                ) : null}
               </div>
             </div>
           </article>
