@@ -56,11 +56,14 @@ export function ChatInbox({
   const [messages, setMessages] = useState(initialMessages);
   const [selectedId, setSelectedId] = useState(initialSelectedId);
   const [error, setError] = useState(loadError);
-  const [pending, setPending] = useState(false);
+  const [botSaving, setBotSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [query, setQuery] = useState("");
   const removedRef = useRef(new Set<string>());
+  /** Optimistic botActive overrides that polls must not clobber until the server catches up. */
+  const botOverrideRef = useRef<Map<string, boolean>>(new Map());
+  const toggleSeqRef = useRef(0);
   const agentIdRef = useRef(agentId);
   agentIdRef.current = agentId;
 
@@ -99,9 +102,23 @@ export function ChatInbox({
     };
   }, [agentId, selectedId]);
 
+  function withBotOverrides(list: ChatThread[]) {
+    const overrides = botOverrideRef.current;
+    if (overrides.size === 0) return list;
+    return list.map((thread) => {
+      const override = overrides.get(thread.id);
+      if (override === undefined) return thread;
+      if (thread.botActive === override) {
+        overrides.delete(thread.id);
+        return thread;
+      }
+      return { ...thread, botActive: override };
+    });
+  }
+
   function applyInbox(payload: InboxPayload, conversationId: string | null) {
     const nextThreads = payload.conversations
-      ? payload.conversations.filter((thread) => !removedRef.current.has(thread.id))
+      ? withBotOverrides(payload.conversations.filter((thread) => !removedRef.current.has(thread.id)))
       : null;
     if (nextThreads) setThreads(nextThreads);
     const visible = conversationId && nextThreads ? nextThreads.some((thread) => thread.id === conversationId) : Boolean(conversationId);
@@ -128,7 +145,9 @@ export function ChatInbox({
 
     try {
       const payload = await fetchInbox(nextAgentId, nextSelected);
-      const nextThreads = (payload.conversations ?? []).filter((thread) => !removedRef.current.has(thread.id));
+      const nextThreads = withBotOverrides(
+        (payload.conversations ?? []).filter((thread) => !removedRef.current.has(thread.id)),
+      );
       setThreads(nextThreads);
       if (nextSelected && nextThreads.some((thread) => thread.id === nextSelected)) {
         setMessages(payload.messages ?? []);
@@ -157,19 +176,42 @@ export function ChatInbox({
   }
 
   async function toggleBot(active: boolean) {
-    if (!selected) return;
+    if (!selected || deleting) return;
+    const conversationId = selected.id;
     const previous = selected.botActive;
+    if (previous === active) return;
+
+    const seq = ++toggleSeqRef.current;
+    botOverrideRef.current.set(conversationId, active);
     setThreads((current) =>
-      current.map((thread) => (thread.id === selected.id ? { ...thread, botActive: active } : thread)),
+      current.map((thread) => (thread.id === conversationId ? { ...thread, botActive: active } : thread)),
     );
-    setPending(true);
-    const result = await setChatBotActive(selected.id, active);
-    setPending(false);
-    if (!result.ok) {
+    setBotSaving(true);
+    setError(null);
+
+    try {
+      const result = await setChatBotActive(conversationId, active);
+      if (seq !== toggleSeqRef.current) return;
+      if (!result.ok) {
+        botOverrideRef.current.set(conversationId, previous);
+        setThreads((current) =>
+          current.map((thread) =>
+            thread.id === conversationId ? { ...thread, botActive: previous } : thread,
+          ),
+        );
+        setError(result.error);
+      }
+    } catch (failure) {
+      if (seq !== toggleSeqRef.current) return;
+      botOverrideRef.current.set(conversationId, previous);
       setThreads((current) =>
-        current.map((thread) => (thread.id === selected.id ? { ...thread, botActive: previous } : thread)),
+        current.map((thread) =>
+          thread.id === conversationId ? { ...thread, botActive: previous } : thread,
+        ),
       );
-      setError(result.error);
+      setError(failure instanceof Error ? failure.message : "Не удалось переключить агента.");
+    } finally {
+      if (seq === toggleSeqRef.current) setBotSaving(false);
     }
   }
 
@@ -268,9 +310,11 @@ export function ChatInbox({
                     ИИ-агент активен
                     <Switch
                       checked={selected.botActive}
-                      disabled={pending || deleting}
+                      disabled={deleting}
                       onCheckedChange={(checked) => void toggleBot(checked)}
+                      aria-busy={botSaving}
                       aria-label="ИИ-агент активен"
+                      className={cn(botSaving && "opacity-70")}
                     />
                   </label>
                   <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

@@ -11,7 +11,7 @@ export async function deleteChat(conversationId: string) {
 }
 
 export async function setChatBotActive(conversationId: string, active: boolean) {
-  const result = await setConversationBotActive(conversationId, active);
-  if (result.ok) revalidatePath("/chats");
-  return result;
+  // Do not revalidatePath here: a full /chats refresh races the optimistic Switch
+  // and the 4s inbox poll, making the toggle feel sticky / needing two clicks.
+  return setConversationBotActive(conversationId, active);
 }

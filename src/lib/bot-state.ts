@@ -65,9 +65,10 @@ export async function writeBotFlag(
   active: boolean,
 ) {
   const until = active ? null : handoffPauseUntil("forever");
+  // Single round-trip: pause column + legacy flag together when both exist.
   const update = await supabase
     .from("conversations")
-    .update({ bot_paused_until: until })
+    .update({ bot_paused_until: until, is_bot_active: active })
     .eq("id", conversationId)
     .eq("user_id", userId)
     .select("id")
@@ -75,15 +76,30 @@ export async function writeBotFlag(
 
   if (!update.error) {
     if (!update.data) return { ok: false as const, error: "Диалог не найден." };
-    await supabase
-      .from("conversations")
-      .update({ is_bot_active: active })
-      .eq("id", conversationId)
-      .eq("user_id", userId);
     return { ok: true as const };
   }
 
-  if (!isMissingColumn(update.error.message, "bot_paused_until")) {
+  if (
+    isMissingColumn(update.error.message, "bot_paused_until") ||
+    isMissingColumn(update.error.message, "is_bot_active")
+  ) {
+    const onlyPause = await supabase
+      .from("conversations")
+      .update({ bot_paused_until: until })
+      .eq("id", conversationId)
+      .eq("user_id", userId)
+      .select("id")
+      .maybeSingle();
+
+    if (!onlyPause.error) {
+      if (!onlyPause.data) return { ok: false as const, error: "Диалог не найден." };
+      return { ok: true as const };
+    }
+
+    if (!isMissingColumn(onlyPause.error.message, "bot_paused_until")) {
+      return { ok: false as const, error: onlyPause.error.message };
+    }
+  } else {
     return { ok: false as const, error: update.error.message };
   }
 
