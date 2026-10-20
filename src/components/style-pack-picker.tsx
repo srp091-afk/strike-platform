@@ -3,8 +3,10 @@
 import { Plus, X } from "lucide-react";
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
+import { CreativeRender } from "@/components/creatives/CreativeRender";
 import { StudioStylePreview } from "@/components/studio-style-preview";
 import type { CreativeTemplate } from "@/lib/creative-templates";
+import { UNIVERSAL_PREVIEW_CONCEPT } from "@/lib/preview-concept";
 import { cn } from "@/lib/utils";
 
 /**
@@ -21,6 +23,7 @@ export function StylePackPicker({
   selectedStyles,
   onChange,
   disabled = false,
+  accentColor,
 }: {
   templates: CreativeTemplate[];
   quantity: number;
@@ -28,6 +31,8 @@ export function StylePackPicker({
   selectedStyles: string[];
   onChange: (next: string[]) => void;
   disabled?: boolean;
+  /** User accent from wizard state; live previews recolor to it. */
+  accentColor?: string;
 }) {
   const [category, setCategory] = useState("Все");
 
@@ -147,12 +152,22 @@ export function StylePackPicker({
               )}
               onClick={() => onCardClick(template.id)}
             >
-              {template.preview_url ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={template.preview_url} alt="" draggable={false} className="aspect-[4/5] w-full object-cover" />
-              ) : (
-                <StudioStylePreview styleId={template.id} />
-              )}
+              {/* Live component rendering: the real creative template at
+                  1080×1350, scaled into the 300px card. CreativeWrapper
+                  applies transform: scale(cardWidth / 1080) with
+                  transform-origin: top left, measured live. */}
+              <div className="pointer-events-none relative w-full overflow-hidden">
+                <CreativeRender
+                  styleId={template.id}
+                  headline={UNIVERSAL_PREVIEW_CONCEPT.headline}
+                  subheadline={UNIVERSAL_PREVIEW_CONCEPT.subheadline}
+                  bullets={UNIVERSAL_PREVIEW_CONCEPT.bullets}
+                  badge={UNIVERSAL_PREVIEW_CONCEPT.badge}
+                  buttonText={UNIVERSAL_PREVIEW_CONCEPT.cta}
+                  images={UNIVERSAL_PREVIEW_CONCEPT.image_urls}
+                  accentColor={accentColor || UNIVERSAL_PREVIEW_CONCEPT.accent_color}
+                />
+              </div>
 
               {selected ? (
                 <span className="absolute top-3 left-3 z-10 rounded-full bg-primary px-2.5 py-1 text-[11px] font-bold text-white shadow-lg">

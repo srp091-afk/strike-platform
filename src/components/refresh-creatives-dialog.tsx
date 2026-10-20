@@ -212,6 +212,7 @@ export function RefreshCreativesDialog({
                 selectedStyles={selectedStyles}
                 onChange={setSelectedStyles}
                 disabled={pending}
+                accentColor={accentColor}
               />
             )}
           </div>
