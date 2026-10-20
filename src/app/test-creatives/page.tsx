@@ -2,6 +2,9 @@ import type { Metadata } from "next";
 
 import { Style1_VS } from "@/components/creatives/templates/Style1_VS";
 import { Style2_SplitAction } from "@/components/creatives/templates/Style2_SplitAction";
+import { Style3_PremiumDark } from "@/components/creatives/templates/Style3_PremiumDark";
+import { Style4_SideFade } from "@/components/creatives/templates/Style4_SideFade";
+import { Style5_EditorialBlock } from "@/components/creatives/templates/Style5_EditorialBlock";
 import { Style6_Glass } from "@/components/creatives/templates/Style6_Glass";
 import type { CreativeTemplateProps } from "@/types/creatives";
 
@@ -32,6 +35,38 @@ const mockSplitAction: CreativeTemplateProps = {
     "https://images.unsplash.com/photo-1517836357463-d25dfeac3438?auto=format&fit=crop&w=1080&h=1350&q=80",
   ],
   accentColor: "#FFE600",
+};
+
+const mockSingleImage =
+  "https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?auto=format&fit=crop&w=1080&h=1350&q=80";
+
+const mockPremiumDark: CreativeTemplateProps = {
+  headline: "Сильное тело без хаоса",
+  subheadline: "Персональная программа и контроль тренера",
+  badge: "Первый разбор — в подарок",
+  bullets: ["План под ваш график", "Контроль техники", "Питание без жёстких диет"],
+  buttonText: "Получить программу",
+  images: [mockSingleImage],
+  accentColor: "#E11D48",
+};
+
+const mockSideFade: CreativeTemplateProps = {
+  headline: "Заявки каждый день",
+  subheadline: "Система, которая не зависит от сарафана",
+  bullets: ["Чёткий оффер", "Контроль CPL", "Масштаб без хаоса", "Прозрачная аналитика"],
+  buttonText: "Хочу систему",
+  images: [mockSingleImage],
+  accentColor: "#FFE600",
+};
+
+const mockEditorial: CreativeTemplateProps = {
+  headline: "Ремонт без нервов",
+  subheadline: "Смета и сроки зафиксированы в договоре",
+  badge: "Скидка 20% до пятницы",
+  bullets: ["Смета за 24 часа", "Срок в договоре", "Гарантия 3 года", "Фотоотчёты weekly"],
+  buttonText: "Рассчитать",
+  images: [mockSingleImage],
+  accentColor: "#F97316",
 };
 
 const mockGlass: CreativeTemplateProps = {
@@ -73,6 +108,24 @@ export default function TestCreativesPage() {
             Style 2 — Split Action
           </h2>
           <Style2_SplitAction {...mockSplitAction} />
+        </section>
+        <section className="grid gap-4">
+          <h2 className="font-montserrat text-sm font-semibold tracking-wide text-zinc-300 uppercase">
+            Style 3 — Premium Dark
+          </h2>
+          <Style3_PremiumDark {...mockPremiumDark} />
+        </section>
+        <section className="grid gap-4">
+          <h2 className="font-montserrat text-sm font-semibold tracking-wide text-zinc-300 uppercase">
+            Style 4 — Side Fade
+          </h2>
+          <Style4_SideFade {...mockSideFade} />
+        </section>
+        <section className="grid gap-4">
+          <h2 className="font-montserrat text-sm font-semibold tracking-wide text-zinc-300 uppercase">
+            Style 5 — Editorial Block
+          </h2>
+          <Style5_EditorialBlock {...mockEditorial} />
         </section>
         <section className="grid gap-4">
           <h2 className="font-montserrat text-sm font-semibold tracking-wide text-zinc-300 uppercase">

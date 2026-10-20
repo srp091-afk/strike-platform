@@ -10,9 +10,13 @@ import { persistCreativeImage } from "@/lib/creative-storage";
 import { getOpenAI } from "@/lib/openai";
 import {
   isDualImageStyle,
+  isEditorialBlockStyle,
+  isPremiumDarkStyle,
+  isSideFadeStyle,
   isSplitActionStyle,
   isSplitVsStyle,
   resolveStudioStyleKey,
+  studioStyleNumericId,
   studioStyles,
   type CreativeLanguage,
   type StudioStyleKey,
@@ -275,6 +279,7 @@ async function composeCreative(input: {
     };
   }
 
+  // Single-image styles (3, 4, 5): exactly one Flux call, images = [url].
   const imageUrl = await generateImage(art.image_prompt);
   return {
     id: randomUUID(),
@@ -357,10 +362,16 @@ async function directArt(input: {
     "Для каждого креатива генерируй АБСОЛЮТНО НОВОЕ, уникальное визуальное описание (меняй ракурсы, освещение, атмосферу, композицию), даже если тексты повторяются. Визуал должен быть разнообразным.";
   const badgeRule = `Поле \`badge\` — это мощный маркетинговый триггер. Возьми текст из переданного поля Спецпредложения (hook / strategy.hook_concept) и выжми из него самую суть. ЛИМИТ: от 1 до 6 слов. Примеры идеального бейджа: 'ВОЗЬМЕМ ТОЛЬКО 2 ПРОЕКТА В ЭТОМ МЕСЯЦЕ', 'СКИДКА 20% ДО ПЯТНИЦЫ', 'БЕСПЛАТНЫЙ РАСЧЕТ И КОНСУЛЬТАЦИЯ В ПОДАРОК'. Категорически запрещено вставлять туда длинные абзацы и предложения!`;
   const styleLabel = isSplitVsStyle(input.styleId)
-    ? "стиль 1 — сплит До/После (VS)"
+    ? "стиль 1 — сплит До/После (VS), 2 картинки"
     : isSplitActionStyle(input.styleId)
-      ? "стиль 2 — двусторонний сплит с акцентом"
-      : "стандартный стиль";
+      ? "стиль 2 — двусторонний сплит с акцентом, 2 картинки"
+      : isPremiumDarkStyle(input.styleId)
+        ? "стиль 3 — Premium Dark, 1 картинка на весь экран"
+        : isSideFadeStyle(input.styleId)
+          ? "стиль 4 — Side Fade, 1 картинка, текст слева"
+          : isEditorialBlockStyle(input.styleId)
+            ? "стиль 5 — Editorial Block, 1 картинка в правой колонке"
+            : "одиночный стиль, 1 картинка";
 
   const systemPrompt = input.dual
     ? `CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE.
@@ -393,20 +404,20 @@ CRITICAL IMAGE RULE:
 }`
     : `CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE.
 
-Роль: ты — арт-директор performance-креативов для Meta Ads.
-Выбери тексты для React-шаблона и собери финальный image prompt на английском.
+Роль: ты — арт-директор performance-креативов для Meta Ads (${styleLabel}).
+Выбери тексты для React-шаблона и собери ОДИН финальный flux_prompt на английском. Это одиночный стиль: ровно одна картинка, без prompt_before/prompt_after.
 ГЛОБАЛЬНОЕ ПРАВИЛО ВАЛЮТЫ: только $ / USD или €. Запрещены рубли (руб, ₽, RUB) и реалии СНГ.
 Тексты на креативе (headline/subheadline/benefit/cta/badge) — на языке: ${language}. Эти тексты пойдут в React-шаблон, НЕ на картинку.
 Если в sampled_copy уже выбран headline/subheadline/bullets/button — используй их как основу.
 ${badgeRule}
-image_prompt — строго на английском, готов к Flux.1: только чистая фотография фона, без типографики.
+flux_prompt — строго на английском, готов к Flux.1: только чистая фотография фона, без типографики.
 ${accentRule}
 ${visualDiversityRule}
 
 CRITICAL IMAGE RULE (Flux background only):
-- NEVER put text, letters, numbers, logos with words, watermarks, or captions in image_prompt.
+- NEVER put text, letters, numbers, logos with words, watermarks, or captions in flux_prompt.
 - Describe only subject, lighting, composition, mood, and camera language.
-- image_prompt MUST be English. Marketing copy lives only in headline/subheadline/benefit/cta/badge fields.
+- flux_prompt MUST be English. Marketing copy lives only in headline/subheadline/benefit/cta/badge fields.
 - Add subtle accent-color lighting / reflections (${input.accentHex}) so the photo matches the layout accent.
 
 Верни JSON:
@@ -416,7 +427,7 @@ CRITICAL IMAGE RULE (Flux background only):
   "benefit": "выгода, строго до 5 слов",
   "cta": "короткий CTA",
   "badge": "триггер 1-6 слов из hook",
-  "image_prompt": "English visual prompt for a clean background photograph only — no text, letters, numbers, or words"
+  "flux_prompt": "Single English visual prompt for a clean background photograph only — no text, letters, numbers, or words"
 }`;
 
   const completion = await getOpenAI().chat.completions.create({
@@ -432,7 +443,7 @@ CRITICAL IMAGE RULE (Flux background only):
         role: "user",
         content: JSON.stringify({
           creative_index: input.index + 1,
-          style_id: isSplitVsStyle(input.styleId) ? "1" : isSplitActionStyle(input.styleId) ? "2" : input.styleId,
+          style_id: studioStyleNumericId(input.styleId),
           style_master_prompt: input.masterPrompt,
           formatted_brief: input.brief,
           sampled_copy: input.sampled,
@@ -448,7 +459,7 @@ CRITICAL IMAGE RULE (Flux background only):
           accent_hex: input.accentHex,
           instruction: input.dual
             ? "Use sampled_copy texts. Return two contrasting Flux backgrounds (prompt_before vs prompt_after). Absolutely unique visual description for this creative_index. No on-image text."
-            : "Use sampled_copy texts. Absolutely unique visual description for this creative_index even if copy repeats. Reflect accent color in lighting.",
+            : "Use sampled_copy texts. Return exactly ONE flux_prompt (single image). Absolutely unique visual description for this creative_index even if copy repeats. Reflect accent color in lighting.",
         }),
       },
     ],
@@ -480,7 +491,7 @@ function parseArtDirection(content: string, dual: boolean, hookFallback: string)
   const benefit = readText(row.benefit);
   const cta = readText(row.cta);
   const badge = limitBadgeWords(readText(row.badge) || hookFallback);
-  const imagePrompt = readText(row.image_prompt);
+  const imagePrompt = readText(row.image_prompt) || readText(row.flux_prompt);
   const promptBefore =
     readText(row.prompt_before) || readText(row.flux_prompt_before) || (dual ? "" : imagePrompt);
   const promptAfter =
