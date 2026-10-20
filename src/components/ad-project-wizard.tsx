@@ -50,7 +50,6 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   const [chatError, setChatError] = useState<string | null>(null);
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
-  const [suggestionClicks, setSuggestionClicks] = useState(0);
   // Real-time pool filtering: chips already present in the draft (exact
   // duplicates) and semantic competitors of picked values (same stem
   // category — гарантия/скидка/рассрочка/опыт/…) disappear instantly.
@@ -189,7 +188,6 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     setDraft("");
     setSuggestions([]);
     setSuggestionsLoading(false);
-    setSuggestionClicks(0);
     setSending(true);
     setChatError(null);
 
@@ -240,10 +238,9 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
 
   function appendSuggestion(suggestion: string) {
     const nextDraft = joinDraft(draft, suggestion);
-    const nextClicks = suggestionClicks + 1;
     setDraft(nextDraft);
-    setSuggestionClicks(nextClicks);
-    if (suggestionClicks >= 10) return;
+    // No click cap: the suggestion pool must keep regenerating fresh,
+    // non-conflicting variants for as long as the user keeps picking.
     void refreshSuggestions(nextDraft);
   }
 

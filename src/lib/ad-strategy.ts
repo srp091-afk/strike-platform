@@ -93,7 +93,9 @@ const strategySchema = {
     creatives: {
       type: "object",
       additionalProperties: false,
-      required: ["headlines", "subheadlines", "benefits", "buttons"],
+      // Strict json_schema: `required` must list EVERY key of `properties`
+      // (OpenAI rejects the schema otherwise — "Missing 'badges'").
+      required: ["headlines", "subheadlines", "benefits", "buttons", "badges"],
       properties: {
         headlines: stringList(5),
         subheadlines: stringList(5),

@@ -10,6 +10,20 @@
  * with different numbers/units still collide within their category.
  */
 
+/** Human-readable category names (used in the suggestions prompt). */
+export const SUGGESTION_CATEGORY_LABELS: Record<string, string> = {
+  guarantee: "гарантии (любой срок/цифра гарантии)",
+  discount: "скидки и акции",
+  installment: "рассрочка и оплата частями",
+  experience: "опыт, стаж, годы на рынке",
+  delivery: "доставка и сроки поставки",
+  production: "собственное производство",
+  contract: "работа по договору",
+  deadline: "сроки и дедлайны",
+  price: "цены и стоимость",
+  support: "поддержка и сервис",
+};
+
 const CATEGORY_STEMS: Record<string, string[]> = {
   guarantee: ["гарант", "warrant", "guarantee"],
   discount: ["скид", "акци", "discount"],
