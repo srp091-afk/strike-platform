@@ -404,7 +404,9 @@ async function directArt(input: {
       : "";
   const nicheSingleRule = isPremiumDarkStyle(input.styleId)
     ? `\n\nCONTEXTUAL PREMIUM RULE (style 3, Premium Dark): build flux_prompt around the client's niche as the hero subject, following this exact frame: "Premium, cinematic, dark moody photography of ${niche}. Highly detailed, 8k, architectural digest style. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only." Darken the lower part of the scene for typography. NEVER substitute a generic scene that is unrelated to ${niche}.`
-    : "";
+    : isEditorialBlockStyle(input.styleId)
+      ? `\n\nCONTEXTUAL EDITORIAL RULE (style 5, Editorial Block): build flux_prompt around the client's niche as the subject, following this exact frame: "Clean, bright, professional photography of ${niche}. Editorial magazine style, highly detailed. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only." Bright clean composition with one clear subject, suitable for a side panel crop. NEVER substitute a generic scene that is unrelated to ${niche}.`
+      : "";
   const accentRule = `Акцентный цвет рекламного макета: ${input.accentLabel} (HEX ${input.accentHex}). При генерации промпта для Flux добавляй тонкие отсветы, освещение или детали фона в этом оттенке, чтобы картинка гармонировала с версткой.`;
   const visualDiversityRule =
     "Для каждого креатива генерируй АБСОЛЮТНО НОВОЕ, уникальное визуальное описание (меняй ракурсы, освещение, атмосферу, композицию), даже если тексты повторяются. Визуал должен быть разнообразным.";
@@ -535,7 +537,12 @@ CRITICAL IMAGE RULE (Flux background only):
             const single = `Premium, cinematic, dark moody photography of ${niche}. Highly detailed, 8k, architectural digest style. ${parsed.image_prompt} CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`;
             return { image_prompt: single, prompt_before: single, prompt_after: single };
           })()
-        : {};
+        : isEditorialBlockStyle(input.styleId)
+          ? (() => {
+              const single = `Clean, bright, professional photography of ${niche}. Editorial magazine style, highly detailed. ${parsed.image_prompt} CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`;
+              return { image_prompt: single, prompt_before: single, prompt_after: single };
+            })()
+          : {};
   return {
     ...parsed,
     ...framed,

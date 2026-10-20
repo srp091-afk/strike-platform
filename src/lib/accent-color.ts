@@ -64,6 +64,17 @@ export function accentColorForPrompt(value: string | null | undefined): string {
   return trimmed;
 }
 
+/** Contrast text color on an accent background: dark on bright accents, white on dark ones. */
+export function accentTextColor(hex: string): string {
+  const normalized = normalizeAccentHex(hex) ?? DEFAULT_ACCENT_COLOR;
+  const value = parseInt(normalized.slice(1), 16);
+  const r = (value >> 16) & 255;
+  const g = (value >> 8) & 255;
+  const b = value & 255;
+  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
+  return luminance > 0.55 ? "#000000" : "#ffffff";
+}
+
 export function withAccentAlpha(hex: string, alpha: number): string {
   const normalized = resolveAccentHex(hex);
   const raw = normalized.slice(1);

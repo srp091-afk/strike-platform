@@ -32,7 +32,7 @@ export const studioStyles = [
     name: "Editorial Block",
     category: "Минимализм",
     note: "Чёрный текстовый блок + фото, белая полоса выгод и акцентный подвал",
-    masterPrompt: `Visual system: Editorial Block ad. One clean photographic image for a vertical 4:5 Meta creative, editorial composition with a clear single subject that also reads well cropped into a side panel. No typography, no signage, no logos with words.`,
+    masterPrompt: `Visual system: Editorial Block ad. Clean, bright, professional photography of the client's niche (formatted_brief.product) — the niche is the mandatory subject. Editorial magazine style, highly detailed, one clean photographic image for a vertical 4:5 Meta creative with a clear single subject that also reads well cropped into a side panel. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only, no signage, no logos with words.`,
   },
 ] as const;
 

@@ -1,21 +1,9 @@
 import { ShieldCheck } from "lucide-react";
 
 import { CreativeWrapper } from "@/components/creatives/CreativeWrapper";
-import { DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
+import { accentTextColor, DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import { headlineFontClass } from "@/lib/studio-styles";
 import type { CreativeTemplateProps } from "@/types/creatives";
-
-/** Contrast text color for an accent plate: dark on bright accents, white on dark ones. */
-function accentTextColor(hex: string): string {
-  const match = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
-  if (!match) return "#000000";
-  const value = parseInt(match[1]!, 16);
-  const r = (value >> 16) & 255;
-  const g = (value >> 8) & 255;
-  const b = value & 255;
-  const luminance = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-  return luminance > 0.55 ? "#000000" : "#ffffff";
-}
 
 export function Style3_PremiumDark({
   headline,

@@ -71,6 +71,7 @@ const mockEditorial: CreativeTemplateProps = {
   subheadline: "Смета и сроки зафиксированы в договоре",
   badge: "Скидка 20% до пятницы",
   bullets: ["Смета за 24 часа", "Срок в договоре", "Гарантия 3 года", "Фотоотчёты weekly"],
+  fontStyle: "ultra",
   buttonText: "Рассчитать",
   images: [mockSingleImage],
   accentColor: "#F97316",
