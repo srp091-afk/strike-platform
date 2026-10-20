@@ -11,10 +11,9 @@ import JSZip from "jszip";
 /**
  * html-to-image@1.11 has no literal `useCORS` option; CORS is enabled by
  * requesting images with `mode: "cors"` (the library also loads <img> with
- * crossOrigin="anonymous"). Keep pixelRatio at 2 for a crisp 2x PNG.
+ * crossOrigin="anonymous").
  */
 const PNG_OPTIONS = {
-  pixelRatio: 2,
   fetchRequestInit: {
     mode: "cors" as RequestMode,
     credentials: "omit" as RequestCredentials,
@@ -25,6 +24,21 @@ const PNG_OPTIONS = {
   filter: (node: HTMLElement) =>
     !(node instanceof HTMLElement && node.hasAttribute("data-export-ignore")),
 };
+
+/** Exact export resolutions per format. */
+const EXPORT_TARGETS = {
+  "4:5": { width: 1856, height: 2304 },
+  "9:16": { width: 1080, height: 1920 },
+} as const;
+
+function targetForNode(node: HTMLElement): { width: number; height: number } {
+  const declared = node.dataset.format;
+  if (declared === "9:16" || declared === "4:5") return EXPORT_TARGETS[declared];
+  // Fallback: infer from the live aspect (tall nodes are stories).
+  const width = node.clientWidth || 1;
+  const height = node.clientHeight || 1;
+  return EXPORT_TARGETS[height / width > 1.5 ? "9:16" : "4:5"];
+}
 
 function sanitizeFileName(value: string): string {
   const cleaned = value
@@ -41,7 +55,17 @@ function withPngExtension(fileName: string): string {
 }
 
 async function nodeToPngDataUrl(node: HTMLElement): Promise<string> {
-  return toPng(node, PNG_OPTIONS);
+  // Capture STRICTLY at the format's target resolution: scale the live
+  // node by (target / liveWidth) and pin the canvas to the exact size
+  // (4:5 → 1856×2304, 9:16 → 1080×1920).
+  const target = targetForNode(node);
+  const liveWidth = node.clientWidth || target.width;
+  return toPng(node, {
+    ...PNG_OPTIONS,
+    pixelRatio: target.width / liveWidth,
+    canvasWidth: target.width,
+    canvasHeight: target.height,
+  });
 }
 
 async function dataUrlToBlob(dataUrl: string): Promise<Blob> {

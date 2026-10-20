@@ -139,6 +139,7 @@ function creativeRowToCard(row: AdCreativeRow, strategyBenefits: string[] = []):
     buttonText: texts?.cta?.trim() || "Узнать подробнее",
     styleId: row.style_id,
     accentColor: row.accent_color ?? undefined,
+    format: row.aspect_ratio,
   };
 }
 

@@ -1,6 +1,16 @@
 /** Creative orientation: feed 4:5 or stories 9:16. */
 export type CreativeFormat = "4:5" | "9:16";
 
+/**
+ * One pack slot. `format` is stamped at ADD time from the currently active
+ * "ФОРМАТ" toggle — mixed packs (e.g. 2× 4:5 + 1× 9:16) are supported and
+ * each creative is generated/rendered/exported in its own format.
+ */
+export interface StylePackItem {
+  styleId: string;
+  format: CreativeFormat;
+}
+
 export interface CreativeTemplateProps {
   headline: string;
   subheadline?: string;

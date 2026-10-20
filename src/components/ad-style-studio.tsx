@@ -13,7 +13,7 @@ import { SelectField } from "@/components/ui/select-field";
 import type { AdFormattedBrief } from "@/lib/ad-types";
 import { DEFAULT_CREATIVE_FORMAT } from "@/lib/creative-format";
 import type { CreativeTemplate } from "@/lib/creative-templates";
-import type { CreativeFormat } from "@/types/creatives";
+import type { CreativeFormat, StylePackItem } from "@/types/creatives";
 import {
   creativeLanguages,
   fontStyles,
@@ -48,12 +48,13 @@ export function AdStyleStudio({
   const [creativesCount, setCreativesCount] = useState(3);
   const [creativeLanguage, setCreativeLanguage] = useState<CreativeLanguage>("ru");
   const [fontStyle, setFontStyle] = useState<FontStyle>("premium");
-  // Slot-based pack: one creative_templates UUID per generated creative (≤ quantity).
-  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
+  // Slot-based pack: one { styleId, format } entry per generated creative
+  // (≤ quantity); format is stamped from the active toggle at add time.
+  const [selectedStyles, setSelectedStyles] = useState<StylePackItem[]>([]);
   const [format, setFormat] = useState<CreativeFormat>(DEFAULT_CREATIVE_FORMAT);
   const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR);
 
-  const primaryTemplateId = selectedStyles[0] ?? "";
+  const primaryTemplateId = selectedStyles[0]?.styleId ?? "";
   const selected = templates.find((template) => template.id === primaryTemplateId) ?? null;
   const templateId = selected?.id ?? "";
   const font = fontStyles.find((item) => item.value === fontStyle) ?? fontStyles[0];

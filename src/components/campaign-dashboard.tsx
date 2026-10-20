@@ -208,11 +208,13 @@ export function CampaignDashboard({
           projectId,
           styleId: payload.styleIds[0],
           styleIds: payload.styleIds,
+          // Per-creative formats stamped in the pack at add time.
+          creatives: payload.items.map((item) => ({ style_id: item.styleId, format: item.format })),
           quantity: payload.styleIds.length || payload.quantity,
           creativesCount: payload.styleIds.length || payload.quantity,
           accentColor: payload.accentColor,
-          format: payload.format,
-          aspectRatio: payload.format,
+          format: payload.items[0]?.format ?? payload.format,
+          aspectRatio: payload.items[0]?.format ?? payload.format,
         }),
       });
       const body = (await response.json()) as {
@@ -997,8 +999,9 @@ function CreativesGrid({
       buttonText: creative?.buttonText || buttons[index % Math.max(buttons.length, 1)] || "Узнать подробнее",
       images: [before, after],
       accentColor: creative?.accentColor ? resolveAccentHex(creative.accentColor, accentColor) : accentColor,
-      // Generation format drives the template canvas (4:5 feed / 9:16 stories).
-      format: resolveCreativeFormat(generation?.aspect_ratio),
+      // Per-creative format (ad_creatives.aspect_ratio) drives the template
+      // canvas; the generation-level value is only a legacy fallback.
+      format: resolveCreativeFormat(creative?.format ?? generation?.aspect_ratio),
     };
     return {
       key: creative?.id ?? `legacy:${index}`,
@@ -1056,7 +1059,9 @@ function CreativesGrid({
         return (
           <article
             key={`${generation.id}-${item.key}`}
-            className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-black"
+            className={`group relative self-start overflow-hidden rounded-xl border border-zinc-800 bg-black ${
+              templateProps.format === "9:16" ? "aspect-[9/16]" : "aspect-[4/5]"
+            }`}
           >
             {/* Export node wraps ONLY the creative itself — never the UI overlay,
                 so html-to-image cannot capture system buttons into the PNG. */}
@@ -1064,6 +1069,7 @@ function CreativesGrid({
               id={nodeId}
               data-export-scope={scope}
               data-export-name={`creative-${index + 1}.png`}
+              data-format={templateProps.format ?? "4:5"}
               className="creative-export-node"
             >
               <CreativeRender styleId={item.styleId} {...templateProps} />

@@ -211,6 +211,8 @@ export interface CreativeStylePlan {
   styleId: StudioStyleKey;
   /** `creative_templates.system_prompt`; falls back to the built-in master prompt. */
   masterPrompt?: string | null;
+  /** Per-creative format stamped in the pack (mixed 4:5 / 9:16 packs). */
+  format?: CreativeFormat;
 }
 
 export async function buildCreatives(input: {
@@ -250,7 +252,8 @@ export async function buildCreatives(input: {
       strategy: input.strategy,
       accentLabel,
       accentHex,
-      format,
+      // Entry format wins; the batch-level aspectRatio is only a default.
+      format: entry.format ? resolveCreativeFormat(entry.format) : format,
     });
   });
 

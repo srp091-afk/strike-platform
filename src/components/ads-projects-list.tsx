@@ -156,7 +156,11 @@ function ProjectCard({
             return (
               <div
                 key={`${project.id}-${creative.images[0] ?? thumbIndex}-${thumbIndex}`}
-                className="relative aspect-[4/5] w-16 overflow-hidden rounded-md border border-zinc-800 sm:w-20"
+                // Each thumbnail renders in ITS OWN format proportion
+                // (fixed height, width from aspect — mixed packs stay tidy).
+                className={`relative h-20 shrink-0 overflow-hidden rounded-md border border-zinc-800 sm:h-24 ${
+                  creative.format === "9:16" ? "aspect-[9/16]" : "aspect-[4/5]"
+                }`}
               >
                 <div className="pointer-events-none absolute inset-0 origin-top-left scale-[1] [&>*]:!rounded-none">
                   <CreativeRender

@@ -15,7 +15,9 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
 import type { AdFormattedBrief } from "@/lib/ad-types";
+import { resolveCreativeFormat } from "@/lib/creative-format";
 import { filterSuggestions } from "@/lib/suggestion-filter";
+import type { StylePackItem } from "@/types/creatives";
 import { cn } from "@/lib/utils";
 
 const openingMessage = "Привет! Что мы будем продвигать и в каком регионе?";
@@ -294,8 +296,9 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     const creativesCount = Number(String(formData.get("creatives_count") ?? "").trim());
     const creativeLanguage = String(formData.get("creative_language") ?? "").trim();
     const styleId = String(formData.get("style_key") ?? "").trim();
-    const styleIds = readStyleIds(formData.get("style_ids"));
     const creativeFormat = String(formData.get("creative_format") ?? "").trim();
+    const packItems = readPackItems(formData.get("style_ids"), creativeFormat || "4:5");
+    const styleIds = packItems.map((item) => item.styleId);
     const accentColor = String(formData.get("accent_color") ?? "").trim();
 
     try {
@@ -308,9 +311,11 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
           creativeLanguage,
           styleId: styleIds[0] ?? styleId,
           styleIds: styleIds.length > 0 ? styleIds : undefined,
+          // Per-creative formats stamped in the pack at add time.
+          creatives: packItems.map((item) => ({ style_id: item.styleId, format: item.format })),
           accentColor,
-          format: creativeFormat || undefined,
-          aspectRatio: creativeFormat || undefined,
+          format: packItems[0]?.format ?? (creativeFormat || undefined),
+          aspectRatio: packItems[0]?.format ?? (creativeFormat || undefined),
         }),
       });
       const payload = (await response.json()) as { error?: string };
@@ -524,13 +529,33 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
 
 /** Selected style pack from the studio step: JSON array of template UUIDs. */
 function readStyleIds(value: FormDataEntryValue | null): string[] {
+  return readPackItems(value, "4:5").map((item) => item.styleId);
+}
+
+/** Pack slots from the hidden `style_ids` field: [{ styleId, format }] (new)
+ * or a legacy flat string[] (all stamped with the wizard's active format). */
+function readPackItems(value: FormDataEntryValue | null, fallbackFormat: string): StylePackItem[] {
   if (typeof value !== "string" || !value.trim()) return [];
   try {
     const parsed: unknown = JSON.parse(value);
     if (!Array.isArray(parsed)) return [];
-    return parsed.flatMap((item) =>
-      typeof item === "string" && item.trim() ? [item.trim()] : [],
-    );
+    return parsed.flatMap((item) => {
+      if (typeof item === "string" && item.trim()) {
+        return [{ styleId: item.trim(), format: resolveCreativeFormat(fallbackFormat) }];
+      }
+      if (item && typeof item === "object") {
+        const row = item as { styleId?: unknown; format?: unknown };
+        if (typeof row.styleId === "string" && row.styleId.trim()) {
+          return [
+            {
+              styleId: row.styleId.trim(),
+              format: resolveCreativeFormat(row.format, resolveCreativeFormat(fallbackFormat)),
+            },
+          ];
+        }
+      }
+      return [];
+    });
   } catch {
     return [];
   }

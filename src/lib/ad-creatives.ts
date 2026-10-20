@@ -4,6 +4,8 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { isRealCreativeImageUrl } from "@/lib/ad-project-media";
 import type { AdCreativeTexts } from "@/lib/ad-types";
+import { resolveCreativeFormat } from "@/lib/creative-format";
+import type { CreativeFormat } from "@/types/creatives";
 
 /**
  * Rows of `public.ad_creatives` — the source of truth for creative cards.
@@ -28,6 +30,8 @@ export interface AdCreativeRow {
   style_id: string | null;
   texts: AdCreativeTexts | null;
   accent_color: string | null;
+  /** Per-creative format (feed 4:5 / stories 9:16). */
+  aspect_ratio: CreativeFormat;
   sort_index: number;
   created_at: string | null;
   deleted_at: string | null;
@@ -43,6 +47,8 @@ export interface NewAdCreative {
   style_id: string | null;
   texts: AdCreativeTexts | null;
   accent_color: string | null;
+  /** Per-creative format; persisted to `ad_creatives.aspect_ratio`. */
+  aspect_ratio?: CreativeFormat;
   sort_index: number;
   /** Set only for legacy tombstone/backfill inserts. */
   deleted_at?: string | null;
@@ -50,6 +56,7 @@ export interface NewAdCreative {
 
 const EXTENDED_SELECT =
   "id, project_id, generation_id, image_url, image_urls, headline, body_text, style_id, texts, accent_color, sort_index, created_at, deleted_at";
+const FORMAT_SELECT = `${EXTENDED_SELECT}, aspect_ratio`;
 const BASE_SELECT = "id, project_id, image_url, headline, body_text, created_at, deleted_at";
 
 export interface VisibleCreatives {
@@ -65,13 +72,29 @@ export async function listVisibleAdCreatives(
 ): Promise<VisibleCreatives> {
   if (projectIds.length === 0) return { rows: [], extended: true };
 
-  const extended = await supabase
+  // Prefer the format-aware select; pre-migration (no aspect_ratio column)
+  // it transparently falls back to the plain extended select.
+  type RowsResult = {
+    data: Record<string, unknown>[] | null;
+    error: { message: string } | null;
+  };
+  let extended: RowsResult = (await supabase
     .from("ad_creatives")
-    .select(EXTENDED_SELECT)
+    .select(FORMAT_SELECT)
     .in("project_id", projectIds)
     .is("deleted_at", null)
     .order("created_at", { ascending: false })
-    .order("sort_index", { ascending: true });
+    .order("sort_index", { ascending: true })) as unknown as RowsResult;
+
+  if (extended.error && /aspect_ratio/i.test(extended.error.message)) {
+    extended = (await supabase
+      .from("ad_creatives")
+      .select(EXTENDED_SELECT)
+      .in("project_id", projectIds)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false })
+      .order("sort_index", { ascending: true })) as unknown as RowsResult;
+  }
 
   if (!extended.error) {
     return { rows: (extended.data ?? []).map((row) => parseRow(row, true)), extended: true };
@@ -98,21 +121,31 @@ export async function insertAdCreatives(
 ): Promise<{ error: string | null; extended: boolean }> {
   if (creatives.length === 0) return { error: null, extended: true };
 
-  const extended = await supabase.from("ad_creatives").insert(
-    creatives.map((creative) => ({
-      project_id: creative.project_id,
-      generation_id: creative.generation_id,
-      image_url: creative.image_url,
-      image_urls: creative.image_urls,
-      headline: creative.headline,
-      body_text: creative.body_text,
-      style_id: creative.style_id,
-      texts: creative.texts,
-      accent_color: creative.accent_color,
-      sort_index: creative.sort_index,
-      ...(creative.deleted_at ? { deleted_at: creative.deleted_at } : {}),
-    })),
+  const extendedRows = creatives.map((creative) => ({
+    project_id: creative.project_id,
+    generation_id: creative.generation_id,
+    image_url: creative.image_url,
+    image_urls: creative.image_urls,
+    headline: creative.headline,
+    body_text: creative.body_text,
+    style_id: creative.style_id,
+    texts: creative.texts,
+    accent_color: creative.accent_color,
+    sort_index: creative.sort_index,
+    ...(creative.deleted_at ? { deleted_at: creative.deleted_at } : {}),
+  }));
+
+  // With per-creative format when the column exists…
+  const withFormat = await supabase.from("ad_creatives").insert(
+    extendedRows.map((row, index) => ({ ...row, aspect_ratio: creatives[index]?.aspect_ratio ?? "4:5" })),
   );
+  if (!withFormat.error) return { error: null, extended: true };
+
+  // …otherwise (pre-migration) the plain extended insert still succeeds.
+  const extended =
+    withFormat.error && /aspect_ratio/i.test(withFormat.error.message)
+      ? await supabase.from("ad_creatives").insert(extendedRows)
+      : withFormat;
   if (!extended.error) return { error: null, extended: true };
 
   const base = await supabase.from("ad_creatives").insert(
@@ -150,6 +183,7 @@ function parseRow(raw: Record<string, unknown>, extended: boolean): AdCreativeRo
     style_id: extended && typeof raw.style_id === "string" ? raw.style_id : null,
     texts: extended ? parseTexts(raw.texts) : null,
     accent_color: extended && typeof raw.accent_color === "string" ? raw.accent_color : null,
+    aspect_ratio: resolveCreativeFormat(raw.aspect_ratio),
     sort_index: extended && typeof raw.sort_index === "number" ? raw.sort_index : 0,
     created_at: typeof raw.created_at === "string" ? raw.created_at : null,
     deleted_at: typeof raw.deleted_at === "string" ? raw.deleted_at : null,

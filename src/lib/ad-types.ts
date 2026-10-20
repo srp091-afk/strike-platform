@@ -85,6 +85,8 @@ export interface AdGenerationCreative {
   /** `creative_templates` UUID (or legacy key, normalized at render). */
   styleId: string | null;
   accentColor?: string;
+  /** Per-creative format from `ad_creatives.aspect_ratio`. */
+  format?: CreativeFormat;
 }
 
 export type AdGenerationStatus = "processing" | "ready" | "error";

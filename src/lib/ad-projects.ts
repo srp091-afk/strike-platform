@@ -281,9 +281,13 @@ function buildPreviewItemsFromCreativeRows(
           "Узнать подробнее",
         styleKey: resolveCreativeStyleId(creativeRow.style_id) ?? fallbackStyle,
         accentColor: resolveAccentHex(creativeRow.accent_color, fallbackAccent),
-        format: creativeRow.generation_id
-          ? (formatByGeneration.get(creativeRow.generation_id) ?? DEFAULT_CREATIVE_FORMAT)
-          : DEFAULT_CREATIVE_FORMAT,
+        // The row's own aspect_ratio (stamped per creative) wins; the
+        // generation-level format is only a legacy fallback.
+        format: creativeRow.aspect_ratio ?? (
+          creativeRow.generation_id
+            ? (formatByGeneration.get(creativeRow.generation_id) ?? DEFAULT_CREATIVE_FORMAT)
+            : DEFAULT_CREATIVE_FORMAT
+        ),
         },
       },
     ];

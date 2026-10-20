@@ -30,20 +30,40 @@ export async function POST(request: Request) {
 
   const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
   const projectId = typeof record.projectId === "string" ? record.projectId.trim() : "";
-  // Style pack: `styleIds` = one template UUID per creative. Legacy callers
-  // send a single `styleId`, repeated `quantity` times.
-  const styleIdsRaw = Array.isArray(record.styleIds)
-    ? record.styleIds.flatMap((value) =>
-        typeof value === "string" && value.trim() ? [value.trim()] : [],
-      )
+  // Default format (legacy single-format callers): "Лента 4:5" / "Сторис 9:16".
+  const format = resolveCreativeFormat(record.format ?? record.aspectRatio ?? record.aspect_ratio);
+  // Per-creative pack: `creatives: [{ style_id, format }]` — every creative
+  // carries the format that was active in the toggle when it was added.
+  const packCreatives = Array.isArray(record.creatives)
+    ? record.creatives.flatMap((value) => {
+        if (!value || typeof value !== "object") return [];
+        const row = value as Record<string, unknown>;
+        const rawStyle =
+          typeof row.style_id === "string" ? row.style_id : typeof row.styleId === "string" ? row.styleId : "";
+        if (!rawStyle.trim()) return [];
+        return [
+          {
+            styleId: rawStyle.trim(),
+            format: resolveCreativeFormat(row.format ?? row.aspect_ratio ?? row.aspectRatio, format),
+          },
+        ];
+      })
     : [];
+  // Style pack fallback: `styleIds` = one template UUID per creative (all in
+  // the default format). Legacy callers send a single `styleId` × quantity.
+  const styleIdsRaw =
+    packCreatives.length > 0
+      ? packCreatives.map((item) => item.styleId)
+      : Array.isArray(record.styleIds)
+        ? record.styleIds.flatMap((value) =>
+            typeof value === "string" && value.trim() ? [value.trim()] : [],
+          )
+        : [];
   const hasPack = styleIdsRaw.length > 0;
   const creativesCount = hasPack ? styleIdsRaw.length : Number(record.quantity ?? record.creativesCount);
   const creativeLanguageRaw = typeof record.creativeLanguage === "string" ? record.creativeLanguage.trim() : "";
   const styleIdRaw = typeof record.styleId === "string" ? record.styleId.trim() : "";
   const accentColorRaw = typeof record.accentColor === "string" ? record.accentColor.trim() : "";
-  // Format toggle: "Лента (4:5)" vs "Сторис (9:16)" from dialog/wizard.
-  const format = resolveCreativeFormat(record.format ?? record.aspectRatio ?? record.aspect_ratio);
 
   if (!isUuid(projectId)) {
     return Response.json({ error: "Некорректный projectId." }, { status: 400 });
@@ -75,8 +95,13 @@ export async function POST(request: Request) {
         styleIdRaw || (typeof project.style_key === "string" ? project.style_key : ""),
       );
   const templatePrompts = await getCreativeTemplatePrompts(packRaws.filter((raw) => isUuid(raw)));
-  const packEntries: { key: NonNullable<ReturnType<typeof resolveStyleId>>; name: string; masterPrompt: string | null }[] = [];
-  for (const raw of packRaws) {
+  const packEntries: {
+    key: NonNullable<ReturnType<typeof resolveStyleId>>;
+    name: string;
+    masterPrompt: string | null;
+    format: ReturnType<typeof resolveCreativeFormat>;
+  }[] = [];
+  for (const [entryIndex, raw] of packRaws.entries()) {
     const key = resolveStyleId(raw);
     if (!key) {
       return Response.json({ error: "Выберите визуальный стиль." }, { status: 400 });
@@ -86,9 +111,14 @@ export async function POST(request: Request) {
       key,
       name: template?.name || studioStyles.find((style) => style.key === key)?.name || key,
       masterPrompt: template?.systemPrompt || null,
+      // Per-creative format from `creatives[i].format`; default otherwise.
+      format: packCreatives[entryIndex]?.format ?? format,
     });
   }
   const styleId = packEntries[0]!.key;
+  // Generation/project level format = first creative's (mixed packs keep
+  // the exact per-creative values in ad_creatives.aspect_ratio).
+  const primaryFormat = packEntries[0]?.format ?? format;
   // Persist the primary (first) style's creative_templates UUID as style_key.
   const storedStyleId = resolveCreativeStyleId(styleId) ?? styleId;
   const styleName = [...new Set(packEntries.map((entry) => entry.name))].join(", ");
@@ -121,7 +151,11 @@ export async function POST(request: Request) {
       // One pack entry per creative: own style, own DB system_prompt.
       // Results stay index-aligned with packEntries, so creative.style_id
       // (stamped inside buildCreatives) links each image to its style.
-      styles: packEntries.map((entry) => ({ styleId: entry.key, masterPrompt: entry.masterPrompt })),
+      styles: packEntries.map((entry) => ({
+        styleId: entry.key,
+        masterPrompt: entry.masterPrompt,
+        format: entry.format,
+      })),
       language: creativeLanguage,
       brief: parseFormattedBriefRow(project.formatted_brief),
       strategy,
@@ -172,7 +206,7 @@ export async function POST(request: Request) {
       accent_color: accentHex,
       // Project-level format state (column added by 20261020_creative_format.sql;
       // pre-migration the fallback chain below strips it and still saves).
-      aspect_ratio: format,
+      aspect_ratio: primaryFormat,
     };
 
     let updateError = (
@@ -223,7 +257,7 @@ export async function POST(request: Request) {
     // the insert transparently retries without it.
     let generationInsert = await supabase
       .from("ad_generations")
-      .insert({ ...generationRow, aspect_ratio: format })
+      .insert({ ...generationRow, aspect_ratio: primaryFormat })
       .select("id, images")
       .single();
     if (generationInsert.error && /aspect_ratio/i.test(generationInsert.error.message)) {
@@ -255,6 +289,8 @@ export async function POST(request: Request) {
         style_id: creative.style_id,
         texts: creative.texts,
         accent_color: accentHex,
+        // Per-creative format column (ad_creatives.aspect_ratio).
+        aspect_ratio: creative.aspect_ratio ?? packEntries[index]?.format ?? format,
         sort_index: index,
       })),
     );
@@ -272,7 +308,7 @@ export async function POST(request: Request) {
       updated_at: nowIso,
       creatives_replace_at: replaceAt,
       accent_color: accentHex,
-      aspect_ratio: format,
+      aspect_ratio: primaryFormat,
     });
   } catch (error) {
     console.error("[generate-creatives] fatal", error);

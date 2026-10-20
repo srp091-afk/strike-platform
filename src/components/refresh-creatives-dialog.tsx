@@ -13,16 +13,18 @@ import type { CreativeTemplate } from "@/lib/creative-templates";
 import { DEFAULT_CREDITS_BALANCE, creditsForCreatives } from "@/lib/credits";
 import { DEFAULT_CREATIVE_FORMAT } from "@/lib/creative-format";
 import { cn } from "@/lib/utils";
-import type { CreativeFormat } from "@/types/creatives";
+import type { CreativeFormat, StylePackItem } from "@/types/creatives";
 
 const QUANTITIES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
 export type RefreshCreativesPayload = {
-  /** Style pack: one `creative_templates.id` (UUID) per generated creative. */
+  /** Style pack entries: style UUID + the format active when it was added. */
+  items: StylePackItem[];
+  /** Legacy flat list (items.map(styleId)) for older callers. */
   styleIds: string[];
   quantity: number;
   accentColor: string;
-  /** Feed 4:5 vs stories 9:16 — drives Flux aspect_ratio + template canvas. */
+  /** Currently active "ФОРМАТ" toggle (format of the most recent context). */
   format: CreativeFormat;
 };
 
@@ -46,7 +48,7 @@ export function RefreshCreativesDialog({
 }) {
   // Slot-based pack: one template UUID per generated creative (≤ quantity).
   // Always starts EMPTY — no style is preselected when the dialog opens.
-  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
+  const [selectedStyles, setSelectedStyles] = useState<StylePackItem[]>([]);
   const [quantity, setQuantity] = useState(3);
   const [format, setFormat] = useState<CreativeFormat>(DEFAULT_CREATIVE_FORMAT);
   const [accentColor, setAccentColor] = useState(initialAccent?.trim() || DEFAULT_ACCENT_COLOR);
@@ -230,7 +232,15 @@ export function RefreshCreativesDialog({
             type="button"
             disabled={pending || insufficient || !packComplete || templatesLoading}
             className="rounded-xl bg-white px-6 py-2.5 font-bold text-black shadow-lg hover:bg-zinc-200 disabled:opacity-40"
-            onClick={() => onConfirm({ styleIds: selectedStyles, quantity, accentColor, format })}
+            onClick={() =>
+              onConfirm({
+                items: selectedStyles,
+                styleIds: selectedStyles.map((item) => item.styleId),
+                quantity,
+                accentColor,
+                format,
+              })
+            }
           >
             {pending ? (
               <>

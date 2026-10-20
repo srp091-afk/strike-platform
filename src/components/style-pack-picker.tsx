@@ -7,14 +7,16 @@ import { CreativeRender } from "@/components/creatives/CreativeRender";
 import type { CreativeTemplate } from "@/lib/creative-templates";
 import { UNIVERSAL_PREVIEW_CONCEPT } from "@/lib/preview-concept";
 import { cn } from "@/lib/utils";
-import type { CreativeFormat } from "@/types/creatives";
+import type { CreativeFormat, StylePackItem } from "@/types/creatives";
 
 /**
  * Premium horizontal style slider + slot-based pack ("Сборка пака").
  *
- * Clicking a card APPENDS the style to `selectedStyles` (duplicates are
- * allowed — e.g. 2× Premium + 1× Side Fade) until the pack reaches
- * `quantity` slots. Slots above the generate button mirror the pack and
+ * Clicking a card APPENDS `{ styleId, format }` to the pack (duplicates are
+ * allowed — e.g. 2× Premium + 1× Side Fade) until it reaches `quantity`
+ * slots. The stamped `format` is the CURRENTLY ACTIVE "ФОРМАТ" toggle at
+ * add time, so one pack can mix 4:5 and 9:16 creatives. Slots above the
+ * generate button mirror the pack (in each slot's own proportion) and
  * allow removing individual picks.
  */
 export function StylePackPicker({
@@ -28,13 +30,13 @@ export function StylePackPicker({
 }: {
   templates: CreativeTemplate[];
   quantity: number;
-  /** `creative_templates` UUIDs, length ≤ quantity. */
-  selectedStyles: string[];
-  onChange: (next: string[]) => void;
+  /** Pack slots: one entry per generated creative, length ≤ quantity. */
+  selectedStyles: StylePackItem[];
+  onChange: (next: StylePackItem[]) => void;
   disabled?: boolean;
   /** User accent from wizard state; live previews recolor to it. */
   accentColor?: string;
-  /** Preview canvas format (feed 4:5 / stories 9:16). */
+  /** Currently active "ФОРМАТ" toggle: previews + format stamped on add. */
   format?: CreativeFormat;
 }) {
   const [category, setCategory] = useState("Все");
@@ -47,7 +49,7 @@ export function StylePackPicker({
     (template) => category === "Все" || template.category === category,
   );
   const full = selectedStyles.length >= quantity;
-  const countOf = (id: string) => selectedStyles.filter((styleId) => styleId === id).length;
+  const countOf = (id: string) => selectedStyles.filter((item) => item.styleId === id).length;
   const templateById = (id: string) => templates.find((template) => template.id === id) ?? null;
 
   // Drag-to-scroll (mouse): grab and pull the slider horizontally.
@@ -84,13 +86,14 @@ export function StylePackPicker({
 
   function addStyle(id: string) {
     if (disabled || full) return;
-    onChange([...selectedStyles, id]);
+    // Stamp the format that is active in the "ФОРМАТ" toggle RIGHT NOW.
+    onChange([...selectedStyles, { styleId: id, format }]);
   }
 
   /** Remove exactly ONE instance of the style from the pack. */
   function removeOneStyle(id: string) {
     if (disabled) return;
-    const index = selectedStyles.lastIndexOf(id);
+    const index = selectedStyles.map((item) => item.styleId).lastIndexOf(id);
     if (index < 0) return;
     onChange(selectedStyles.filter((_, itemIndex) => itemIndex !== index));
   }
@@ -266,15 +269,16 @@ export function StylePackPicker({
             {selectedStyles.length} из {quantity}
           </span>
         </p>
-        <div className="flex flex-wrap gap-3">
+        <div className="flex flex-wrap items-end gap-3">
           {Array.from({ length: quantity }, (_, index) => {
-            const styleId = selectedStyles[index];
-            const template = styleId ? templateById(styleId) : null;
-            if (!styleId) {
+            const item = selectedStyles[index];
+            const template = item ? templateById(item.styleId) : null;
+            if (!item) {
               return (
                 <div
                   key={`empty-${index}`}
-                  className="grid h-16 w-16 shrink-0 place-items-center rounded-xl border-2 border-dashed border-gray-600"
+                  className="grid h-16 shrink-0 place-items-center rounded-xl border-2 border-dashed border-gray-600"
+                  style={{ aspectRatio: format === "9:16" ? "9 / 16" : "4 / 5" }}
                   aria-label={`Пустой слот ${index + 1}`}
                 >
                   <Plus className="size-5 text-gray-600" />
@@ -283,17 +287,17 @@ export function StylePackPicker({
             }
             return (
               <div
-                key={`${styleId}-${index}`}
-                className="relative h-16 w-16 shrink-0 transition-all duration-300 starting:scale-75 starting:opacity-0"
-                title={template?.name ?? "Стиль"}
+                key={`${item.styleId}-${item.format}-${index}`}
+                className="relative h-16 shrink-0 transition-all duration-300 starting:scale-75 starting:opacity-0"
+                style={{ aspectRatio: item.format === "9:16" ? "9 / 16" : "4 / 5" }}
+                title={`${template?.name ?? "Стиль"} · ${item.format}`}
               >
                 <div className="h-full w-full overflow-hidden rounded-xl ring-1 ring-white/15">
-                  {/* Live mini-render: the real 1080×1350 template scaled
-                      into the 64px slot (CreativeWrapper measures the slot
-                      and applies scale(64 / 1080), origin top left). */}
+                  {/* Live mini-render in the SLOT'S OWN proportion (the
+                      format stamped when this slot was added). */}
                   <div className="pointer-events-none relative h-full w-full overflow-hidden">
                     <CreativeRender
-                      styleId={styleId}
+                      styleId={item.styleId}
                       headline={UNIVERSAL_PREVIEW_CONCEPT.headline}
                       subheadline={UNIVERSAL_PREVIEW_CONCEPT.subheadline}
                       bullets={UNIVERSAL_PREVIEW_CONCEPT.bullets}
@@ -301,10 +305,13 @@ export function StylePackPicker({
                       buttonText={UNIVERSAL_PREVIEW_CONCEPT.cta}
                       images={UNIVERSAL_PREVIEW_CONCEPT.image_urls}
                       accentColor={accentColor || UNIVERSAL_PREVIEW_CONCEPT.accent_color}
-                      format={format}
+                      format={item.format}
                     />
                   </div>
                 </div>
+                <span className="absolute bottom-1 left-1 z-10 rounded bg-black/70 px-1 py-px text-[9px] font-bold text-white">
+                  {item.format}
+                </span>
                 <button
                   type="button"
                   aria-label={`Убрать стиль из слота ${index + 1}`}
