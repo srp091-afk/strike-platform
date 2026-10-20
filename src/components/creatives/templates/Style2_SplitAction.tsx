@@ -12,15 +12,18 @@ export function Style2_SplitAction({
   buttonText,
   images,
   accentColor,
+  format = "4:5",
 }: CreativeTemplateProps) {
   const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
   const leftSrc = images[0] ?? "";
   const rightSrc = images[1] ?? images[0] ?? "";
   const items = (bullets.length > 0 ? bullets : ["Быстрый результат", "Прозрачная система"]).slice(0, 4);
-  const badgeLabel = badge?.trim() || "Спецпредложение";
+  // Strict conditional badge: empty/whitespace hides the plate completely.
+  const badgeLabel = badge?.trim() ?? "";
+  const stories = format === "9:16";
 
   return (
-    <CreativeWrapper>
+    <CreativeWrapper format={format}>
       <article className="relative flex h-full w-full flex-col overflow-hidden bg-black text-white">
         <header className="shrink-0 bg-black p-6 text-center">
           {subheadline ? (
@@ -68,14 +71,18 @@ export function Style2_SplitAction({
           </div>
         </div>
 
-        <footer className="flex shrink-0 items-center justify-between gap-4 bg-black p-4">
-          <div
-            className="inline-flex items-center gap-2 rounded-xl px-4 py-3 font-montserrat text-sm font-bold tracking-wide text-black uppercase"
-            style={{ backgroundColor: accent }}
-          >
-            <Gift className="size-4 shrink-0" strokeWidth={2.5} />
-            {badgeLabel}
-          </div>
+        <footer
+          className={`flex shrink-0 items-center gap-4 bg-black p-4 ${badgeLabel ? "justify-between" : "justify-center"} ${stories ? "pb-16" : ""}`}
+        >
+          {badgeLabel ? (
+            <div
+              className="inline-flex items-center gap-2 rounded-xl px-4 py-3 font-montserrat text-sm font-bold tracking-wide text-black uppercase"
+              style={{ backgroundColor: accent }}
+            >
+              <Gift className="size-4 shrink-0" strokeWidth={2.5} />
+              {badgeLabel}
+            </div>
+          ) : null}
           <div
             className="rounded-xl px-8 py-4 font-anton text-2xl tracking-wide text-black uppercase"
             style={{ backgroundColor: accent }}

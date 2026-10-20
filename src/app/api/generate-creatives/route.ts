@@ -1,5 +1,6 @@
 import { accentColorForPrompt, DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import { insertAdCreatives } from "@/lib/ad-creatives";
+import { resolveCreativeFormat } from "@/lib/creative-format";
 import { buildCreatives, parseFormattedBriefRow, publicCreativesError, resolveStyleId } from "@/lib/generate-creatives";
 import { parseAdStrategy } from "@/lib/ad-strategy";
 import { isRealCreativeImageUrl, plusDaysIso } from "@/lib/ad-project-media";
@@ -41,6 +42,8 @@ export async function POST(request: Request) {
   const creativeLanguageRaw = typeof record.creativeLanguage === "string" ? record.creativeLanguage.trim() : "";
   const styleIdRaw = typeof record.styleId === "string" ? record.styleId.trim() : "";
   const accentColorRaw = typeof record.accentColor === "string" ? record.accentColor.trim() : "";
+  // Format toggle: "Лента (4:5)" vs "Сторис (9:16)" from dialog/wizard.
+  const format = resolveCreativeFormat(record.format ?? record.aspectRatio ?? record.aspect_ratio);
 
   if (!isUuid(projectId)) {
     return Response.json({ error: "Некорректный projectId." }, { status: 400 });
@@ -123,6 +126,7 @@ export async function POST(request: Request) {
       brief: parseFormattedBriefRow(project.formatted_brief),
       strategy,
       accentColor: accentLabel,
+      aspectRatio: format,
     });
 
     // Each creative stores [url] or [before, after]. Persist nested sets for the dashboard.
@@ -166,6 +170,9 @@ export async function POST(request: Request) {
       creative_language: creativeLanguage,
       creatives_count: creativesCount,
       accent_color: accentHex,
+      // Project-level format state (column added by 20261020_creative_format.sql;
+      // pre-migration the fallback chain below strips it and still saves).
+      aspect_ratio: format,
     };
 
     let updateError = (
@@ -174,13 +181,13 @@ export async function POST(request: Request) {
 
     if (
       updateError &&
-      /updated_at|creatives_replace_at|creatives_count|style_key|creative_language|accent_color/i.test(updateError.message)
+      /updated_at|creatives_replace_at|creatives_count|style_key|creative_language|accent_color|aspect_ratio/i.test(updateError.message)
     ) {
-      const { accent_color: _accent, ...withoutAccent } = projectPatch;
+      const { accent_color: _accent, aspect_ratio: _aspect, ...withoutAccent } = projectPatch;
       updateError = (
         await supabase.from("ad_projects").update(withoutAccent).eq("id", projectId).eq("user_id", userId)
       ).error;
-      if (updateError && /updated_at|creatives_replace_at|creatives_count|style_key|creative_language/i.test(updateError.message)) {
+      if (updateError && /updated_at|creatives_replace_at|creatives_count|style_key|creative_language|aspect_ratio/i.test(updateError.message)) {
         updateError = (
           await supabase
             .from("ad_projects")
@@ -204,18 +211,29 @@ export async function POST(request: Request) {
 
     const projectName =
       typeof project.name === "string" && project.name.trim() ? project.name.trim() : "Кампания";
-    const { data: generation, error: insertError } = await supabase
+    const generationRow = {
+      project_id: projectId,
+      title: `${projectName} · ${styleName}`,
+      style_name: styleName,
+      status: "ready",
+      is_active: true,
+      images: imageSets,
+    };
+    // Generation-level format state; pre-migration (no aspect_ratio column)
+    // the insert transparently retries without it.
+    let generationInsert = await supabase
       .from("ad_generations")
-      .insert({
-        project_id: projectId,
-        title: `${projectName} · ${styleName}`,
-        style_name: styleName,
-        status: "ready",
-        is_active: true,
-        images: imageSets,
-      })
+      .insert({ ...generationRow, aspect_ratio: format })
       .select("id, images")
       .single();
+    if (generationInsert.error && /aspect_ratio/i.test(generationInsert.error.message)) {
+      generationInsert = await supabase
+        .from("ad_generations")
+        .insert(generationRow)
+        .select("id, images")
+        .single();
+    }
+    const { data: generation, error: insertError } = generationInsert;
 
     if (insertError) {
       console.error("[generate-creatives] insert ad_generations", insertError);
@@ -254,6 +272,7 @@ export async function POST(request: Request) {
       updated_at: nowIso,
       creatives_replace_at: replaceAt,
       accent_color: accentHex,
+      aspect_ratio: format,
     });
   } catch (error) {
     console.error("[generate-creatives] fatal", error);

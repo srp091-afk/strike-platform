@@ -12,6 +12,7 @@ export function Style6_Glass({
   buttonText,
   images,
   accentColor,
+  format = "4:5",
 }: CreativeTemplateProps) {
   const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
   const bg = images[0] ?? "";
@@ -19,9 +20,12 @@ export function Style6_Glass({
     0,
     5,
   );
+  // Strict conditional badge: empty/whitespace hides the plate completely.
+  const badgeLabel = badge?.trim() ?? "";
+  const stories = format === "9:16";
 
   return (
-    <CreativeWrapper>
+    <CreativeWrapper format={format}>
       <article className="relative h-full w-full overflow-hidden bg-black text-white">
         {bg ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -37,9 +41,9 @@ export function Style6_Glass({
           }}
         />
 
-        <div className="relative z-10 flex h-full flex-col px-12 pb-12 pt-14">
+        <div className={`relative z-10 flex h-full flex-col px-12 ${stories ? "pb-36 pt-32" : "pb-12 pt-14"}`}>
           <header className="text-center">
-            {badge ? (
+            {badgeLabel ? (
               <span
                 className="inline-flex items-center gap-2 rounded-full border px-5 py-2 font-montserrat text-base font-semibold tracking-wide"
                 style={{
@@ -49,7 +53,7 @@ export function Style6_Glass({
                 }}
               >
                 <Flame className="size-5" strokeWidth={2.5} style={{ color: accent }} />
-                {badge}
+                {badgeLabel}
               </span>
             ) : null}
             <h1 className="mt-8 font-anton text-7xl leading-[0.95] tracking-wide text-white uppercase">

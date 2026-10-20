@@ -7,6 +7,7 @@ import { CreativeRender } from "@/components/creatives/CreativeRender";
 import type { CreativeTemplate } from "@/lib/creative-templates";
 import { UNIVERSAL_PREVIEW_CONCEPT } from "@/lib/preview-concept";
 import { cn } from "@/lib/utils";
+import type { CreativeFormat } from "@/types/creatives";
 
 /**
  * Premium horizontal style slider + slot-based pack ("Сборка пака").
@@ -23,6 +24,7 @@ export function StylePackPicker({
   onChange,
   disabled = false,
   accentColor,
+  format = "4:5",
 }: {
   templates: CreativeTemplate[];
   quantity: number;
@@ -32,6 +34,8 @@ export function StylePackPicker({
   disabled?: boolean;
   /** User accent from wizard state; live previews recolor to it. */
   accentColor?: string;
+  /** Preview canvas format (feed 4:5 / stories 9:16). */
+  format?: CreativeFormat;
 }) {
   const [category, setCategory] = useState("Все");
 
@@ -197,6 +201,7 @@ export function StylePackPicker({
                   buttonText={UNIVERSAL_PREVIEW_CONCEPT.cta}
                   images={UNIVERSAL_PREVIEW_CONCEPT.image_urls}
                   accentColor={accentColor || UNIVERSAL_PREVIEW_CONCEPT.accent_color}
+                  format={format}
                 />
               </div>
 
@@ -296,6 +301,7 @@ export function StylePackPicker({
                       buttonText={UNIVERSAL_PREVIEW_CONCEPT.cta}
                       images={UNIVERSAL_PREVIEW_CONCEPT.image_urls}
                       accentColor={accentColor || UNIVERSAL_PREVIEW_CONCEPT.accent_color}
+                      format={format}
                     />
                   </div>
                 </div>

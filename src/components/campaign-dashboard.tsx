@@ -21,6 +21,7 @@ import { downloadActiveCreativesAsZip } from "@/lib/export-utils";
 import type { AdGeneration, AdStrategy } from "@/lib/ad-types";
 import { limitBadgeWords } from "@/lib/badge-copy";
 import { cn } from "@/lib/utils";
+import { resolveCreativeFormat } from "@/lib/creative-format";
 import { resolveCreativeStyleId } from "@/lib/studio-styles";
 import type { CreativeTemplateProps } from "@/types/creatives";
 
@@ -210,6 +211,8 @@ export function CampaignDashboard({
           quantity: payload.styleIds.length || payload.quantity,
           creativesCount: payload.styleIds.length || payload.quantity,
           accentColor: payload.accentColor,
+          format: payload.format,
+          aspectRatio: payload.format,
         }),
       });
       const body = (await response.json()) as {
@@ -994,6 +997,8 @@ function CreativesGrid({
       buttonText: creative?.buttonText || buttons[index % Math.max(buttons.length, 1)] || "Узнать подробнее",
       images: [before, after],
       accentColor: creative?.accentColor ? resolveAccentHex(creative.accentColor, accentColor) : accentColor,
+      // Generation format drives the template canvas (4:5 feed / 9:16 stories).
+      format: resolveCreativeFormat(generation?.aspect_ratio),
     };
     return {
       key: creative?.id ?? `legacy:${index}`,

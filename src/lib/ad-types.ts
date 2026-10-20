@@ -1,3 +1,5 @@
+import type { CreativeFormat } from "@/types/creatives";
+
 export interface AdFormattedBrief {
   product: string;
   audience: string;
@@ -29,6 +31,8 @@ export interface AdCreative {
   style_id: string;
   /** User accent (HEX or label) for React templates. */
   accent_color: string;
+  /** Generation format: feed 4:5 or stories 9:16. */
+  aspect_ratio?: CreativeFormat;
 }
 
 export interface AdLeadQuestion {
@@ -92,6 +96,8 @@ export interface AdGeneration {
   style_name: string;
   status: AdGenerationStatus;
   is_active: boolean;
+  /** Generation format (feed 4:5 / stories 9:16); legacy rows default to 4:5. */
+  aspect_ratio?: CreativeFormat;
   /**
    * Flat legacy list OR nested pairs.
    * Prefer `imageSets` — one entry per creative card: `[url]` or `[before, after]`.

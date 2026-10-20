@@ -4,13 +4,16 @@ import { Globe, Loader2, Sparkles } from "lucide-react";
 import { useState } from "react";
 
 import { AccentColorField, DEFAULT_ACCENT_COLOR } from "@/components/accent-color-field";
+import { CreativeFormatToggle } from "@/components/creative-format-toggle";
 import { GenerationCostBadge } from "@/components/generation-cost-badge";
 import { StylePackPicker } from "@/components/style-pack-picker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select-field";
 import type { AdFormattedBrief } from "@/lib/ad-types";
+import { DEFAULT_CREATIVE_FORMAT } from "@/lib/creative-format";
 import type { CreativeTemplate } from "@/lib/creative-templates";
+import type { CreativeFormat } from "@/types/creatives";
 import {
   creativeLanguages,
   fontStyles,
@@ -47,6 +50,7 @@ export function AdStyleStudio({
   const [fontStyle, setFontStyle] = useState<FontStyle>("premium");
   // Slot-based pack: one creative_templates UUID per generated creative (≤ quantity).
   const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
+  const [format, setFormat] = useState<CreativeFormat>(DEFAULT_CREATIVE_FORMAT);
   const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR);
 
   const primaryTemplateId = selectedStyles[0] ?? "";
@@ -70,6 +74,7 @@ export function AdStyleStudio({
       <input type="hidden" name="style_key" value={templateId} />
       <input type="hidden" name="style_ids" value={JSON.stringify(selectedStyles)} />
       <input type="hidden" name="style_name" value={selected?.name ?? ""} />
+      <input type="hidden" name="creative_format" value={format} />
       <input type="hidden" name="accent_color" value={accentColor} />
 
       {strategyError ? (
@@ -158,6 +163,8 @@ export function AdStyleStudio({
           </div>
         </div>
 
+        <CreativeFormatToggle value={format} onChange={setFormat} disabled={busy} />
+
         <AccentColorField value={accentColor} onChange={setAccentColor} disabled={busy} />
 
         {templates.length === 0 ? (
@@ -170,6 +177,7 @@ export function AdStyleStudio({
             onChange={setSelectedStyles}
             disabled={busy}
             accentColor={accentColor}
+            format={format}
           />
         )}
       </section>

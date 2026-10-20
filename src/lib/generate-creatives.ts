@@ -6,6 +6,8 @@ import Replicate from "replicate";
 import { accentColorForPrompt, DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import type { AdCreative, AdCreativeTexts, AdFormattedBrief, AdStrategy } from "@/lib/ad-types";
 import { limitBadgeWords } from "@/lib/badge-copy";
+import { creativePlaceholderSize, DEFAULT_CREATIVE_FORMAT, resolveCreativeFormat } from "@/lib/creative-format";
+import type { CreativeFormat } from "@/types/creatives";
 import { persistCreativeImage } from "@/lib/creative-storage";
 import { getOpenAI } from "@/lib/openai";
 import {
@@ -23,7 +25,9 @@ import {
   type StudioStyleKey,
 } from "@/lib/studio-styles";
 
-const FALLBACK_IMAGE = "https://placehold.co/1080x1350/0A0A0A/EDED2D?text=Image+Generation+Failed";
+function fallbackImage(format: CreativeFormat): string {
+  return `https://placehold.co/${creativePlaceholderSize(format)}/0A0A0A/EDED2D?text=Image+Generation+Failed`;
+}
 
 const replicate = new Replicate({
   auth: process.env.REPLICATE_API_TOKEN,
@@ -42,11 +46,11 @@ const FLUX_SCHNELL = "black-forest-labs/flux-schnell";
 const FLUX_NO_TEXT_PREFIX =
   "CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE. ";
 
-export async function generateImage(prompt: string): Promise<string> {
-  return generateImageWithFlux(prompt);
+export async function generateImage(prompt: string, format: CreativeFormat = DEFAULT_CREATIVE_FORMAT): Promise<string> {
+  return generateImageWithFlux(prompt, format);
 }
 
-export async function generateImageWithFlux(prompt: string): Promise<string> {
+export async function generateImageWithFlux(prompt: string, format: CreativeFormat = DEFAULT_CREATIVE_FORMAT): Promise<string> {
   try {
     if (!process.env.REPLICATE_API_TOKEN?.trim()) {
       throw new Error("REPLICATE_API_TOKEN is not set");
@@ -58,7 +62,8 @@ export async function generateImageWithFlux(prompt: string): Promise<string> {
     // https://replicate.com/black-forest-labs/flux-schnell/api
     const input = {
       prompt: safePrompt,
-      aspect_ratio: "4:5",
+      // Feed 4:5 (1856×2304 class) or stories 9:16 (1080×1920 class).
+      aspect_ratio: format,
       output_format: "webp" as const,
       output_quality: 90,
       num_outputs: 1,
@@ -123,7 +128,7 @@ export async function generateImageWithFlux(prompt: string): Promise<string> {
     return persistCreativeImage(imageUrl);
   } catch (error) {
     console.error("[generateImageWithFlux]", error);
-    return FALLBACK_IMAGE;
+    return fallbackImage(format);
   }
 }
 
@@ -218,7 +223,10 @@ export async function buildCreatives(input: {
   brief: AdFormattedBrief | null;
   strategy: AdStrategy | null;
   accentColor?: string | null;
+  /** Feed 4:5 vs stories 9:16 — Flux aspect_ratio + stamped on creatives. */
+  aspectRatio?: CreativeFormat | string | null;
 }): Promise<AdCreative[]> {
+  const format = resolveCreativeFormat(input.aspectRatio);
   const plan: CreativeStylePlan[] =
     input.styles && input.styles.length > 0
       ? input.styles
@@ -242,6 +250,7 @@ export async function buildCreatives(input: {
       strategy: input.strategy,
       accentLabel,
       accentHex,
+      format,
     });
   });
 
@@ -257,6 +266,7 @@ async function composeCreative(input: {
   strategy: AdStrategy | null;
   accentLabel: string;
   accentHex: string;
+  format: CreativeFormat;
 }): Promise<AdCreative> {
   const dual = isDualImageStyle(input.styleId);
   const sampled = sampleStrategyCopy(input.strategy);
@@ -275,8 +285,8 @@ async function composeCreative(input: {
 
   if (dual) {
     const [beforeUrl, afterUrl] = await Promise.all([
-      generateImage(art.prompt_before),
-      generateImage(art.prompt_after),
+      generateImage(art.prompt_before, input.format),
+      generateImage(art.prompt_after, input.format),
     ]);
     const image_urls = [beforeUrl, afterUrl].filter((url) => Boolean(url.trim()));
     return {
@@ -294,11 +304,12 @@ async function composeCreative(input: {
       },
       style_id: templateIdForStyleKey(input.styleId),
       accent_color: input.accentHex,
+      aspect_ratio: input.format,
     };
   }
 
   // Single-image styles (3, 4, 5): exactly one Flux call, images = [url].
-  const imageUrl = await generateImage(art.image_prompt);
+  const imageUrl = await generateImage(art.image_prompt, input.format);
   return {
     id: randomUUID(),
     image_url: imageUrl,
@@ -313,6 +324,7 @@ async function composeCreative(input: {
     },
     style_id: templateIdForStyleKey(input.styleId),
     accent_color: input.accentHex,
+    aspect_ratio: input.format,
   };
 }
 

@@ -12,14 +12,18 @@ export function Style3_PremiumDark({
   buttonText,
   images,
   accentColor,
+  format = "4:5",
 }: CreativeTemplateProps) {
   const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
   const bg = images[0] ?? "";
   const items = (bullets.length > 0 ? bullets : ["Быстрый результат", "Прозрачная система"]).slice(0, 4);
-  const badgeLabel = badge?.trim();
+  // Strict conditional badge: empty/whitespace hides the plate completely
+  // (flex `gap-5` collapses with the absent element — no empty hole).
+  const badgeLabel = badge?.trim() ?? "";
+  const stories = format === "9:16";
 
   return (
-    <CreativeWrapper>
+    <CreativeWrapper format={format}>
       <article className="relative h-full w-full overflow-hidden bg-black text-white">
         {bg ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -30,8 +34,11 @@ export function Style3_PremiumDark({
         {/* Gradient substrate rises above the text plate for a smooth blend. */}
         <div className="absolute inset-x-0 bottom-0 h-[62%] bg-gradient-to-t from-black/95 via-black/70 to-transparent" />
 
-        {/* Text plate: stable 40% of the creative height, anchored to the bottom. */}
-        <div className="absolute inset-x-0 bottom-0 flex h-[40%] w-full flex-col justify-end gap-5 p-10">
+        {/* Text plate: stable 40% of the creative height, anchored to the bottom.
+            Stories (9:16) lifts content above the platform UI safe zone. */}
+        <div
+          className={`absolute inset-x-0 bottom-0 flex w-full flex-col justify-end gap-5 p-10 ${stories ? "h-[46%] pb-44" : "h-[40%]"}`}
+        >
           {badgeLabel ? (
             <p
               className="flex items-center gap-2.5 font-montserrat text-base font-bold tracking-[0.14em] uppercase"

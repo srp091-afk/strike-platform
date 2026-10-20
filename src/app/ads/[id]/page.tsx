@@ -7,6 +7,7 @@ import { CampaignDashboard, type ProjectStatus } from "@/components/campaign-das
 import type { AdGeneration, AdGenerationCreative, AdGenerationStatus, AdStrategy } from "@/lib/ad-types";
 import { creativeRowImages, listVisibleAdCreatives, type AdCreativeRow } from "@/lib/ad-creatives";
 import { parseAdStrategy } from "@/lib/ad-strategy";
+import { resolveCreativeFormat } from "@/lib/creative-format";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { imageSetsFromCreativesData, imageSetsFromGenerationImages } from "@/lib/ad-project-media";
 import { resolveCreativeStyleId, resolveStudioStyleKey, studioStyles } from "@/lib/studio-styles";
@@ -110,6 +111,8 @@ function readGeneration(row: Record<string, unknown>, projectId: string): AdGene
     style_name: styleName,
     status: readGenerationStatus(row.status),
     is_active: row.is_active === true,
+    // Format state (post-migration column; legacy rows resolve to 4:5).
+    aspect_ratio: resolveCreativeFormat(row.aspect_ratio, "4:5"),
     images: imageSets.flat(),
     imageSets,
     created_at: createdAt,
@@ -299,6 +302,7 @@ function generationFromCreativesData(
 ): AdGeneration | null {
   const imageSets = imageSetsFromCreativesData(value);
   if (imageSets.length === 0) return null;
+  const firstCreative = Array.isArray(value) ? value[0] : null;
   return {
     id: `creatives-data-${projectId}`,
     project_id: projectId,
@@ -306,6 +310,13 @@ function generationFromCreativesData(
     style_name: styleName,
     status: "ready",
     is_active: true,
+    // creatives_data stamps aspect_ratio per creative (JSON, always stored).
+    aspect_ratio: resolveCreativeFormat(
+      firstCreative && typeof firstCreative === "object"
+        ? (firstCreative as { aspect_ratio?: unknown }).aspect_ratio
+        : null,
+      "4:5",
+    ),
     images: imageSets.flat(),
     imageSets,
     created_at: new Date().toISOString(),

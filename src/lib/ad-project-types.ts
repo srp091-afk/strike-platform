@@ -1,3 +1,5 @@
+import type { CreativeFormat } from "@/types/creatives";
+
 export type AdsPreviewCreative = {
   images: string[];
   headline: string;
@@ -7,6 +9,8 @@ export type AdsPreviewCreative = {
   buttonText: string;
   styleKey: string;
   accentColor: string;
+  /** Generation format of this creative (feed 4:5 / stories 9:16). */
+  format?: CreativeFormat;
 };
 
 export type AdsProjectCard = {

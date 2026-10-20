@@ -13,10 +13,12 @@ export function Style1_VS({
   buttonText,
   images,
   accentColor,
+  format = "4:5",
 }: CreativeTemplateProps) {
   const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
   const beforeSrc = images[0] ?? "";
   const afterSrc = images[1] ?? images[0] ?? "";
+  const stories = format === "9:16";
   const painItems = FAKE_PAINS.slice(0, Math.max(3, bullets.length || 3));
   const winItems = (bullets.length > 0 ? bullets : ["Чёткая система", "Заявки каждый день", "Контроль ROI"]).slice(
     0,
@@ -24,9 +26,9 @@ export function Style1_VS({
   );
 
   return (
-    <CreativeWrapper>
+    <CreativeWrapper format={format}>
       <article className="relative flex h-full w-full flex-col overflow-hidden bg-black text-white">
-        <header className="shrink-0 bg-black px-10 pb-6 pt-10 text-center">
+        <header className={`shrink-0 bg-black px-10 pb-6 text-center ${stories ? "pt-24" : "pt-10"}`}>
           <h1 className="font-anton text-6xl leading-none tracking-wide text-white uppercase">{headline}</h1>
           {subheadline ? (
             <p className="mt-3 font-montserrat text-2xl font-semibold leading-snug" style={{ color: accent }}>
@@ -101,7 +103,7 @@ export function Style1_VS({
           </div>
         </div>
 
-        <footer className="flex shrink-0 items-center justify-center bg-black px-10 py-8">
+        <footer className={`flex shrink-0 items-center justify-center bg-black px-10 ${stories ? "py-8 pb-28" : "py-8"}`}>
           <p className="font-montserrat text-3xl font-bold tracking-wide uppercase" style={{ color: accent }}>
             {buttonText}
           </p>

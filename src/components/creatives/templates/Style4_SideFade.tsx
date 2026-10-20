@@ -9,13 +9,15 @@ export function Style4_SideFade({
   buttonText,
   images,
   accentColor,
+  format = "4:5",
 }: CreativeTemplateProps) {
   const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
   const bg = images[0] ?? "";
   const items = (bullets.length > 0 ? bullets : ["Быстрый результат", "Прозрачная система"]).slice(0, 4);
+  const stories = format === "9:16";
 
   return (
-    <CreativeWrapper>
+    <CreativeWrapper format={format}>
       <article className="relative h-full w-full overflow-hidden bg-black text-white">
         {bg ? (
           // eslint-disable-next-line @next/next/no-img-element
@@ -25,7 +27,7 @@ export function Style4_SideFade({
         )}
         <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/80 to-transparent" />
 
-        <div className="absolute inset-0 p-8 flex flex-col justify-end w-[75%] gap-5">
+        <div className={`absolute inset-0 p-8 flex flex-col justify-end w-[75%] gap-5 ${stories ? "pb-44" : ""}`}>
           <h1 className="text-5xl font-anton uppercase text-white leading-[1.1]">{headline}</h1>
 
           {subheadline ? (

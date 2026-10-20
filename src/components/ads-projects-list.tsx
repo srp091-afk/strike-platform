@@ -168,6 +168,7 @@ function ProjectCard({
                     buttonText={creative.buttonText}
                     images={creative.images}
                     accentColor={creative.accentColor}
+                    format={creative.format ?? "4:5"}
                   />
                 </div>
                 {overflow ? (

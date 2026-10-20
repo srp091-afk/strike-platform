@@ -4,7 +4,7 @@ import { ArrowUp, Bot, Link as LinkIcon, Mic } from "lucide-react";
 
 import { AdStyleStudio } from "@/components/ad-style-studio";
 import { useRouter } from "next/navigation";
-import { useActionState, useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent } from "react";
+import { useActionState, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent } from "react";
 
 import { acceptUploadedTable, createAdCampaign, type CreateAdProjectState, type UploadedTableState } from "@/actions/ads-actions";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
@@ -15,6 +15,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
 import type { AdFormattedBrief } from "@/lib/ad-types";
+import { filterSuggestions } from "@/lib/suggestion-filter";
 import { cn } from "@/lib/utils";
 
 const openingMessage = "Привет! Что мы будем продвигать и в каком регионе?";
@@ -50,6 +51,13 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   const [suggestions, setSuggestions] = useState<string[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(false);
   const [suggestionClicks, setSuggestionClicks] = useState(0);
+  // Real-time pool filtering: chips already present in the draft (exact
+  // duplicates) and semantic competitors of picked values (same stem
+  // category — гарантия/скидка/рассрочка/опыт/…) disappear instantly.
+  const visibleSuggestions = useMemo(
+    () => filterSuggestions(suggestions, [draft]),
+    [suggestions, draft],
+  );
   const [listening, setListening] = useState(false);
   const [strategyJson, setStrategyJson] = useState("");
   const [strategyPending, setStrategyPending] = useState(false);
@@ -290,6 +298,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     const creativeLanguage = String(formData.get("creative_language") ?? "").trim();
     const styleId = String(formData.get("style_key") ?? "").trim();
     const styleIds = readStyleIds(formData.get("style_ids"));
+    const creativeFormat = String(formData.get("creative_format") ?? "").trim();
     const accentColor = String(formData.get("accent_color") ?? "").trim();
 
     try {
@@ -303,6 +312,8 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
           styleId: styleIds[0] ?? styleId,
           styleIds: styleIds.length > 0 ? styleIds : undefined,
           accentColor,
+          format: creativeFormat || undefined,
+          aspectRatio: creativeFormat || undefined,
         }),
       });
       const payload = (await response.json()) as { error?: string };
@@ -436,7 +447,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
                     ) : (
                       <SuggestionRow
                         loading={suggestionsLoading}
-                        suggestions={suggestions}
+                        suggestions={visibleSuggestions}
                         onPick={appendSuggestion}
                       />
                     )}

@@ -8,7 +8,9 @@ import {
   isRealCreativeImageUrl,
 } from "@/lib/ad-project-media";
 import { creativeRowImages, listVisibleAdCreatives, type AdCreativeRow } from "@/lib/ad-creatives";
+import { DEFAULT_CREATIVE_FORMAT, resolveCreativeFormat } from "@/lib/creative-format";
 import type { AdsPreviewCreative, AdsProjectCard } from "@/lib/ad-project-types";
+import type { CreativeFormat } from "@/types/creatives";
 import type { AdCreative, AdStrategy } from "@/lib/ad-types";
 import { limitBadgeWords } from "@/lib/badge-copy";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -30,6 +32,8 @@ type GenerationPreviewSource = {
   id: string;
   createdAt: string | null;
   sets: string[][];
+  /** Feed 4:5 / stories 9:16 of this generation. */
+  format: CreativeFormat;
 };
 
 /** Preview plus its generation timestamp, for newest-first merging. */
@@ -86,11 +90,24 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
   const generationsByProject = new Map<string, GenerationPreviewSource[]>();
 
   if (projectIds.length > 0) {
-    const generations = await supabase
+    // aspect_ratio exists after 20261020_creative_format.sql; pre-migration
+    // the query transparently retries without it (all previews = 4:5).
+    type GenerationsResult = {
+      data: Record<string, unknown>[] | null;
+      error: { message: string } | null;
+    };
+    let generations: GenerationsResult = (await supabase
       .from("ad_generations")
-      .select("id, project_id, images, is_active, created_at")
+      .select("id, project_id, images, is_active, created_at, aspect_ratio")
       .in("project_id", projectIds)
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })) as unknown as GenerationsResult;
+    if (generations.error && /aspect_ratio/i.test(generations.error.message)) {
+      generations = (await supabase
+        .from("ad_generations")
+        .select("id, project_id, images, is_active, created_at")
+        .in("project_id", projectIds)
+        .order("created_at", { ascending: false })) as unknown as GenerationsResult;
+    }
 
     if (!generations.error) {
       for (const row of generations.data ?? []) {
@@ -102,6 +119,7 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
           id: String(row.id),
           createdAt: typeof row.created_at === "string" ? row.created_at : null,
           sets,
+          format: resolveCreativeFormat((row as { aspect_ratio?: unknown }).aspect_ratio),
         });
         generationsByProject.set(projectId, existing);
       }
@@ -190,7 +208,8 @@ function buildMergedPreviews(
   const fallbackAccent = resolveAccentHex(row.accent_color, DEFAULT_ACCENT_COLOR);
   const strategy = parseAdStrategy(row.strategy_data);
 
-  const dated: DatedPreview[] = buildPreviewItemsFromCreativeRows(row, creativeRows);
+  const formatByGeneration = new Map(generations.map((generation) => [generation.id, generation.format]));
+  const dated: DatedPreview[] = buildPreviewItemsFromCreativeRows(row, creativeRows, formatByGeneration);
 
   let legacyIndex = dated.length;
   for (const generation of generations) {
@@ -200,7 +219,7 @@ function buildMergedPreviews(
     const timestamp = generation.createdAt ? Date.parse(generation.createdAt) : 0;
     for (const images of generation.sets) {
       dated.push({
-        preview: previewFromStrategy(images, legacyIndex, fallbackStyle, fallbackAccent, strategy),
+        preview: previewFromStrategy(images, legacyIndex, fallbackStyle, fallbackAccent, strategy, generation.format),
         timestamp: Number.isNaN(timestamp) ? 0 : timestamp,
       });
       legacyIndex += 1;
@@ -215,7 +234,11 @@ function buildMergedPreviews(
   return previewFromCreativesData(row.creatives_data, fallbackStyle, fallbackAccent, strategy);
 }
 
-function buildPreviewItemsFromCreativeRows(row: ProjectRow, creativeRows: AdCreativeRow[]): DatedPreview[] {
+function buildPreviewItemsFromCreativeRows(
+  row: ProjectRow,
+  creativeRows: AdCreativeRow[],
+  formatByGeneration: Map<string, CreativeFormat>,
+): DatedPreview[] {
   const fallbackStyle =
     resolveCreativeStyleId(typeof row.style_key === "string" ? row.style_key : null) ??
     CREATIVE_STYLE_IDS.beforeAfterVs;
@@ -258,6 +281,9 @@ function buildPreviewItemsFromCreativeRows(row: ProjectRow, creativeRows: AdCrea
           "Узнать подробнее",
         styleKey: resolveCreativeStyleId(creativeRow.style_id) ?? fallbackStyle,
         accentColor: resolveAccentHex(creativeRow.accent_color, fallbackAccent),
+        format: creativeRow.generation_id
+          ? (formatByGeneration.get(creativeRow.generation_id) ?? DEFAULT_CREATIVE_FORMAT)
+          : DEFAULT_CREATIVE_FORMAT,
         },
       },
     ];
@@ -320,6 +346,7 @@ function previewFromCreativesData(
         styleKey:
           resolveCreativeStyleId(typeof row.style_id === "string" ? row.style_id : null) ?? fallbackStyle,
         accentColor: resolveAccentHex(row.accent_color, fallbackAccent),
+        format: resolveCreativeFormat(row.aspect_ratio),
       },
     ];
   });
@@ -331,6 +358,7 @@ function previewFromStrategy(
   styleKey: string,
   accentColor: string,
   strategy: AdStrategy | null,
+  format: CreativeFormat = DEFAULT_CREATIVE_FORMAT,
 ): AdsPreviewCreative {
   const headlines = strategy?.creatives.headlines ?? [];
   const subheadlines = strategy?.creatives.subheadlines ?? [];
@@ -348,5 +376,6 @@ function previewFromStrategy(
     buttonText: buttons[index % Math.max(buttons.length, 1)] ?? "Узнать подробнее",
     styleKey,
     accentColor,
+    format,
   };
 }

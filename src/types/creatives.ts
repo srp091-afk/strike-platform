@@ -1,3 +1,6 @@
+/** Creative orientation: feed 4:5 or stories 9:16. */
+export type CreativeFormat = "4:5" | "9:16";
+
 export interface CreativeTemplateProps {
   headline: string;
   subheadline?: string;
@@ -8,4 +11,6 @@ export interface CreativeTemplateProps {
   images: string[];
   /** HEX (or resolved) accent for buttons, checks, borders — applied via inline styles. */
   accentColor: string;
+  /** Layout format; templates adapt canvas + safe zones. Defaults to 4:5. */
+  format?: CreativeFormat;
 }
