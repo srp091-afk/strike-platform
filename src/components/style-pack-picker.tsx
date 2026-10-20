@@ -1,7 +1,7 @@
 "use client";
 
 import { Plus, X } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { StudioStylePreview } from "@/components/studio-style-preview";
 import type { CreativeTemplate } from "@/lib/creative-templates";
@@ -42,9 +42,50 @@ export function StylePackPicker({
   const countOf = (id: string) => selectedStyles.filter((styleId) => styleId === id).length;
   const templateById = (id: string) => templates.find((template) => template.id === id) ?? null;
 
+  // Drag-to-scroll (mouse): grab and pull the slider horizontally.
+  // `moved` (>5px) suppresses the card click that follows a drag, so
+  // scrolling never accidentally adds a style to the pack.
+  const sliderRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef({ down: false, startX: 0, scrollLeft: 0, moved: false });
+  const [isDragging, setIsDragging] = useState(false);
+
+  function onSliderMouseDown(event: ReactMouseEvent<HTMLDivElement>) {
+    if (event.button !== 0) return;
+    const slider = sliderRef.current;
+    if (!slider) return;
+    dragRef.current = { down: true, startX: event.pageX, scrollLeft: slider.scrollLeft, moved: false };
+    setIsDragging(true);
+  }
+
+  function onSliderMouseMove(event: ReactMouseEvent<HTMLDivElement>) {
+    const drag = dragRef.current;
+    const slider = sliderRef.current;
+    if (!drag.down || !slider) return;
+    const walk = event.pageX - drag.startX;
+    if (Math.abs(walk) > 5) drag.moved = true;
+    if (drag.moved) {
+      event.preventDefault();
+      slider.scrollLeft = drag.scrollLeft - walk;
+    }
+  }
+
+  function endSliderDrag() {
+    dragRef.current.down = false;
+    setIsDragging(false);
+  }
+
   function addStyle(id: string) {
     if (disabled || full) return;
     onChange([...selectedStyles, id]);
+  }
+
+  function onCardClick(id: string) {
+    // The click right after a drag is a scroll gesture, not a pick.
+    if (dragRef.current.moved) {
+      dragRef.current.moved = false;
+      return;
+    }
+    addStyle(id);
   }
 
   function removeAt(index: number) {
@@ -75,8 +116,18 @@ export function StylePackPicker({
         })}
       </div>
 
-      {/* Horizontal premium slider (replaces the vertical grid). */}
-      <div className="flex flex-row flex-nowrap gap-6 overflow-x-auto px-2 pt-2 pb-6 snap-x snap-mandatory [mask-image:linear-gradient(to_right,transparent,black_5%,black_95%,transparent)] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+      {/* Horizontal premium slider (replaces the vertical grid). Mouse drag-to-scroll included. */}
+      <div
+        ref={sliderRef}
+        className={cn(
+          "flex flex-row flex-nowrap gap-6 overflow-x-auto px-2 pt-2 pb-6 snap-x snap-mandatory select-none [mask-image:linear-gradient(to_right,transparent,black_5%,black_95%,transparent)] [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden",
+          isDragging ? "cursor-grabbing snap-none" : "cursor-grab",
+        )}
+        onMouseDown={onSliderMouseDown}
+        onMouseLeave={endSliderDrag}
+        onMouseUp={endSliderDrag}
+        onMouseMove={onSliderMouseMove}
+      >
         {visibleStyles.map((template) => {
           const inPack = countOf(template.id);
           const selected = inPack > 0;
@@ -94,11 +145,11 @@ export function StylePackPicker({
                   : "cursor-pointer opacity-60 ring-1 ring-white/10 hover:scale-[1.02] hover:opacity-100",
                 full && !selected && "saturate-50",
               )}
-              onClick={() => addStyle(template.id)}
+              onClick={() => onCardClick(template.id)}
             >
               {template.preview_url ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={template.preview_url} alt="" className="aspect-[4/5] w-full object-cover" />
+                <img src={template.preview_url} alt="" draggable={false} className="aspect-[4/5] w-full object-cover" />
               ) : (
                 <StudioStylePreview styleId={template.id} />
               )}

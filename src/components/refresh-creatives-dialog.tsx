@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2, X } from "lucide-react";
+import { Loader2, Maximize2, Minimize2, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 
@@ -51,6 +51,7 @@ export function RefreshCreativesDialog({
   const [templates, setTemplates] = useState<CreativeTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const cost = creditsForCreatives(quantity);
   const insufficient = creditsBalance < cost;
@@ -93,6 +94,7 @@ export function RefreshCreativesDialog({
     const initial = resolveCreativeStyleId(initialStyle);
     setSelectedStyles(initial ? [initial] : []);
     setQuantity(3);
+    setFullscreen(false);
     setAccentColor(initialAccent?.trim() || DEFAULT_ACCENT_COLOR);
   }, [open, initialStyle, initialAccent]);
 
@@ -114,7 +116,10 @@ export function RefreshCreativesDialog({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[80] flex items-end justify-center bg-black/70 p-4 sm:items-center"
+      className={cn(
+        "fixed inset-0 z-[80] flex items-end justify-center bg-black/70 sm:items-center",
+        fullscreen ? "p-0" : "p-4",
+      )}
       onMouseDown={(event) => {
         if (event.target === event.currentTarget && !pending) onClose();
       }}
@@ -123,7 +128,12 @@ export function RefreshCreativesDialog({
         role="dialog"
         aria-modal="true"
         aria-labelledby="refresh-creatives-title"
-        className="flex max-h-[min(92vh,52rem)] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950 shadow-2xl"
+        className={cn(
+          "flex flex-col overflow-hidden border border-zinc-800 bg-zinc-950 shadow-2xl",
+          fullscreen
+            ? "h-full max-h-none w-full max-w-none rounded-none border-0"
+            : "max-h-[min(92vh,52rem)] w-full max-w-6xl rounded-2xl",
+        )}
       >
         <header className="flex items-start justify-between gap-4 border-b border-zinc-800 px-5 py-4 sm:px-6">
           <div>
@@ -134,15 +144,27 @@ export function RefreshCreativesDialog({
               Используем сохранённую стратегию и тексты. Старые активные креативы уйдут в архив.
             </p>
           </div>
-          <button
-            type="button"
-            aria-label="Закрыть"
-            disabled={pending}
-            className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-white disabled:opacity-40"
-            onClick={onClose}
-          >
-            <X className="size-5" />
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              aria-label={fullscreen ? "Свернуть окно" : "Развернуть на весь экран"}
+              aria-pressed={fullscreen}
+              disabled={pending}
+              className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-white disabled:opacity-40"
+              onClick={() => setFullscreen((value) => !value)}
+            >
+              {fullscreen ? <Minimize2 className="size-5" /> : <Maximize2 className="size-5" />}
+            </button>
+            <button
+              type="button"
+              aria-label="Закрыть"
+              disabled={pending}
+              className="rounded-lg p-2 text-zinc-400 transition-colors hover:bg-zinc-900 hover:text-white disabled:opacity-40"
+              onClick={onClose}
+            >
+              <X className="size-5" />
+            </button>
+          </div>
         </header>
 
         <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5 sm:px-6">
