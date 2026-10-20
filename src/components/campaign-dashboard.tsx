@@ -42,6 +42,7 @@ export function CampaignDashboard({
   creativesReplaceAt: initialReplaceAt,
   styleKey = null,
   accentColor: initialAccent = null,
+  fontStyle = null,
 }: {
   projectId: string;
   name: string;
@@ -52,6 +53,7 @@ export function CampaignDashboard({
   creativesReplaceAt: string | null;
   styleKey?: string | null;
   accentColor?: string | null;
+  fontStyle?: string | null;
 }) {
   const router = useRouter();
   const [zoom, setZoom] = useState<ZoomCreative | null>(null);
@@ -379,6 +381,16 @@ export function CampaignDashboard({
                       }
                     />
                     <EditableList
+                      label="АНТИ-БУЛЛИТЫ (ДЛЯ ДО/ПОСЛЕ)"
+                      items={strategy.creatives.anti_benefits ?? []}
+                      onCommit={(items) =>
+                        saveStrategy({
+                          ...strategy,
+                          creatives: { ...strategy.creatives, anti_benefits: items },
+                        })
+                      }
+                    />
+                    <EditableList
                       label="Кнопки"
                       items={strategy.creatives.buttons}
                       onCommit={(items) =>
@@ -578,6 +590,7 @@ export function CampaignDashboard({
                   strategy={strategy}
                   styleKey={styleKey}
                   accentColor={accentColor}
+                  fontStyle={fontStyle ?? undefined}
                   onZoom={setZoom}
                   emptyText="Активных креативов пока нет."
                 />
@@ -594,6 +607,7 @@ export function CampaignDashboard({
                     strategy={strategy}
                     styleKey={styleKey}
                     accentColor={accentColor}
+                    fontStyle={fontStyle ?? undefined}
                     onZoom={setZoom}
                     onDeleteCreative={deleteArchivedCreative}
                   />
@@ -881,6 +895,7 @@ function ArchiveGenerationFolder({
   strategy,
   styleKey,
   accentColor,
+  fontStyle,
   onZoom,
   onDeleteCreative,
 }: {
@@ -888,6 +903,7 @@ function ArchiveGenerationFolder({
   strategy: AdStrategy | null;
   styleKey?: string | null;
   accentColor: string;
+  fontStyle?: string;
   onZoom: (creative: ZoomCreative) => void;
   onDeleteCreative: (generationId: string, creativeIndex: number, creativeId?: string | null) => Promise<boolean>;
 }) {
@@ -919,6 +935,7 @@ function ArchiveGenerationFolder({
             strategy={strategy}
             styleKey={styleKey}
             accentColor={accentColor}
+            fontStyle={fontStyle}
             onZoom={onZoom}
             onDeleteCreative={onDeleteCreative}
             readOnly
@@ -935,6 +952,7 @@ function CreativesGrid({
   strategy,
   styleKey,
   accentColor,
+  fontStyle,
   onZoom,
   onDeleteCreative,
   readOnly = false,
@@ -944,6 +962,7 @@ function CreativesGrid({
   strategy: AdStrategy | null;
   styleKey?: string | null;
   accentColor: string;
+  fontStyle?: string;
   onZoom: (creative: ZoomCreative) => void;
   onDeleteCreative?: (generationId: string, creativeIndex: number, creativeId?: string | null) => Promise<boolean>;
   readOnly?: boolean;
@@ -991,6 +1010,8 @@ function CreativesGrid({
         : creative?.bullets?.length
           ? creative.bullets
           : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"],
+      antiBullets: strategy?.creatives.anti_benefits ?? [],
+      fontStyle,
       badge:
         (creative?.badge ? limitBadgeWords(creative.badge) : "") ||
         (badges.length > 0 ? limitBadgeWords(badges[index % badges.length]) : "") ||

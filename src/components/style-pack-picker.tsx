@@ -27,6 +27,7 @@ export function StylePackPicker({
   disabled = false,
   accentColor,
   format = "4:5",
+  fontStyle,
 }: {
   templates: CreativeTemplate[];
   quantity: number;
@@ -38,6 +39,8 @@ export function StylePackPicker({
   accentColor?: string;
   /** Currently active "ФОРМАТ" toggle: previews + format stamped on add. */
   format?: CreativeFormat;
+  /** Typography preset from wizard state; previews apply it to headlines. */
+  fontStyle?: string;
 }) {
   const [category, setCategory] = useState("Все");
 
@@ -200,11 +203,13 @@ export function StylePackPicker({
                   headline={UNIVERSAL_PREVIEW_CONCEPT.headline}
                   subheadline={UNIVERSAL_PREVIEW_CONCEPT.subheadline}
                   bullets={UNIVERSAL_PREVIEW_CONCEPT.bullets}
+                  antiBullets={UNIVERSAL_PREVIEW_CONCEPT.vs_comparison.bad_bullets}
                   badge={UNIVERSAL_PREVIEW_CONCEPT.badge}
                   buttonText={UNIVERSAL_PREVIEW_CONCEPT.cta}
                   images={UNIVERSAL_PREVIEW_CONCEPT.image_urls}
                   accentColor={accentColor || UNIVERSAL_PREVIEW_CONCEPT.accent_color}
                   format={format}
+                  fontStyle={fontStyle}
                 />
               </div>
 
@@ -301,6 +306,8 @@ export function StylePackPicker({
                       headline={UNIVERSAL_PREVIEW_CONCEPT.headline}
                       subheadline={UNIVERSAL_PREVIEW_CONCEPT.subheadline}
                       bullets={UNIVERSAL_PREVIEW_CONCEPT.bullets}
+                      antiBullets={UNIVERSAL_PREVIEW_CONCEPT.vs_comparison.bad_bullets}
+                      fontStyle={fontStyle}
                       badge={UNIVERSAL_PREVIEW_CONCEPT.badge}
                       buttonText={UNIVERSAL_PREVIEW_CONCEPT.cta}
                       images={UNIVERSAL_PREVIEW_CONCEPT.image_urls}

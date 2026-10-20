@@ -15,8 +15,12 @@ export interface CreativeTemplateProps {
   headline: string;
   subheadline?: string;
   bullets: string[];
+  /** Opposites of `bullets` for the "before" list in split templates. */
+  antiBullets?: string[];
   badge?: string;
   buttonText: string;
+  /** Typography preset value (studio-styles FontStyle); "ultra" = Bebas. */
+  fontStyle?: string;
   /** Image URLs — splits need 2–3, single-panel layouts need 1. */
   images: string[];
   /** HEX (or resolved) accent for buttons, checks, borders — applied via inline styles. */

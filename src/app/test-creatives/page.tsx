@@ -16,6 +16,8 @@ const mockSplit: CreativeTemplateProps = {
   headline: "До / После",
   subheadline: "Одна ниша — разный результат",
   bullets: ["Системные креативы", "Стабильный CPL", "Масштаб без хаоса"],
+  antiBullets: ["Хаос в заявках", "Слив бюджета", "Нет системы"],
+  fontStyle: "ultra",
   buttonText: "Получить стратегию",
   images: [
     "https://images.unsplash.com/photo-1571019614242-c5c5dee9f50b?auto=format&fit=crop&w=1080&h=1350&q=80",

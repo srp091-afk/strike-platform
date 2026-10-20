@@ -1,5 +1,5 @@
 import type { Metadata, Viewport } from "next";
-import { Anton, Inter, Montserrat, Plus_Jakarta_Sans } from "next/font/google";
+import { Anton, Bebas_Neue, Inter, Montserrat, Plus_Jakarta_Sans } from "next/font/google";
 import { Suspense } from "react";
 
 import { SiteFooter } from "@/components/site-footer";
@@ -34,6 +34,14 @@ const montserrat = Montserrat({
   display: "swap",
 });
 
+const bebas = Bebas_Neue({
+  weight: "400",
+  // @ts-expect-error Bebas Neue includes Cyrillic; next/font subset typings lag Google Fonts
+  subsets: ["latin", "cyrillic"],
+  variable: "--font-bebas-face",
+  display: "swap",
+});
+
 export const metadata: Metadata = {
   title: {
     default: "STRIKE",
@@ -50,7 +58,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html
       lang="ru"
-      className={`${inter.variable} ${jakarta.variable} ${anton.variable} ${montserrat.variable} h-full bg-black`}
+      className={`${inter.variable} ${jakarta.variable} ${anton.variable} ${montserrat.variable} ${bebas.variable} h-full bg-black`}
     >
       <body className="flex min-h-full flex-col bg-black font-sans text-zinc-400">
         <Suspense fallback={<div className="sticky top-0 z-50 h-16 border-b border-zinc-800 bg-black" />}>

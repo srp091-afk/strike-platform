@@ -1,7 +1,8 @@
-import { Check, X } from "lucide-react";
+import { Check, ChevronRight, X } from "lucide-react";
 
 import { CreativeWrapper } from "@/components/creatives/CreativeWrapper";
 import { DEFAULT_ACCENT_COLOR, resolveAccentHex, withAccentAlpha } from "@/lib/accent-color";
+import { headlineFontClass } from "@/lib/studio-styles";
 import type { CreativeTemplateProps } from "@/types/creatives";
 
 const FAKE_PAINS = ["Нет системы", "Слив бюджета", "Хаос в заявках"];
@@ -10,26 +11,31 @@ export function Style1_VS({
   headline,
   subheadline,
   bullets,
+  antiBullets,
   buttonText,
   images,
   accentColor,
+  fontStyle,
   format = "4:5",
 }: CreativeTemplateProps) {
   const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
   const beforeSrc = images[0] ?? "";
   const afterSrc = images[1] ?? images[0] ?? "";
   const stories = format === "9:16";
-  const painItems = FAKE_PAINS.slice(0, Math.max(3, bullets.length || 3));
   const winItems = (bullets.length > 0 ? bullets : ["Чёткая система", "Заявки каждый день", "Контроль ROI"]).slice(
     0,
     4,
   );
+  // Left ("before") list = anti_benefits generated as opposites of benefits;
+  // legacy strategies without them fall back to the old hardcoded pains.
+  const antiItems = (antiBullets ?? []).map((item) => item.trim()).filter(Boolean);
+  const painItems = (antiItems.length > 0 ? antiItems : FAKE_PAINS).slice(0, Math.max(3, winItems.length));
 
   return (
     <CreativeWrapper format={format}>
       <article className="relative flex h-full w-full flex-col overflow-hidden bg-black text-white">
         <header className={`shrink-0 bg-black px-10 pb-6 text-center ${stories ? "pt-24" : "pt-10"}`}>
-          <h1 className="font-anton text-6xl leading-none tracking-wide text-white uppercase">{headline}</h1>
+          <h1 className={`${headlineFontClass(fontStyle)} text-6xl leading-none tracking-wide text-white uppercase`}>{headline}</h1>
           {subheadline ? (
             <p className="mt-3 font-montserrat text-2xl font-semibold leading-snug" style={{ color: accent }}>
               {subheadline}
@@ -74,10 +80,13 @@ export function Style1_VS({
 
           <div className="absolute inset-x-6 bottom-6 z-10 grid grid-cols-2 gap-4">
             <div className="rounded-2xl border border-zinc-600/60 bg-zinc-900/75 p-5 backdrop-blur-md">
+              <p className="mb-3 text-center font-montserrat text-sm font-bold tracking-[0.18em] text-red-500 uppercase">
+                Обычный подход
+              </p>
               <ul className="space-y-3">
                 {painItems.map((item) => (
                   <li key={item} className="flex items-start gap-3 font-montserrat text-lg leading-snug text-zinc-300">
-                    <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-zinc-700 text-zinc-400">
+                    <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-red-600 text-white">
                       <X className="size-4" strokeWidth={3} />
                     </span>
                     <span>{item}</span>
@@ -86,6 +95,12 @@ export function Style1_VS({
               </ul>
             </div>
             <div className="rounded-2xl border-2 bg-black/70 p-5 backdrop-blur-md" style={{ borderColor: accent }}>
+              <p
+                className="mb-3 text-center font-montserrat text-sm font-bold tracking-[0.18em] uppercase"
+                style={{ color: accent }}
+              >
+                Наш стандарт
+              </p>
               <ul className="space-y-3">
                 {winItems.map((item) => (
                   <li key={item} className="flex items-start gap-3 font-montserrat text-lg leading-snug text-white">
@@ -103,10 +118,18 @@ export function Style1_VS({
           </div>
         </div>
 
-        <footer className={`flex shrink-0 items-center justify-center bg-black px-10 ${stories ? "py-8 pb-28" : "py-8"}`}>
-          <p className="font-montserrat text-3xl font-bold tracking-wide uppercase" style={{ color: accent }}>
-            {buttonText}
-          </p>
+        <footer className={`shrink-0 bg-black px-10 ${stories ? "pt-6 pb-28" : "py-8"}`}>
+          <div
+            className="flex w-full items-center justify-center gap-3 rounded-2xl px-8 py-6"
+            style={{ backgroundColor: accent, boxShadow: `0 0 48px ${withAccentAlpha(accent, 0.45)}` }}
+          >
+            <p
+              className={`${headlineFontClass(fontStyle)} text-center text-5xl leading-none tracking-wide text-black uppercase`}
+            >
+              {buttonText}
+            </p>
+            <ChevronRight className="size-12 shrink-0 text-black" strokeWidth={3.5} />
+          </div>
         </footer>
       </article>
     </CreativeWrapper>

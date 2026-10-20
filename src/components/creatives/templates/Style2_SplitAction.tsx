@@ -2,6 +2,7 @@ import { Check, Gift } from "lucide-react";
 
 import { CreativeWrapper } from "@/components/creatives/CreativeWrapper";
 import { DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
+import { headlineFontClass } from "@/lib/studio-styles";
 import type { CreativeTemplateProps } from "@/types/creatives";
 
 export function Style2_SplitAction({
@@ -12,6 +13,7 @@ export function Style2_SplitAction({
   buttonText,
   images,
   accentColor,
+  fontStyle,
   format = "4:5",
 }: CreativeTemplateProps) {
   const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
@@ -34,7 +36,7 @@ export function Style2_SplitAction({
               {subheadline}
             </p>
           ) : null}
-          <h1 className="mt-3 font-anton text-6xl leading-[0.9] tracking-wide text-white uppercase sm:text-7xl">
+          <h1 className={`mt-3 ${headlineFontClass(fontStyle)} text-6xl leading-[0.9] tracking-wide text-white uppercase sm:text-7xl`}>
             {headline}
           </h1>
         </header>

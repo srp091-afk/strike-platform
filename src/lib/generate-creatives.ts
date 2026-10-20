@@ -394,6 +394,12 @@ async function directArt(input: {
   sampled: SampledCopy;
 }): Promise<ArtDirection> {
   const language = languageLabels[input.language] ?? "English";
+  // The client's niche (brief product) is the mandatory image subject —
+  // split "before/after" frames must show THIS business, not a generic scene.
+  const niche = input.brief?.product?.trim() || "the advertised product or service";
+  const nicheSplitRule = isSplitVsStyle(input.styleId)
+    ? `\n\nCONTEXTUAL SPLIT RULE (style 1, До/После): build both prompts around the client's niche as the subject, following this exact frame: "Split screen before and after shot. Subject: ${niche}. Left side: terrible, bad quality, messy version of ${niche}. Right side: perfect, premium, clean, professional version of ${niche}. Cinematic lighting, highly detailed." prompt_before = the LEFT (terrible/messy) version, prompt_after = the RIGHT (perfect/premium) version. Same subject, same space/product, only the state changes. NEVER substitute a generic interior/object that is unrelated to ${niche}.`
+    : "";
   const accentRule = `Акцентный цвет рекламного макета: ${input.accentLabel} (HEX ${input.accentHex}). При генерации промпта для Flux добавляй тонкие отсветы, освещение или детали фона в этом оттенке, чтобы картинка гармонировала с версткой.`;
   const visualDiversityRule =
     "Для каждого креатива генерируй АБСОЛЮТНО НОВОЕ, уникальное визуальное описание (меняй ракурсы, освещение, атмосферу, композицию), даже если тексты повторяются. Визуал должен быть разнообразным.";
@@ -420,7 +426,7 @@ async function directArt(input: {
 Если в sampled_copy уже выбран headline/subheadline/bullets/button — используй их как основу (можно слегка отполировать формулировку, но смысл сохрани).
 ${badgeRule}
 ${accentRule}
-${visualDiversityRule}
+${visualDiversityRule}${nicheSplitRule}
 
 CRITICAL IMAGE RULE:
 - NEVER put text, letters, numbers, logos with words, watermarks, or captions in either Flux prompt.
@@ -482,6 +488,8 @@ CRITICAL IMAGE RULE (Flux background only):
           creative_index: input.index + 1,
           style_id: studioStyleNumericId(input.styleId),
           style_master_prompt: input.masterPrompt,
+          niche,
+          image_subject: niche,
           formatted_brief: input.brief,
           sampled_copy: input.sampled,
           strategy: input.strategy
@@ -504,8 +512,18 @@ CRITICAL IMAGE RULE (Flux background only):
 
   const hook = input.strategy?.strategy.hook_concept?.trim() ?? "";
   const parsed = parseArtDirection(completion.choices[0]?.message?.content ?? "", input.dual, hook);
+  // Deterministic niche framing for the До/После split: whatever the model
+  // wrote, the Flux prompt always opens with the client's niche as subject
+  // (bad/messy "before" vs perfect/premium "after" of the SAME subject).
+  const framed = isSplitVsStyle(input.styleId)
+    ? {
+        prompt_before: `Split-screen BEFORE photograph. Subject: ${niche}. Terrible, bad quality, messy, neglected version of ${niche}. ${parsed.prompt_before} Cinematic lighting, highly detailed, photographic, no text.`,
+        prompt_after: `Split-screen AFTER photograph. Subject: ${niche}. Perfect, premium, clean, professional version of ${niche}. ${parsed.prompt_after} Cinematic lighting, highly detailed, photographic, no text.`,
+      }
+    : {};
   return {
     ...parsed,
+    ...framed,
     headline: input.sampled.headline?.trim() || parsed.headline,
     subheadline: input.sampled.subheadline?.trim() || parsed.subheadline,
     benefit: input.sampled.bullets[0]?.trim() || parsed.benefit,

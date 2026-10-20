@@ -48,6 +48,11 @@ hook_concept = «Спецпредложение и Триггер (УТП)»: в
 ХОРОШИЙ ПРИМЕР: 'Свободные вечера без уборки.'
 Считай слова. Если слов больше 5 — переписывай.
 
+3б. АНТИ-ВЫГОДЫ (anti_benefits):
+Сгенерируй прямые, утрированные противоположности для каждого пункта из benefits — в том же порядке и количестве (пункт i — противоположность benefits[i]). Это левый список «как у конкурентов / до» в креативах До/После.
+Если выгода 'Свежесть от фермеров', то анти-выгода 'Тухлые ингредиенты'. Если выгода 'Доставка за 24 часа', то анти-выгода 'Неделя ожидания заказа'.
+Строго до 5 слов на пункт. Без деепричастных оборотов.
+
 Твоя задача — сгенерировать ответ СТРОГО в формате JSON с точным соблюдением количества элементов в массивах:
 {
   "strategy": {
@@ -59,6 +64,7 @@ hook_concept = «Спецпредложение и Триггер (УТП)»: в
     "headlines": [5 шт, до 5-6 слов],
     "subheadlines": [5 шт, ДО 9 СЛОВ],
     "benefits": [10 шт, строго до 5 слов],
+    "anti_benefits": [10 шт, противоположности benefits по индексам, строго до 5 слов],
     "buttons": [3 шт]
   },
   "facebook_setup": { ... },
@@ -96,11 +102,12 @@ const strategySchema = {
       additionalProperties: false,
       // Strict json_schema: `required` must list EVERY key of `properties`
       // (OpenAI rejects the schema otherwise — "Missing 'badges'").
-      required: ["headlines", "subheadlines", "benefits", "buttons", "badges"],
+      required: ["headlines", "subheadlines", "benefits", "anti_benefits", "buttons", "badges"],
       properties: {
         headlines: stringList(5),
         subheadlines: stringList(5),
         benefits: stringList(10),
+        anti_benefits: stringList(10),
         buttons: stringList(3),
         badges: stringList(5),
       },
@@ -171,6 +178,10 @@ export function parseAdStrategy(value: unknown): AdStrategy | null {
   const headlines = texts(creatives.headlines, 5);
   const subheadlines = texts(creatives.subheadlines, 5);
   const benefits = texts(creatives.benefits, 10);
+  // Anti-benefits are optional in stored strategies (pre-feature rows).
+  const antiBenefits = Array.isArray(creatives.anti_benefits)
+    ? creatives.anti_benefits.map((item) => text(item)).filter(Boolean).slice(0, 10)
+    : [];
   const buttons = texts(creatives.buttons, 3);
   // Badges are optional in stored strategies; default to the hook trigger.
   const badges = Array.isArray(creatives.badges)
@@ -218,6 +229,7 @@ export function parseAdStrategy(value: unknown): AdStrategy | null {
       headlines,
       subheadlines,
       benefits,
+      anti_benefits: antiBenefits,
       buttons,
       badges: badges.length > 0 ? badges : [hook],
     },

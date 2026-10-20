@@ -2,6 +2,7 @@ import { Check } from "lucide-react";
 
 import { CreativeWrapper } from "@/components/creatives/CreativeWrapper";
 import { DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
+import { headlineFontClass } from "@/lib/studio-styles";
 import type { CreativeTemplateProps } from "@/types/creatives";
 
 export function Style5_EditorialBlock({
@@ -12,6 +13,7 @@ export function Style5_EditorialBlock({
   buttonText,
   images,
   accentColor,
+  fontStyle,
   format = "4:5",
 }: CreativeTemplateProps) {
   const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
@@ -26,7 +28,7 @@ export function Style5_EditorialBlock({
       <article className="flex flex-col h-full w-full overflow-hidden bg-white text-black">
         <div className="flex flex-1 flex-row min-h-0">
           <div className="w-[45%] shrink-0 bg-black p-6 flex flex-col justify-center gap-4">
-            <h1 className="font-anton text-5xl leading-[0.95] text-white uppercase">{headline}</h1>
+            <h1 className={`${headlineFontClass(fontStyle)} text-5xl leading-[0.95] text-white uppercase`}>{headline}</h1>
             {subheadline ? (
               <p className="font-montserrat text-lg leading-snug text-gray-400">{subheadline}</p>
             ) : null}

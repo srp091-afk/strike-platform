@@ -52,6 +52,8 @@ export interface AdStrategy {
     headlines: string[];
     subheadlines: string[];
     benefits: string[];
+    /** Direct opposites of `benefits` (same indexes) for До/После left lists. */
+    anti_benefits: string[];
     buttons: string[];
     /** Editable badge (УТП/триггер) variants; applied at generation time. */
     badges: string[];

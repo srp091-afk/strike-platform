@@ -2,6 +2,7 @@ import { Check, Gift } from "lucide-react";
 
 import { CreativeWrapper } from "@/components/creatives/CreativeWrapper";
 import { DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
+import { headlineFontClass } from "@/lib/studio-styles";
 import type { CreativeTemplateProps } from "@/types/creatives";
 
 export function Style3_PremiumDark({
@@ -12,6 +13,7 @@ export function Style3_PremiumDark({
   buttonText,
   images,
   accentColor,
+  fontStyle,
   format = "4:5",
 }: CreativeTemplateProps) {
   const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
@@ -49,7 +51,7 @@ export function Style3_PremiumDark({
             </p>
           ) : null}
 
-          <h1 className="font-anton text-6xl leading-[0.95] tracking-tight text-white uppercase">
+          <h1 className={`${headlineFontClass(fontStyle)} text-6xl leading-[0.95] tracking-tight text-white uppercase`}>
             {headline}
           </h1>
 

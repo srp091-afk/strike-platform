@@ -179,6 +179,7 @@ export function AdStyleStudio({
             disabled={busy}
             accentColor={accentColor}
             format={format}
+            fontStyle={fontStyle}
           />
         )}
       </section>

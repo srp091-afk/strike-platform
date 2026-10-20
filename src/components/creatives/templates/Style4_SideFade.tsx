@@ -1,5 +1,6 @@
 import { CreativeWrapper } from "@/components/creatives/CreativeWrapper";
 import { DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
+import { headlineFontClass } from "@/lib/studio-styles";
 import type { CreativeTemplateProps } from "@/types/creatives";
 
 export function Style4_SideFade({
@@ -9,6 +10,7 @@ export function Style4_SideFade({
   buttonText,
   images,
   accentColor,
+  fontStyle,
   format = "4:5",
 }: CreativeTemplateProps) {
   const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
@@ -28,7 +30,7 @@ export function Style4_SideFade({
         <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/80 to-transparent" />
 
         <div className={`absolute inset-0 p-8 flex flex-col justify-end w-[75%] gap-5 ${stories ? "pb-44" : ""}`}>
-          <h1 className="text-5xl font-anton uppercase text-white leading-[1.1]">{headline}</h1>
+          <h1 className={`text-5xl ${headlineFontClass(fontStyle)} uppercase text-white leading-[1.1]`}>{headline}</h1>
 
           {subheadline ? (
             <p className="font-montserrat text-xl text-gray-300 border-l-4 pl-4" style={{ borderColor: accent }}>

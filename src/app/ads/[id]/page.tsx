@@ -38,6 +38,7 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
     creativesReplaceAt: string | null;
     styleKey: string | null;
     accentColor: string | null;
+    fontStyle: string | null;
   } | null = null;
   let generations: AdGeneration[] = [];
   let error: string | null = null;
@@ -83,6 +84,7 @@ async function AdProjectResult({ params }: { params: Promise<{ id: string }> }) 
       creativesReplaceAt={project.creativesReplaceAt}
       styleKey={project.styleKey}
       accentColor={project.accentColor}
+      fontStyle={project.fontStyle}
     />
   );
 }
@@ -151,7 +153,7 @@ async function loadProjectRow(
   const full = await supabase
     .from("ad_projects")
     .select(
-      "id, name, status, strategy_data, creatives_data, style_key, accent_color, updated_at, creatives_replace_at, created_at",
+      "id, name, status, strategy_data, creatives_data, style_key, accent_color, font_style, updated_at, creatives_replace_at, created_at",
     )
     .eq("id", id)
     .eq("user_id", userId)
@@ -159,7 +161,7 @@ async function loadProjectRow(
 
   if (!full.error) return full.data;
   if (
-    /creatives_data|style_key|accent_color|updated_at|creatives_replace_at/i.test(full.error.message) &&
+    /creatives_data|style_key|accent_color|font_style|updated_at|creatives_replace_at/i.test(full.error.message) &&
     !/strategy_data/i.test(full.error.message)
   ) {
     const mid = await supabase
@@ -174,6 +176,7 @@ async function loadProjectRow(
         creatives_data: null,
         style_key: null,
         accent_color: null,
+        font_style: null,
         updated_at: mid.data.created_at,
         creatives_replace_at: null,
       };
@@ -196,6 +199,7 @@ async function loadProjectRow(
     creatives_data: null,
     style_key: null,
     accent_color: null,
+    font_style: null,
     updated_at: basic.data.created_at,
     creatives_replace_at: null,
   };
@@ -282,6 +286,7 @@ async function loadProject(id: string) {
           ? (resolveCreativeStyleId(data.style_key) ?? data.style_key)
           : null,
       accentColor: readAccentColor(data.accent_color, data.creatives_data),
+      fontStyle: typeof data.font_style === "string" && data.font_style.trim() ? data.font_style.trim() : null,
     },
     generations,
   };

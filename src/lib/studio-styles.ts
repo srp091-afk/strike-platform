@@ -4,7 +4,7 @@ export const studioStyles = [
     name: "Сплит (До / После)",
     category: "Сплит",
     note: "Два фона: проблема слева, результат справа",
-    masterPrompt: `Visual system: Before/After split ad. Two contrasting photographic backgrounds for a vertical 4:5 Meta creative. Left ("before") is bleak, problem-state, colder and darker. Right ("after") is bright, resolved, aspirational success with the product benefit implied visually — never with text. No typography, no signage, no logos with words.`,
+    masterPrompt: `Visual system: Before/After split ad. Two contrasting photographic backgrounds for a vertical 4:5 Meta creative. The subject MUST be the client's niche (formatted_brief.product) — the SAME subject, space or product on both sides. Left ("before") is a terrible, bad-quality, messy version of that niche: bleak, problem-state, colder and darker. Right ("after") is the perfect, premium, clean, professional version of the same niche: bright, resolved, aspirational success with the product benefit implied visually — never with text. Cinematic lighting, highly detailed. No typography, no signage, no logos with words.`,
   },
   {
     key: "split-action",
@@ -204,9 +204,23 @@ export const fontStyles = [
     label: "Чистый минимализм (Neo-Grotesque)",
     pair: "Plus Jakarta Sans & Inter",
   },
+  {
+    value: "ultra",
+    label: "Ударный (Bebas / Anton)",
+    pair: "Bebas Neue & Anton",
+  },
 ] as const;
 
 export type FontStyle = (typeof fontStyles)[number]["value"];
+
+/**
+ * Headline font utility for creative templates. The "ultra" preset renders
+ * headlines in Bebas Neue — maximally dense, bold, uppercase (reference:
+ * repair-ad style). Other presets keep the Anton display face.
+ */
+export function headlineFontClass(fontStyle?: string | null): string {
+  return fontStyle === "ultra" ? "font-bebas" : "font-anton";
+}
 
 export function isStudioStyleKey(value: string): value is StudioStyleKey {
   return studioStyles.some((style) => style.key === value);
