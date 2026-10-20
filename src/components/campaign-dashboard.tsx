@@ -20,6 +20,7 @@ import { downloadActiveCreativesAsZip } from "@/lib/export-utils";
 import type { AdGeneration, AdStrategy } from "@/lib/ad-types";
 import { limitBadgeWords } from "@/lib/badge-copy";
 import { cn } from "@/lib/utils";
+import { resolveCreativeStyleId } from "@/lib/studio-styles";
 import type { CreativeTemplateProps } from "@/types/creatives";
 
 export type ProjectStatus = "ready" | "processing" | "error";
@@ -797,6 +798,8 @@ function CreativesGrid({
   const buttons = strategy?.creatives.buttons ?? [];
   const hook = strategy?.strategy.hook_concept ?? "";
   const scope = readOnly ? "archive" : "active";
+  // CreativeRender strictly maps creative_templates UUIDs; normalize legacy keys here.
+  const renderStyleId = resolveCreativeStyleId(styleKey) ?? styleKey ?? null;
 
   async function downloadOne(nodeId: string, fileName: string, key: string) {
     if (busyKey) return;
@@ -849,14 +852,14 @@ function CreativesGrid({
             data-export-name={`creative-${index + 1}.png`}
             className="creative-export-node group relative overflow-hidden rounded-xl border border-zinc-800 bg-black"
           >
-            <CreativeRender styleId={styleKey} {...templateProps} />
+            <CreativeRender styleId={renderStyleId} {...templateProps} />
             <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
               <div className="flex w-[min(16rem,80%)] flex-col gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   disabled={busy}
-                  onClick={() => onZoom({ styleId: styleKey ?? null, props: templateProps })}
+                  onClick={() => onZoom({ styleId: renderStyleId, props: templateProps })}
                 >
                   <ZoomIn className="size-4" />
                   Увеличить

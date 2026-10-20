@@ -18,6 +18,7 @@ import {
   resolveStudioStyleKey,
   studioStyleNumericId,
   studioStyles,
+  templateIdForStyleKey,
   type CreativeLanguage,
   type StudioStyleKey,
 } from "@/lib/studio-styles";
@@ -274,7 +275,7 @@ async function composeCreative(input: {
         cta: art.cta,
         badge: art.badge,
       },
-      style_id: input.styleId,
+      style_id: templateIdForStyleKey(input.styleId),
       accent_color: input.accentHex,
     };
   }
@@ -293,7 +294,7 @@ async function composeCreative(input: {
       cta: art.cta,
       badge: art.badge,
     },
-    style_id: input.styleId,
+    style_id: templateIdForStyleKey(input.styleId),
     accent_color: input.accentHex,
   };
 }

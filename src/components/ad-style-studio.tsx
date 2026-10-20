@@ -1,32 +1,23 @@
 "use client";
 
 import { Globe, Loader2, Sparkles } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { AccentColorField, DEFAULT_ACCENT_COLOR } from "@/components/accent-color-field";
 import { GenerationCostBadge } from "@/components/generation-cost-badge";
+import { StudioStylePreview } from "@/components/studio-style-preview";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import { StudioStylePreview } from "@/components/studio-style-preview";
 import { SelectField } from "@/components/ui/select-field";
 import type { AdFormattedBrief } from "@/lib/ad-types";
+import type { CreativeTemplate } from "@/lib/creative-templates";
 import {
   creativeLanguages,
   fontStyles,
-  studioStyles,
-  styleFilters,
   type CreativeLanguage,
   type FontStyle,
-  type StudioStyleKey,
 } from "@/lib/studio-styles";
 import { cn } from "@/lib/utils";
-
-type StyleTemplate = {
-  id: string;
-  name: string;
-  category: string;
-  preview_url: string;
-};
 
 export function AdStyleStudio({
   formattedBrief,
@@ -44,7 +35,8 @@ export function AdStyleStudio({
   strategyPending: boolean;
   strategyError: string | null;
   createError: string | null;
-  templates: StyleTemplate[];
+  /** Style list loaded from Supabase `creative_templates` (server-side). */
+  templates: CreativeTemplate[];
   creating: boolean;
   generating: boolean;
   onBack: () => void;
@@ -53,21 +45,26 @@ export function AdStyleStudio({
   const [creativesCount, setCreativesCount] = useState(3);
   const [creativeLanguage, setCreativeLanguage] = useState<CreativeLanguage>("ru");
   const [fontStyle, setFontStyle] = useState<FontStyle>("premium");
-  const [category, setCategory] = useState<(typeof styleFilters)[number]>("Все");
-  const [selectedStyle, setSelectedStyle] = useState<StudioStyleKey>("before-after-vs");
+  const [category, setCategory] = useState("Все");
+  const [selectedStyleId, setSelectedStyleId] = useState<string>(templates[0]?.id ?? "");
   const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR);
 
-  const visibleStyles = studioStyles.filter((style) => category === "Все" || style.category === category);
+  const filters = useMemo(
+    () => ["Все", ...Array.from(new Set(templates.map((template) => template.category).filter(Boolean)))],
+    [templates],
+  );
+  const visibleStyles = templates.filter(
+    (template) => category === "Все" || template.category === category,
+  );
+  const selected = templates.find((template) => template.id === selectedStyleId) ?? null;
+  const templateId = selected?.id ?? "";
+  const font = fontStyles.find((item) => item.value === fontStyle) ?? fontStyles[0];
 
   useEffect(() => {
-    if (visibleStyles.some((style) => style.key === selectedStyle)) return;
+    if (visibleStyles.some((template) => template.id === selectedStyleId)) return;
     const next = visibleStyles[0];
-    if (next) setSelectedStyle(next.key);
-  }, [category, selectedStyle]);
-
-  const selected = studioStyles.find((style) => style.key === selectedStyle) ?? studioStyles[0];
-  const templateId = templateIdFor(selected.category, templates);
-  const font = fontStyles.find((item) => item.value === fontStyle) ?? fontStyles[0];
+    if (next) setSelectedStyleId(next.id);
+  }, [category, selectedStyleId, visibleStyles]);
 
   return (
     <>
@@ -75,8 +72,8 @@ export function AdStyleStudio({
       <input type="hidden" name="creatives_count" value={String(creativesCount)} />
       <input type="hidden" name="creative_language" value={creativeLanguage} />
       <input type="hidden" name="font_style" value={fontStyle} />
-      <input type="hidden" name="style_key" value={selected.key} />
-      <input type="hidden" name="style_name" value={selected.name} />
+      <input type="hidden" name="style_key" value={templateId} />
+      <input type="hidden" name="style_name" value={selected?.name ?? ""} />
       <input type="hidden" name="accent_color" value={accentColor} />
 
       {strategyError ? (
@@ -168,7 +165,7 @@ export function AdStyleStudio({
         <AccentColorField value={accentColor} onChange={setAccentColor} disabled={busy} />
 
         <div className="flex flex-wrap gap-2">
-          {styleFilters.map((filter) => {
+          {filters.map((filter) => {
             const active = filter === category;
             return (
               <button
@@ -187,29 +184,38 @@ export function AdStyleStudio({
           })}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {visibleStyles.map((style) => {
-            const active = style.key === selectedStyle;
-            return (
-              <button
-                key={style.key}
-                type="button"
-                aria-pressed={active}
-                className={cn(
-                  "overflow-hidden rounded-xl border-2 bg-zinc-950 text-left transition-colors",
-                  active ? "border-white ring-2 ring-white/20" : "border-zinc-800 hover:border-zinc-500",
-                )}
-                onClick={() => setSelectedStyle(style.key)}
-              >
-                <StudioStylePreview styleKey={style.key} />
-                <span className="block px-3 pt-3 text-sm font-medium text-white">{style.name}</span>
-                <span className="block px-3 pt-1 pb-3 text-xs text-zinc-500">{style.note}</span>
-              </button>
-            );
-          })}
-        </div>
-        {!templateId ? (
-          <p className="text-sm text-zinc-500">В базе нет активного шаблона, к которому можно привязать стиль.</p>
+        {templates.length === 0 ? (
+          <p className="text-sm text-zinc-500">В базе нет активных стилей (таблица creative_templates пуста).</p>
+        ) : (
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+            {visibleStyles.map((template) => {
+              const active = template.id === selectedStyleId;
+              return (
+                <button
+                  key={template.id}
+                  type="button"
+                  aria-pressed={active}
+                  className={cn(
+                    "overflow-hidden rounded-xl border-2 bg-zinc-950 text-left transition-colors",
+                    active ? "border-white ring-2 ring-white/20" : "border-zinc-800 hover:border-zinc-500",
+                  )}
+                  onClick={() => setSelectedStyleId(template.id)}
+                >
+                  {template.preview_url ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={template.preview_url} alt="" className="aspect-[4/5] w-full object-cover" />
+                  ) : (
+                    <StudioStylePreview styleId={template.id} />
+                  )}
+                  <span className="block px-3 pt-3 text-sm font-medium text-white">{template.name}</span>
+                  <span className="block px-3 pt-1 pb-3 text-xs text-zinc-500">{template.category}</span>
+                </button>
+              );
+            })}
+          </div>
+        )}
+        {!templateId && templates.length > 0 ? (
+          <p className="text-sm text-zinc-500">Выберите визуальный стиль.</p>
         ) : null}
       </section>
 
@@ -288,10 +294,4 @@ function BriefFact({
       {hint ? <p className="mt-1.5 text-[11px] leading-relaxed text-zinc-500">{hint}</p> : null}
     </div>
   );
-}
-
-function templateIdFor(category: string, templates: StyleTemplate[]) {
-  const needle = category.toLowerCase();
-  const matched = templates.find((template) => template.category.toLowerCase().includes(needle));
-  return matched?.id ?? templates[0]?.id ?? "";
 }

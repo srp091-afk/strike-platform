@@ -11,7 +11,7 @@ import type { AdsPreviewCreative, AdsProjectCard } from "@/lib/ad-project-types"
 import type { AdCreative, AdStrategy } from "@/lib/ad-types";
 import { limitBadgeWords } from "@/lib/badge-copy";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
-import { SPLIT_VS_STYLE_KEY } from "@/lib/studio-styles";
+import { CREATIVE_STYLE_IDS, resolveCreativeStyleId } from "@/lib/studio-styles";
 
 type ProjectRow = {
   id: string;
@@ -110,8 +110,10 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
 }
 
 function buildPreviewCreatives(row: ProjectRow, generationSets: string[][]): AdsPreviewCreative[] {
+  // Preview style must be a creative_templates UUID for CreativeRender.
   const styleKey =
-    typeof row.style_key === "string" && row.style_key.trim() ? row.style_key.trim() : SPLIT_VS_STYLE_KEY;
+    resolveCreativeStyleId(typeof row.style_key === "string" ? row.style_key : null) ??
+    CREATIVE_STYLE_IDS.beforeAfterVs;
   const accentColor = resolveAccentHex(row.accent_color, DEFAULT_ACCENT_COLOR);
   const strategy = parseAdStrategy(row.strategy_data);
 
@@ -178,7 +180,8 @@ function previewFromCreativesData(
           texts.cta?.trim() ||
           strategy?.creatives.buttons[index % Math.max(strategy?.creatives.buttons.length ?? 1, 1)] ||
           "Узнать подробнее",
-        styleKey: typeof row.style_id === "string" && row.style_id.trim() ? row.style_id : fallbackStyle,
+        styleKey:
+          resolveCreativeStyleId(typeof row.style_id === "string" ? row.style_id : null) ?? fallbackStyle,
         accentColor: resolveAccentHex(row.accent_color, fallbackAccent),
       },
     ];

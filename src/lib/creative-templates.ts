@@ -15,8 +15,8 @@ export async function listCreativeTemplates(): Promise<CreativeTemplate[]> {
     .from("creative_templates")
     .select("id, name, category, preview_url")
     .eq("is_active", true)
-    .order("category")
-    .order("name");
+    // Seeded style UUIDs are sequential (...0001–...0005): id order = style order.
+    .order("id");
 
   if (error) throw new Error(error.message);
 

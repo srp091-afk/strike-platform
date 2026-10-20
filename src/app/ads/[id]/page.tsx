@@ -8,7 +8,7 @@ import type { AdGeneration, AdGenerationStatus, AdStrategy } from "@/lib/ad-type
 import { parseAdStrategy } from "@/lib/ad-strategy";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { imageSetsFromCreativesData, imageSetsFromGenerationImages } from "@/lib/ad-project-media";
-import { studioStyles } from "@/lib/studio-styles";
+import { resolveCreativeStyleId, resolveStudioStyleKey, studioStyles } from "@/lib/studio-styles";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const metadata: Metadata = {
@@ -205,8 +205,10 @@ async function loadProject(id: string) {
 
   // Fallback: older runs saved only ad_projects.creatives_data, not ad_generations.
   if (!generations.some((generation) => generation.is_active && generation.imageSets.length > 0)) {
-    const styleKey = typeof data.style_key === "string" ? data.style_key : "";
-    const styleName = studioStyles.find((style) => style.key === styleKey)?.name ?? "Студия";
+    const styleKeyRaw = typeof data.style_key === "string" ? data.style_key : "";
+    const canonicalStyle = resolveStudioStyleKey(styleKeyRaw);
+    const styleName =
+      studioStyles.find((style) => style.key === canonicalStyle)?.name ?? "Студия";
     const fromCreatives = generationFromCreativesData(data.creatives_data, projectId, styleName);
     if (fromCreatives) generations = [fromCreatives, ...generations];
   }
@@ -224,7 +226,10 @@ async function loadProject(id: string) {
             ? data.created_at
             : null,
       creativesReplaceAt: typeof data.creatives_replace_at === "string" ? data.creatives_replace_at : null,
-      styleKey: typeof data.style_key === "string" ? data.style_key : null,
+      styleKey:
+        typeof data.style_key === "string"
+          ? (resolveCreativeStyleId(data.style_key) ?? data.style_key)
+          : null,
       accentColor: readAccentColor(data.accent_color, data.creatives_data),
     },
     generations,

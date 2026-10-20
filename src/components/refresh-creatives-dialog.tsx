@@ -8,17 +8,21 @@ import { AccentColorField, DEFAULT_ACCENT_COLOR } from "@/components/accent-colo
 import { GenerationCostBadge } from "@/components/generation-cost-badge";
 import { StudioStylePreview } from "@/components/studio-style-preview";
 import { Button } from "@/components/ui/button";
+import type { CreativeTemplate } from "@/lib/creative-templates";
 import { DEFAULT_CREDITS_BALANCE, creditsForCreatives } from "@/lib/credits";
-import { resolveStudioStyleKey, studioStyles, styleFilters, type StudioStyleKey } from "@/lib/studio-styles";
+import { resolveCreativeStyleId } from "@/lib/studio-styles";
 import { cn } from "@/lib/utils";
 
 const QUANTITIES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
 export type RefreshCreativesPayload = {
-  styleId: StudioStyleKey;
+  /** `creative_templates.id` (UUID). */
+  styleId: string;
   quantity: number;
   accentColor: string;
 };
+
+type TemplatesResponse = { templates?: CreativeTemplate[]; error?: string };
 
 export function RefreshCreativesDialog({
   open,
@@ -37,29 +41,61 @@ export function RefreshCreativesDialog({
   initialAccent?: string | null;
   creditsBalance?: number;
 }) {
-  const [category, setCategory] = useState<(typeof styleFilters)[number]>("Все");
-  const [selectedStyle, setSelectedStyle] = useState<StudioStyleKey>(
-    resolveInitialStyle(initialStyle),
+  const [category, setCategory] = useState("Все");
+  const [selectedStyle, setSelectedStyle] = useState<string>(
+    () => resolveCreativeStyleId(initialStyle) ?? "",
   );
   const [quantity, setQuantity] = useState(3);
   const [accentColor, setAccentColor] = useState(initialAccent?.trim() || DEFAULT_ACCENT_COLOR);
+  const [templates, setTemplates] = useState<CreativeTemplate[]>([]);
+  const [templatesLoading, setTemplatesLoading] = useState(false);
+  const [templatesError, setTemplatesError] = useState<string | null>(null);
 
-  const visibleStyles = studioStyles.filter((style) => category === "Все" || style.category === category);
+  const filters = ["Все", ...Array.from(new Set(templates.map((template) => template.category).filter(Boolean)))];
+  const visibleStyles = templates.filter(
+    (template) => category === "Все" || template.category === category,
+  );
   const cost = creditsForCreatives(quantity);
   const insufficient = creditsBalance < cost;
 
+  // Dynamic style list from Supabase `creative_templates` via /api/creative-templates.
   useEffect(() => {
     if (!open) return;
-    setSelectedStyle(resolveInitialStyle(initialStyle));
+    let cancelled = false;
+    setTemplatesLoading(true);
+    setTemplatesError(null);
+    fetch("/api/creative-templates", { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json()) as TemplatesResponse;
+        if (!response.ok) throw new Error(payload.error || "Не удалось загрузить стили.");
+        if (!cancelled) setTemplates(payload.templates ?? []);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) {
+          setTemplates([]);
+          setTemplatesError(error instanceof Error ? error.message : "Не удалось загрузить стили.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTemplatesLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [open ]);
+
+  useEffect(() => {
+    if (!open) return;
+    setSelectedStyle(resolveCreativeStyleId(initialStyle) ?? "");
     setQuantity(3);
     setCategory("Все");
     setAccentColor(initialAccent?.trim() || DEFAULT_ACCENT_COLOR);
   }, [open, initialStyle, initialAccent]);
 
   useEffect(() => {
-    if (visibleStyles.some((style) => style.key === selectedStyle)) return;
+    if (visibleStyles.some((template) => template.id === selectedStyle)) return;
     const next = visibleStyles[0];
-    if (next) setSelectedStyle(next.key);
+    if (next) setSelectedStyle(next.id);
   }, [category, selectedStyle, visibleStyles]);
 
   useEffect(() => {
@@ -141,7 +177,7 @@ export function RefreshCreativesDialog({
           <div>
             <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">Визуальный стиль</p>
             <div className="mb-3 flex flex-wrap gap-2">
-              {styleFilters.map((filter) => {
+              {filters.map((filter) => {
                 const active = filter === category;
                 return (
                   <button
@@ -160,28 +196,44 @@ export function RefreshCreativesDialog({
                 );
               })}
             </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {visibleStyles.map((style) => {
-                const active = style.key === selectedStyle;
-                return (
-                  <button
-                    key={style.key}
-                    type="button"
-                    aria-pressed={active}
-                    disabled={pending}
-                    className={cn(
-                      "overflow-hidden rounded-xl border-2 bg-zinc-950 text-left transition-colors",
-                      active ? "border-white ring-2 ring-white/20" : "border-zinc-800 hover:border-zinc-500",
-                    )}
-                    onClick={() => setSelectedStyle(style.key)}
-                  >
-                    <StudioStylePreview styleKey={style.key} />
-                    <span className="block px-3 pt-3 text-sm font-medium text-white">{style.name}</span>
-                    <span className="block px-3 pt-1 pb-3 text-xs text-zinc-500">{style.note}</span>
-                  </button>
-                );
-              })}
-            </div>
+            {templatesLoading ? (
+              <p className="flex items-center gap-2 text-sm text-zinc-400">
+                <Loader2 className="size-4 animate-spin" />
+                Загружаем стили…
+              </p>
+            ) : templatesError ? (
+              <p className="text-sm text-red-300">{templatesError}</p>
+            ) : templates.length === 0 ? (
+              <p className="text-sm text-zinc-500">В базе нет активных стилей (таблица creative_templates пуста).</p>
+            ) : (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                {visibleStyles.map((template) => {
+                  const active = template.id === selectedStyle;
+                  return (
+                    <button
+                      key={template.id}
+                      type="button"
+                      aria-pressed={active}
+                      disabled={pending}
+                      className={cn(
+                        "overflow-hidden rounded-xl border-2 bg-zinc-950 text-left transition-colors",
+                        active ? "border-white ring-2 ring-white/20" : "border-zinc-800 hover:border-zinc-500",
+                      )}
+                      onClick={() => setSelectedStyle(template.id)}
+                    >
+                      {template.preview_url ? (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <img src={template.preview_url} alt="" className="aspect-[4/5] w-full object-cover" />
+                      ) : (
+                        <StudioStylePreview styleId={template.id} />
+                      )}
+                      <span className="block px-3 pt-3 text-sm font-medium text-white">{template.name}</span>
+                      <span className="block px-3 pt-1 pb-3 text-xs text-zinc-500">{template.category}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
           </div>
         </div>
 
@@ -189,7 +241,7 @@ export function RefreshCreativesDialog({
           <GenerationCostBadge creativesCount={quantity} balance={creditsBalance} />
           <Button
             type="button"
-            disabled={pending || insufficient || !selectedStyle}
+            disabled={pending || insufficient || !selectedStyle || templatesLoading}
             className="rounded-xl bg-white px-6 py-2.5 font-bold text-black shadow-lg hover:bg-zinc-200 disabled:opacity-40"
             onClick={() => onConfirm({ styleId: selectedStyle, quantity, accentColor })}
           >
@@ -207,8 +259,4 @@ export function RefreshCreativesDialog({
     </div>,
     document.body,
   );
-}
-
-function resolveInitialStyle(value: string | null | undefined): StudioStyleKey {
-  return resolveStudioStyleKey(value ?? "") ?? studioStyles[0]?.key ?? "before-after-vs";
 }

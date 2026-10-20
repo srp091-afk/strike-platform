@@ -53,34 +53,117 @@ export const SIDE_FADE_STYLE_KEY = "side-fade" as const;
 /** Style 5 — Editorial Block (one Flux background). */
 export const EDITORIAL_BLOCK_STYLE_KEY = "editorial-block" as const;
 
+/**
+ * Canonical `creative_templates` row ids in Supabase.
+ * UI style lists are loaded from that table; these UUIDs are the stable
+ * link between a DB row and a React template component.
+ */
+export const CREATIVE_STYLE_IDS = {
+  beforeAfterVs: "00000000-0000-0000-0000-000000000001",
+  splitAction: "00000000-0000-0000-0000-000000000002",
+  premiumDark: "00000000-0000-0000-0000-000000000003",
+  sideFade: "00000000-0000-0000-0000-000000000004",
+  editorialBlock: "00000000-0000-0000-0000-000000000005",
+} as const;
+
+export type CreativeStyleId = (typeof CREATIVE_STYLE_IDS)[keyof typeof CREATIVE_STYLE_IDS];
+
+export const CREATIVE_STYLE_ID_LIST = Object.values(CREATIVE_STYLE_IDS) as CreativeStyleId[];
+
+const TEMPLATE_ID_BY_STYLE_KEY: Record<StudioStyleKey, CreativeStyleId> = {
+  [SPLIT_VS_STYLE_KEY]: CREATIVE_STYLE_IDS.beforeAfterVs,
+  [SPLIT_ACTION_STYLE_KEY]: CREATIVE_STYLE_IDS.splitAction,
+  [PREMIUM_DARK_STYLE_KEY]: CREATIVE_STYLE_IDS.premiumDark,
+  [SIDE_FADE_STYLE_KEY]: CREATIVE_STYLE_IDS.sideFade,
+  [EDITORIAL_BLOCK_STYLE_KEY]: CREATIVE_STYLE_IDS.editorialBlock,
+};
+
+export function isCreativeStyleId(value: string | null | undefined): value is CreativeStyleId {
+  if (!value) return false;
+  return (CREATIVE_STYLE_ID_LIST as string[]).includes(value.trim().toLowerCase());
+}
+
+/** DB template UUID for a canonical style key. */
+export function templateIdForStyleKey(key: StudioStyleKey): CreativeStyleId {
+  return TEMPLATE_ID_BY_STYLE_KEY[key];
+}
+
+/** Canonical style key for a DB template UUID (null when unknown). */
+export function styleKeyForTemplateId(value: string | null | undefined): StudioStyleKey | null {
+  if (!value) return null;
+  const normalized = value.trim().toLowerCase();
+  const entry = (Object.entries(TEMPLATE_ID_BY_STYLE_KEY) as [StudioStyleKey, CreativeStyleId][]).find(
+    ([, id]) => id === normalized,
+  );
+  return entry?.[0] ?? null;
+}
+
+/** Any accepted style reference (UUID, canonical key, numeric alias) → DB template UUID. */
+export function resolveCreativeStyleId(value: string | null | undefined): CreativeStyleId | null {
+  if (!value) return null;
+  if (isCreativeStyleId(value)) return value.trim().toLowerCase() as CreativeStyleId;
+  const key = resolveStudioStyleKey(value);
+  return key ? TEMPLATE_ID_BY_STYLE_KEY[key] : null;
+}
+
 export function isSplitVsStyle(styleId: string | null | undefined): boolean {
   if (!styleId) return false;
   const key = styleId.trim().toLowerCase();
-  return key === SPLIT_VS_STYLE_KEY || key === "1" || key === "style-1" || key === "style1";
+  return (
+    key === SPLIT_VS_STYLE_KEY ||
+    key === CREATIVE_STYLE_IDS.beforeAfterVs ||
+    key === "1" ||
+    key === "style-1" ||
+    key === "style1"
+  );
 }
 
 export function isSplitActionStyle(styleId: string | null | undefined): boolean {
   if (!styleId) return false;
   const key = styleId.trim().toLowerCase();
-  return key === SPLIT_ACTION_STYLE_KEY || key === "2" || key === "style-2" || key === "style2";
+  return (
+    key === SPLIT_ACTION_STYLE_KEY ||
+    key === CREATIVE_STYLE_IDS.splitAction ||
+    key === "2" ||
+    key === "style-2" ||
+    key === "style2"
+  );
 }
 
 export function isPremiumDarkStyle(styleId: string | null | undefined): boolean {
   if (!styleId) return false;
   const key = styleId.trim().toLowerCase();
-  return key === PREMIUM_DARK_STYLE_KEY || key === "3" || key === "style-3" || key === "style3";
+  return (
+    key === PREMIUM_DARK_STYLE_KEY ||
+    key === CREATIVE_STYLE_IDS.premiumDark ||
+    key === "3" ||
+    key === "style-3" ||
+    key === "style3"
+  );
 }
 
 export function isSideFadeStyle(styleId: string | null | undefined): boolean {
   if (!styleId) return false;
   const key = styleId.trim().toLowerCase();
-  return key === SIDE_FADE_STYLE_KEY || key === "4" || key === "style-4" || key === "style4";
+  return (
+    key === SIDE_FADE_STYLE_KEY ||
+    key === CREATIVE_STYLE_IDS.sideFade ||
+    key === "4" ||
+    key === "style-4" ||
+    key === "style4"
+  );
 }
 
 export function isEditorialBlockStyle(styleId: string | null | undefined): boolean {
   if (!styleId) return false;
   const key = styleId.trim().toLowerCase();
-  return key === EDITORIAL_BLOCK_STYLE_KEY || key === "5" || key === "style-5" || key === "style5";
+  return (
+    key === EDITORIAL_BLOCK_STYLE_KEY ||
+    key === CREATIVE_STYLE_IDS.editorialBlock ||
+    key === "5" ||
+    key === "style-5" ||
+    key === "style5"
+  );
 }
 
 /** Dual-photo styles that need prompt_before + prompt_after. */
@@ -129,10 +212,12 @@ export function isStudioStyleKey(value: string): value is StudioStyleKey {
   return studioStyles.some((style) => style.key === value);
 }
 
-/** Accepts studio keys and numeric aliases like `"1"` … `"5"`. */
+/** Accepts template UUIDs, studio keys and numeric aliases like `"1"` … `"5"`. */
 export function resolveStudioStyleKey(value: string): StudioStyleKey | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
+  const fromTemplate = styleKeyForTemplateId(trimmed);
+  if (fromTemplate) return fromTemplate;
   if (isSplitVsStyle(trimmed)) return SPLIT_VS_STYLE_KEY;
   if (isSplitActionStyle(trimmed)) return SPLIT_ACTION_STYLE_KEY;
   if (isPremiumDarkStyle(trimmed)) return PREMIUM_DARK_STYLE_KEY;

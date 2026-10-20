@@ -3,7 +3,7 @@ import { buildCreatives, parseFormattedBriefRow, publicCreativesError, resolveSt
 import { parseAdStrategy } from "@/lib/ad-strategy";
 import { isRealCreativeImageUrl, plusDaysIso } from "@/lib/ad-project-media";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
-import { isCreativeLanguage, studioStyles } from "@/lib/studio-styles";
+import { isCreativeLanguage, resolveCreativeStyleId, studioStyles } from "@/lib/studio-styles";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 120;
@@ -45,6 +45,8 @@ export async function POST(request: Request) {
   }
 
   const styleName = studioStyles.find((style) => style.key === styleId)?.name ?? styleId;
+  // Persist the creative_templates UUID (not the canonical key) as style_key.
+  const storedStyleId = resolveCreativeStyleId(styleId) ?? styleId;
   const supabase = createSupabaseAdminClient();
   const { data: project, error: projectError } = await supabase
     .from("ad_projects")
@@ -131,7 +133,7 @@ export async function POST(request: Request) {
       updated_at: nowIso,
       creatives_replace_at: replaceAt,
       status: "ready",
-      style_key: styleId,
+      style_key: storedStyleId,
       creative_language: creativeLanguage,
       creatives_count: creativesCount,
       accent_color: accentHex,

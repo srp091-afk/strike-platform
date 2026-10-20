@@ -8,7 +8,13 @@ import { plusDaysIso } from "@/lib/ad-project-media";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { formatBriefSummary, parseFormattedBrief, publicFormatError } from "@/lib/format-brief";
 import { getOpenAI } from "@/lib/openai";
-import { isCreativeLanguage, isFontStyle, isStudioStyleKey, studioStyles } from "@/lib/studio-styles";
+import {
+  isCreativeLanguage,
+  isFontStyle,
+  resolveCreativeStyleId,
+  resolveStudioStyleKey,
+  studioStyles,
+} from "@/lib/studio-styles";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export type CreateAdProjectState = {
@@ -58,7 +64,7 @@ export async function createAdCampaign(
   const creativesCount = Number(text(formData.get("creatives_count")));
   const creativeLanguage = text(formData.get("creative_language"));
   const fontStyle = text(formData.get("font_style"));
-  const styleKey = text(formData.get("style_key"));
+  const styleKeyRaw = text(formData.get("style_key"));
   const accentColor = resolveAccentHex(text(formData.get("accent_color")) || DEFAULT_ACCENT_COLOR);
 
   if (summary.length < 12) return { error: "Бриф ещё не собран.", projectId: null };
@@ -69,7 +75,10 @@ export async function createAdCampaign(
   }
   if (!isCreativeLanguage(creativeLanguage)) return { error: "Выберите язык текста на креативе.", projectId: null };
   if (!isFontStyle(fontStyle)) return { error: "Выберите характер типографики.", projectId: null };
-  if (!isStudioStyleKey(styleKey)) return { error: "Выберите визуальный стиль.", projectId: null };
+  // style_key now carries the creative_templates UUID; canonical key is for prompts/names.
+  const styleKey = resolveStudioStyleKey(styleKeyRaw || templateId);
+  if (!styleKey) return { error: "Выберите визуальный стиль.", projectId: null };
+  const storedStyleId = resolveCreativeStyleId(styleKey) ?? templateId;
   const styleName = studioStyles.find((style) => style.key === styleKey)?.name ?? styleKey;
 
   const submittedStrategy = text(formData.get("strategy_data"));
@@ -115,7 +124,7 @@ export async function createAdCampaign(
       creatives_count: creativesCount,
       creative_language: creativeLanguage,
       font_style: fontStyle,
-      style_key: styleKey,
+      style_key: storedStyleId,
       accent_color: accentColor,
       updated_at: now.toISOString(),
       creatives_replace_at: plusDaysIso(now, 14),
@@ -140,7 +149,7 @@ export async function createAdCampaign(
           creatives_count: creativesCount,
           creative_language: creativeLanguage,
           font_style: fontStyle,
-          style_key: styleKey,
+          style_key: storedStyleId,
           updated_at: now.toISOString(),
           creatives_replace_at: plusDaysIso(now, 14),
         });
@@ -165,7 +174,7 @@ export async function createAdCampaign(
           creatives_count: creativesCount,
           creative_language: creativeLanguage,
           font_style: fontStyle,
-          style_key: styleKey,
+          style_key: storedStyleId,
           style_name: styleName,
           accent_color: accentColor,
         },

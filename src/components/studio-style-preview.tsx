@@ -1,9 +1,12 @@
+import { resolveStudioStyleKey } from "@/lib/studio-styles";
+
 /** Miniature style thumbnails for the wizard + refresh modal (styles 1–5). */
-export function StudioStylePreview({ styleKey }: { styleKey: string }) {
-  if (styleKey === "split-action") return <SplitActionPreview />;
-  if (styleKey === "premium-dark") return <PremiumDarkPreview />;
-  if (styleKey === "side-fade") return <SideFadePreview />;
-  if (styleKey === "editorial-block") return <EditorialBlockPreview />;
+export function StudioStylePreview({ styleId }: { styleId: string }) {
+  const key = resolveStudioStyleKey(styleId);
+  if (key === "split-action") return <SplitActionPreview />;
+  if (key === "premium-dark") return <PremiumDarkPreview />;
+  if (key === "side-fade") return <SideFadePreview />;
+  if (key === "editorial-block") return <EditorialBlockPreview />;
   return <VsPreview />;
 }
 
