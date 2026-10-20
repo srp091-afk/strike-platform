@@ -31,6 +31,43 @@
   }
 }
 
+/* macOS-style thin scrollbar for auto-resize textareas. */
+@utility scrollbar-macos {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.25) transparent;
+  &::-webkit-scrollbar {
+    width: 6px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.22);
+    border-radius: 999px;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.38);
+  }
+  &::-webkit-scrollbar-button {
+    display: none;
+  }
+}
+
+@keyframes fade-zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@utility animate-in {
+  animation: fade-zoom-in 0.18s ease-out;
+}
+
 @keyframes typing {
   0%,
   100% {

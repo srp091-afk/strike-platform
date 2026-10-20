@@ -26,6 +26,7 @@
     "openai": "^7.31.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
+    "react-textarea-autosize": "^8.5.9",
     "replicate": "^1.4.0",
     "server-only": "^0.0.1",
     "swr": "^2.5.1",

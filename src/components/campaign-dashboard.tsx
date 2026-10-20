@@ -3,8 +3,9 @@
 import { Check, Clock, Copy, Download, Folder, Loader2, RefreshCw, Sparkles, Trash2, ZoomIn } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState, type FocusEvent } from "react";
+import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { createPortal } from "react-dom";
+import TextareaAutosize from "react-textarea-autosize";
 
 import { CreativeRender } from "@/components/creatives/CreativeRender";
 import { RefreshCreativesDialog, type RefreshCreativesPayload } from "@/components/refresh-creatives-dialog";
@@ -127,9 +128,9 @@ export function CampaignDashboard({
     await patchProject({ name: next });
   }
 
-  async function saveStrategy(next: AdStrategy) {
+  async function saveStrategy(next: AdStrategy): Promise<boolean> {
     setStrategy(next);
-    await patchProject({ strategy_data: next });
+    return patchProject({ strategy_data: next });
   }
 
   async function saveReplaceDate(value: string) {
@@ -240,12 +241,14 @@ export function CampaignDashboard({
       <LinkBack />
       <header className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-3">
-            <input
+          <div className="flex max-w-3xl flex-wrap items-start gap-3">
+            <TextareaAutosize
               value={name}
+              minRows={1}
+              maxRows={3}
               onChange={(event) => setName(event.target.value)}
               onBlur={() => void saveName()}
-              className="min-w-0 flex-1 bg-transparent text-3xl font-bold text-white outline-none ring-0 placeholder:text-zinc-600 focus:underline"
+              className="min-w-0 flex-1 resize-none overflow-hidden bg-transparent text-3xl font-bold break-words whitespace-normal text-white outline-none ring-0 placeholder:text-zinc-600 focus:underline"
               aria-label="Название проекта"
             />
             <ProjectStatusBadge status={status} />
@@ -268,29 +271,20 @@ export function CampaignDashboard({
             </label>
           </div>
         </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2 sm:ml-auto">
           <Button
             type="button"
-            variant="outline"
-            disabled={saving || refreshing || !strategy}
-            onClick={() => {
-              if (strategy) void patchProject({ name: name.trim(), strategy_data: strategy });
-            }}
-          >
-            {saving ? "Сохраняем…" : "Сохранить"}
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
             disabled={refreshing || !strategy}
+            className="bg-white font-bold text-black shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-all hover:bg-neutral-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.1)]"
             onClick={() => setRefreshOpen(true)}
           >
             {refreshing ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
-            + Обновить креативы
+            Обновить креативы
           </Button>
           <Button
             type="button"
-            className="bg-white text-black hover:bg-zinc-200 hover:shadow-none"
+            variant="outline"
+            className="border-white/20 bg-transparent text-white hover:bg-white/5 hover:text-white"
             disabled={exportingZip || refreshing || !activeGeneration}
             onClick={() => void exportZip()}
           >
@@ -313,7 +307,7 @@ export function CampaignDashboard({
                       value={strategy.strategy.target_audience_insight}
                       multiline
                       onCommit={(value) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           strategy: { ...strategy.strategy, target_audience_insight: value },
                         })
@@ -324,7 +318,7 @@ export function CampaignDashboard({
                       value={strategy.strategy.core_offer_angle}
                       multiline
                       onCommit={(value) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           strategy: { ...strategy.strategy, core_offer_angle: value },
                         })
@@ -337,7 +331,7 @@ export function CampaignDashboard({
                       placeholder="Укажите акцию, подарок или ограничение (например: Скидка 20% до пятницы, Возьмем 2 проекта до конца месяца)"
                       hint="Коротко опишите вашу акцию, дедлайн или бонус. Нейросеть автоматически сожмет этот текст до яркого триггера (до 8 слов) и разместит на акцентной плашке креатива для привлечения внимания."
                       onCommit={(value) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           strategy: { ...strategy.strategy, hook_concept: value },
                         })
@@ -358,7 +352,7 @@ export function CampaignDashboard({
                       label="Заголовки"
                       items={strategy.creatives.headlines}
                       onCommit={(items) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           creatives: { ...strategy.creatives, headlines: items },
                         })
@@ -368,7 +362,7 @@ export function CampaignDashboard({
                       label="Подзаголовки"
                       items={strategy.creatives.subheadlines}
                       onCommit={(items) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           creatives: { ...strategy.creatives, subheadlines: items },
                         })
@@ -379,7 +373,7 @@ export function CampaignDashboard({
                       items={strategy.creatives.benefits}
                       marked
                       onCommit={(items) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           creatives: { ...strategy.creatives, benefits: items },
                         })
@@ -389,7 +383,7 @@ export function CampaignDashboard({
                       label="Кнопки"
                       items={strategy.creatives.buttons}
                       onCommit={(items) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           creatives: { ...strategy.creatives, buttons: items },
                         })
@@ -411,7 +405,7 @@ export function CampaignDashboard({
                       items={strategy.facebook_setup.primary_texts}
                       multiline
                       onCommit={(items) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           facebook_setup: { ...strategy.facebook_setup, primary_texts: items },
                         })
@@ -421,7 +415,7 @@ export function CampaignDashboard({
                       label="Заголовок объявления"
                       items={strategy.facebook_setup.headlines}
                       onCommit={(items) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           facebook_setup: { ...strategy.facebook_setup, headlines: items },
                         })
@@ -431,7 +425,7 @@ export function CampaignDashboard({
                       label="Описание объявления"
                       items={strategy.facebook_setup.descriptions}
                       onCommit={(items) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           facebook_setup: { ...strategy.facebook_setup, descriptions: items },
                         })
@@ -452,7 +446,7 @@ export function CampaignDashboard({
                       label="Заголовок"
                       value={strategy.lead_form.headline}
                       onCommit={(value) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           lead_form: { ...strategy.lead_form, headline: value },
                         })
@@ -463,7 +457,7 @@ export function CampaignDashboard({
                       items={strategy.lead_form.welcome_screen_bullets}
                       marked
                       onCommit={(items) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           lead_form: { ...strategy.lead_form, welcome_screen_bullets: items },
                         })
@@ -474,7 +468,7 @@ export function CampaignDashboard({
                       label="Экран благодарности — заголовок"
                       value={strategy.lead_form.thank_you_screen.headline}
                       onCommit={(value) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           lead_form: {
                             ...strategy.lead_form,
@@ -488,7 +482,7 @@ export function CampaignDashboard({
                       value={strategy.lead_form.thank_you_screen.description}
                       multiline
                       onCommit={(value) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           lead_form: {
                             ...strategy.lead_form,
@@ -501,7 +495,7 @@ export function CampaignDashboard({
                       label="Кнопка лид-формы"
                       value={strategy.lead_form.call_to_action}
                       onCommit={(value) =>
-                        void saveStrategy({
+                        saveStrategy({
                           ...strategy,
                           lead_form: { ...strategy.lead_form, call_to_action: value },
                         })
@@ -584,41 +578,93 @@ function EditableText({
   multiline?: boolean;
   placeholder?: string;
   hint?: string;
-  onCommit: (value: string) => void;
+  onCommit: (value: string) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState(value);
-  useEffect(() => setDraft(value), [value]);
+  const [baseline, setBaseline] = useState(value);
+  const [pending, setPending] = useState(false);
+  const [saved, setSaved] = useState(false);
 
-  function commit(event: FocusEvent<HTMLInputElement | HTMLTextAreaElement>) {
-    const next = event.currentTarget.value.trim();
-    if (!next || next === value) {
-      setDraft(value);
+  useEffect(() => {
+    setDraft(value);
+    setBaseline(value);
+  }, [value]);
+
+  useEffect(() => {
+    if (!saved) return;
+    const timer = setTimeout(() => setSaved(false), 1600);
+    return () => clearTimeout(timer);
+  }, [saved]);
+
+  const isDirty = draft.trim().length > 0 && draft.trim() !== baseline.trim();
+
+  async function save() {
+    const next = draft.trim();
+    if (!next || next === baseline.trim() || pending) return;
+    setPending(true);
+    try {
+      const ok = await onCommit(next);
+      if (ok) {
+        setBaseline(next);
+        setDraft(next);
+        setSaved(true);
+      }
+    } finally {
+      setPending(false);
+    }
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    // Cmd/Ctrl + Enter saves from inside the field.
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      void save();
       return;
     }
-    onCommit(next);
+    if (!multiline && event.key === "Enter") {
+      event.preventDefault();
+      void save();
+    }
   }
 
   return (
     <div className="grid gap-2">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">{label}</p>
-      {multiline ? (
-        <textarea
-          value={draft}
-          rows={4}
-          placeholder={placeholder}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          className="w-full resize-y rounded-lg border border-zinc-800 bg-black/40 px-3 py-2 text-sm leading-6 text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
-        />
-      ) : (
-        <input
-          value={draft}
-          placeholder={placeholder}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commit}
-          className="w-full rounded-lg border border-zinc-800 bg-black/40 px-3 py-2 text-sm leading-6 text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
-        />
-      )}
+      <div className="relative">
+        {multiline ? (
+          <TextareaAutosize
+            value={draft}
+            minRows={3}
+            maxRows={8}
+            placeholder={placeholder}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={handleKeyDown}
+            className="scrollbar-macos w-full resize-none rounded-lg border border-zinc-800 bg-black/40 px-3 py-2 pr-24 pb-10 text-sm leading-6 text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
+          />
+        ) : (
+          <input
+            value={draft}
+            placeholder={placeholder}
+            onChange={(event) => setDraft(event.target.value)}
+            onKeyDown={handleKeyDown}
+            className="w-full rounded-lg border border-zinc-800 bg-black/40 px-3 py-2 pr-24 text-sm leading-6 text-zinc-200 outline-none placeholder:text-zinc-600 focus:border-zinc-500"
+          />
+        )}
+        {saved ? (
+          <span className="animate-in absolute right-2 bottom-2 grid size-7 place-items-center rounded-md bg-emerald-500/15 text-emerald-400">
+            <Check className="size-4" strokeWidth={3} />
+          </span>
+        ) : isDirty ? (
+          <button
+            type="button"
+            disabled={pending}
+            onClick={() => void save()}
+            className="animate-in absolute right-2 bottom-2 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition-all hover:brightness-110 disabled:opacity-50"
+          >
+            {pending ? "Сохраняем…" : "Сохранить"}
+          </button>
+        ) : null}
+      </div>
       {hint ? <p className="text-[11px] leading-relaxed text-zinc-500">{hint}</p> : null}
     </div>
   );
