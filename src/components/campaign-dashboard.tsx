@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Clock, Copy, Download, Folder, Loader2, RefreshCw, Sparkles, Trash2, ZoomIn } from "lucide-react";
+import { Check, Clock, Copy, Download, Folder, Info, Loader2, Pencil, RefreshCw, Sparkles, Trash2, ZoomIn } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type KeyboardEvent as ReactKeyboardEvent } from "react";
@@ -241,7 +241,7 @@ export function CampaignDashboard({
       <LinkBack />
       <header className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0 flex-1">
-          <div className="flex max-w-3xl flex-wrap items-start gap-3">
+          <div className="group flex max-w-3xl items-start gap-3">
             <TextareaAutosize
               value={name}
               minRows={1}
@@ -250,6 +250,13 @@ export function CampaignDashboard({
               onBlur={() => void saveName()}
               className="min-w-0 flex-1 resize-none overflow-hidden bg-transparent text-3xl font-bold break-words whitespace-normal text-white outline-none ring-0 placeholder:text-zinc-600 focus:underline"
               aria-label="Название проекта"
+            />
+            <Pencil
+              aria-hidden="true"
+              className="mt-2.5 h-5 w-5 flex-shrink-0 cursor-pointer text-neutral-500 opacity-0 transition-opacity group-hover:opacity-100"
+              onClick={(event) => {
+                event.currentTarget.parentElement?.querySelector("textarea")?.focus();
+              }}
             />
             <ProjectStatusBadge status={status} />
           </div>
@@ -296,56 +303,17 @@ export function CampaignDashboard({
 
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
         <Card className="rounded-xl border-zinc-800 bg-zinc-900/40 p-5 backdrop-blur lg:col-span-1">
-          <Accordion type="multiple" defaultValue={["strategy"]} className="w-full">
-            <AccordionItem value="strategy">
-              <AccordionTrigger>Стратегия</AccordionTrigger>
-              <AccordionContent>
-                {strategy ? (
-                  <div className="grid gap-5">
-                    <EditableText
-                      label="Портрет аудитории"
-                      value={strategy.strategy.target_audience_insight}
-                      multiline
-                      onCommit={(value) =>
-                        saveStrategy({
-                          ...strategy,
-                          strategy: { ...strategy.strategy, target_audience_insight: value },
-                        })
-                      }
-                    />
-                    <EditableText
-                      label="Угол оффера"
-                      value={strategy.strategy.core_offer_angle}
-                      multiline
-                      onCommit={(value) =>
-                        saveStrategy({
-                          ...strategy,
-                          strategy: { ...strategy.strategy, core_offer_angle: value },
-                        })
-                      }
-                    />
-                    <EditableText
-                      label="Спецпредложение и Триггер (УТП)"
-                      value={strategy.strategy.hook_concept}
-                      multiline
-                      placeholder="Укажите акцию, подарок или ограничение (например: Скидка 20% до пятницы, Возьмем 2 проекта до конца месяца)"
-                      hint="Коротко опишите вашу акцию, дедлайн или бонус. Нейросеть автоматически сожмет этот текст до яркого триггера (до 8 слов) и разместит на акцентной плашке креатива для привлечения внимания."
-                      onCommit={(value) =>
-                        saveStrategy({
-                          ...strategy,
-                          strategy: { ...strategy.strategy, hook_concept: value },
-                        })
-                      }
-                    />
-                  </div>
-                ) : (
-                  <MissingCopy />
-                )}
-              </AccordionContent>
-            </AccordionItem>
-            <AccordionItem value="texts">
+          <Accordion type="multiple" defaultValue={[]} className="w-full">
+            <AccordionItem className="border-b border-white/10" value="texts">
               <AccordionTrigger>Тексты для креативов</AccordionTrigger>
               <AccordionContent className="grid gap-5">
+                <div className="flex gap-3 rounded-lg border border-blue-500/20 bg-blue-500/10 p-4">
+                  <Info className="h-5 w-5 shrink-0 text-blue-300/70" />
+                  <p className="text-sm leading-relaxed text-neutral-300">
+                    Чтобы изменить тексты на самих креативах (заголовки, буллеты, бейджи), редактируйте поля
+                    ниже. Изменения применятся после генерации.
+                  </p>
+                </div>
                 {strategy ? (
                   <>
                     <EditableList
@@ -395,7 +363,53 @@ export function CampaignDashboard({
                 )}
               </AccordionContent>
             </AccordionItem>
-            <AccordionItem value="facebook">
+            <AccordionItem className="border-b border-white/10" value="strategy">
+              <AccordionTrigger>Стратегия</AccordionTrigger>
+              <AccordionContent>
+                {strategy ? (
+                  <div className="grid gap-5">
+                    <EditableText
+                      label="Портрет аудитории"
+                      value={strategy.strategy.target_audience_insight}
+                      multiline
+                      onCommit={(value) =>
+                        saveStrategy({
+                          ...strategy,
+                          strategy: { ...strategy.strategy, target_audience_insight: value },
+                        })
+                      }
+                    />
+                    <EditableText
+                      label="Угол оффера"
+                      value={strategy.strategy.core_offer_angle}
+                      multiline
+                      onCommit={(value) =>
+                        saveStrategy({
+                          ...strategy,
+                          strategy: { ...strategy.strategy, core_offer_angle: value },
+                        })
+                      }
+                    />
+                    <EditableText
+                      label="Спецпредложение и Триггер (УТП)"
+                      value={strategy.strategy.hook_concept}
+                      multiline
+                      placeholder="Укажите акцию, подарок или ограничение (например: Скидка 20% до пятницы, Возьмем 2 проекта до конца месяца)"
+                      hint="Коротко опишите вашу акцию, дедлайн или бонус. Нейросеть автоматически сожмет этот текст до яркого триггера (до 8 слов) и разместит на акцентной плашке креатива для привлечения внимания."
+                      onCommit={(value) =>
+                        saveStrategy({
+                          ...strategy,
+                          strategy: { ...strategy.strategy, hook_concept: value },
+                        })
+                      }
+                    />
+                  </div>
+                ) : (
+                  <MissingCopy />
+                )}
+              </AccordionContent>
+            </AccordionItem>
+            <AccordionItem className="border-b border-white/10" value="facebook">
               <AccordionTrigger>Упаковка кампании (Facebook Ads)</AccordionTrigger>
               <AccordionContent className="grid gap-5">
                 {strategy ? (
@@ -437,7 +451,7 @@ export function CampaignDashboard({
                 )}
               </AccordionContent>
             </AccordionItem>
-            <AccordionItem value="lead">
+            <AccordionItem className="border-b border-white/10" value="lead">
               <AccordionTrigger>Настройка Лид-формы</AccordionTrigger>
               <AccordionContent className="grid gap-5">
                 {strategy ? (
@@ -734,12 +748,13 @@ function EditableRow({
       <div className={cn("flex min-w-0 flex-1 gap-2 text-sm leading-6 text-zinc-200", marked && "items-start")}>
         {marked ? <Check className="mt-1 size-3.5 shrink-0 text-zinc-400" /> : null}
         {multiline ? (
-          <textarea
+          <TextareaAutosize
             value={draft}
-            rows={3}
+            minRows={2}
+            maxRows={8}
             onChange={(event) => setDraft(event.target.value)}
             onBlur={commit}
-            className="min-w-0 flex-1 resize-y bg-transparent outline-none"
+            className="scrollbar-macos min-w-0 flex-1 resize-none bg-transparent outline-none"
           />
         ) : (
           <input
