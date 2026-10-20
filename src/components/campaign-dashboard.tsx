@@ -780,6 +780,9 @@ function CreativesGrid({
   emptyText?: string;
 }) {
   const [busyKey, setBusyKey] = useState<string | null>(null);
+  // Confirmation modal state: "<generationId>:<creativeIndex>" of the creative to delete.
+  const [creativeToDelete, setCreativeToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
   const imageSets =
     generation?.imageSets?.length
       ? generation.imageSets
@@ -814,17 +817,25 @@ function CreativesGrid({
     }
   }
 
-  async function deleteOne(key: string, creativeIndex: number) {
-    if (!generation || !onDeleteCreative || busyKey) return;
-    setBusyKey(key);
+  async function handleConfirmDelete() {
+    if (!generation || !onDeleteCreative || creativeToDelete === null || isDeleting) return;
+    const creativeIndex = Number(creativeToDelete.split(":").pop());
+    if (!Number.isInteger(creativeIndex) || creativeIndex < 0) {
+      setCreativeToDelete(null);
+      return;
+    }
+    setIsDeleting(true);
     try {
-      await onDeleteCreative(generation.id, creativeIndex);
+      // onDeleteCreative performs the API call and updates the list (optimistically).
+      const deleted = await onDeleteCreative(generation.id, creativeIndex);
+      if (deleted) setCreativeToDelete(null);
     } finally {
-      setBusyKey(null);
+      setIsDeleting(false);
     }
   }
 
   return (
+    <>
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       {imageSets.map((urls, index) => {
         const before = urls[0] ?? "";
@@ -887,10 +898,10 @@ function CreativesGrid({
                     type="button"
                     variant="outline"
                     className="border-red-900/60 text-red-300 hover:bg-red-950/60 hover:text-red-200"
-                    disabled={busy || !onDeleteCreative}
-                    onClick={() => void deleteOne(nodeId, index)}
+                    disabled={busy || isDeleting || !onDeleteCreative}
+                    onClick={() => setCreativeToDelete(`${generation.id}:${index}`)}
                   >
-                    {busy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                    <Trash2 className="size-4" />
                     Удалить
                   </Button>
                 )}
@@ -900,6 +911,45 @@ function CreativesGrid({
         );
       })}
     </div>
+
+    {creativeToDelete !== null ? (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Удалить креатив?"
+        onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !isDeleting) setCreativeToDelete(null);
+        }}
+      >
+        <div className="w-[min(90vw,28rem)] rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl">
+          <h2 className="text-xl font-bold text-white">Удалить креатив?</h2>
+          <p className="mt-3 text-gray-400">
+            Вы уверены? Это действие нельзя отменить, изображение и данные будут удалены навсегда.
+          </p>
+          <div className="mt-6 flex gap-4">
+            <button
+              type="button"
+              className="rounded-md bg-gray-800 px-4 py-2 text-white transition-colors hover:bg-gray-700 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isDeleting}
+              onClick={() => setCreativeToDelete(null)}
+            >
+              Отмена
+            </button>
+            <button
+              type="button"
+              className="inline-flex items-center gap-2 rounded-md bg-red-600 px-4 py-2 font-bold text-white transition-colors hover:bg-red-500 disabled:cursor-not-allowed disabled:opacity-60"
+              disabled={isDeleting}
+              onClick={() => void handleConfirmDelete()}
+            >
+              {isDeleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+              {isDeleting ? "Удаление…" : "Удалить"}
+            </button>
+          </div>
+        </div>
+      </div>
+    ) : null}
+    </>
   );
 }
 
