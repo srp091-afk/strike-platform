@@ -6,6 +6,7 @@ import Replicate from "replicate";
 import { accentColorForPrompt, DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import type { AdCreative, AdCreativeTexts, AdFormattedBrief, AdStrategy } from "@/lib/ad-types";
 import { limitBadgeWords } from "@/lib/badge-copy";
+import { persistCreativeImage } from "@/lib/creative-storage";
 import { getOpenAI } from "@/lib/openai";
 import {
   isDualImageStyle,
@@ -111,7 +112,10 @@ export async function generateImageWithFlux(prompt: string): Promise<string> {
     if (!imageUrl) {
       throw new Error(`Не удалось извлечь URL из output[0]=${stringifyUnknown(items[0])}`);
     }
-    return imageUrl;
+    // Replicate delivery URLs expire (~24h): re-upload to Supabase Storage
+    // (`creatives` bucket) and persist only the permanent public URL.
+    // Split styles call this via Promise.all, so before/after persist in parallel.
+    return persistCreativeImage(imageUrl);
   } catch (error) {
     console.error("[generateImageWithFlux]", error);
     return FALLBACK_IMAGE;
