@@ -59,6 +59,8 @@ const mockSideFade: CreativeTemplateProps = {
   headline: "Заявки каждый день",
   subheadline: "Система, которая не зависит от сарафана",
   bullets: ["Чёткий оффер", "Контроль CPL", "Масштаб без хаоса", "Прозрачная аналитика"],
+  fontStyle: "ultra",
+  region: "Берлин",
   buttonText: "Хочу систему",
   images: [mockSingleImage],
   accentColor: "#FFE600",

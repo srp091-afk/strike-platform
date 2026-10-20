@@ -1013,6 +1013,7 @@ function CreativesGrid({
       antiBullets: strategy?.creatives.anti_benefits ?? [],
       fontStyle,
       overlayText: strategy?.strategy.core_offer_angle,
+      region: strategy?.strategy.region,
       badge:
         (creative?.badge ? limitBadgeWords(creative.badge) : "") ||
         (badges.length > 0 ? limitBadgeWords(badges[index % badges.length]) : "") ||

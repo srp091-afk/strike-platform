@@ -11,11 +11,13 @@ export function Style4_SideFade({
   images,
   accentColor,
   fontStyle,
+  region,
   format = "4:5",
 }: CreativeTemplateProps) {
   const accent = resolveAccentHex(accentColor, DEFAULT_ACCENT_COLOR);
   const bg = images[0] ?? "";
   const items = (bullets.length > 0 ? bullets : ["Быстрый результат", "Прозрачная система"]).slice(0, 4);
+  const regionLabel = region?.trim() ?? "";
   const stories = format === "9:16";
 
   return (
@@ -27,28 +29,45 @@ export function Style4_SideFade({
         ) : (
           <div className="absolute inset-0 bg-zinc-900" />
         )}
-        <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/80 to-transparent" />
+        {/* Side gradient: solid black on the left, transparent on the right. */}
+        <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/70 to-transparent" />
 
-        <div className={`absolute inset-0 p-8 flex flex-col justify-end w-[75%] gap-5 ${stories ? "pb-44" : ""}`}>
-          <h1 className={`text-5xl ${headlineFontClass(fontStyle)} uppercase text-white leading-[1.1]`}>{headline}</h1>
+        {/* Text block is hard-capped at ~60% width and pinned to the left;
+            the photo's right half stays clean. */}
+        <div className={`absolute inset-y-0 left-0 flex w-[62%] max-w-[65%] flex-col p-8 ${stories ? "pb-28" : ""}`}>
+          <div className="flex flex-1 flex-col justify-center">
+            <h1 className={`${headlineFontClass(fontStyle)} text-6xl leading-[0.95] text-white uppercase`}>
+              {headline}
+            </h1>
 
-          {subheadline ? (
-            <p className="font-montserrat text-xl text-gray-300 border-l-4 pl-4" style={{ borderColor: accent }}>
-              {subheadline}
-            </p>
-          ) : null}
+            <div className="my-4 h-[2px] w-full bg-white" />
 
-          <ul className="list-disc pl-5 text-white space-y-2 font-montserrat text-base leading-snug">
-            {items.map((item) => (
-              <li key={item}>{item}</li>
-            ))}
-          </ul>
+            {subheadline ? (
+              <p className="font-montserrat text-xl leading-snug text-white">{subheadline}</p>
+            ) : null}
 
-          <div
-            className="py-3 px-6 font-montserrat text-lg font-bold uppercase text-black w-fit"
-            style={{ backgroundColor: accent }}
-          >
-            {buttonText}
+            <ul className="mt-6 flex flex-col gap-2">
+              {items.map((item) => (
+                <li key={item} className="flex items-center gap-3 font-montserrat text-lg leading-snug text-white">
+                  <span className="size-1.5 shrink-0 rounded-full bg-white" />
+                  <span>{item}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div className="mt-auto shrink-0">
+            {regionLabel ? (
+              <p className="mb-3 font-montserrat text-xs font-semibold tracking-[0.25em] text-white/80 uppercase">
+                {regionLabel}
+              </p>
+            ) : null}
+            <div
+              className="w-fit rounded-md px-6 py-4 font-montserrat text-lg font-bold text-black uppercase"
+              style={{ backgroundColor: accent }}
+            >
+              {buttonText}
+            </div>
           </div>
         </div>
       </article>

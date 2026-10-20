@@ -12,6 +12,7 @@ const strategyPrompt = `Роль: Ты — легендарный direct-respons
 - formatted_brief.key_advantages (ключевые преимущества бизнеса): {key_advantages}
 - formatted_brief.offer (Спецпредложение и Триггер / УТП): {offer}
 Опирайся на key_advantages при сборке выгод (benefits) и welcome_screen_bullets, а на pains — при сборке заголовков и target_audience_insight (бей в названные боли, не выдумывай новые).
+В поле strategy.region извлеки город, регион или страну из брифа (например, 'в Батуми', 'Москва', 'Польша'). Пиши коротко, только сам регион. Если регион не указан, верни пустую строку.
 Поле hook_concept ОБЯЗАНО опираться на formatted_brief.offer (акция / подарок / ограничение). Сохрани смысл спецпредложения клиента.
 
 ПРАВИЛА ГЕНЕРАЦИИ (КРИТИЧЕСКИ ВАЖНО):
@@ -58,7 +59,8 @@ hook_concept = «Спецпредложение и Триггер (УТП)»: в
   "strategy": {
     "target_audience_insight": "...",
     "core_offer_angle": "...",
-    "hook_concept": "..."
+    "hook_concept": "...",
+    "region": "город/регион/страна из брифа или пустая строка"
   },
   "creatives": {
     "headlines": [5 шт, до 5-6 слов],
@@ -90,11 +92,12 @@ const strategySchema = {
     strategy: {
       type: "object",
       additionalProperties: false,
-      required: ["target_audience_insight", "core_offer_angle", "hook_concept"],
+      required: ["target_audience_insight", "core_offer_angle", "hook_concept", "region"],
       properties: {
         target_audience_insight: { type: "string" },
         core_offer_angle: { type: "string" },
         hook_concept: { type: "string" },
+        region: { type: "string" },
       },
     },
     creatives: {
@@ -175,6 +178,8 @@ export function parseAdStrategy(value: unknown): AdStrategy | null {
   const insight = text(strategy.target_audience_insight);
   const angle = text(strategy.core_offer_angle);
   const hook = text(strategy.hook_concept);
+  // Region is optional in stored strategies (pre-feature rows): "" = none.
+  const region = text(strategy.region);
   const headlines = texts(creatives.headlines, 5);
   const subheadlines = texts(creatives.subheadlines, 5);
   const benefits = texts(creatives.benefits, 10);
@@ -224,6 +229,7 @@ export function parseAdStrategy(value: unknown): AdStrategy | null {
       target_audience_insight: insight,
       core_offer_angle: angle,
       hook_concept: hook,
+      region,
     },
     creatives: {
       headlines,

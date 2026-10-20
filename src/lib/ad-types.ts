@@ -47,6 +47,8 @@ export interface AdStrategy {
     target_audience_insight: string;
     core_offer_angle: string;
     hook_concept: string;
+    /** City / region / country extracted from the brief ("" when not stated). */
+    region: string;
   };
   creatives: {
     headlines: string[];
