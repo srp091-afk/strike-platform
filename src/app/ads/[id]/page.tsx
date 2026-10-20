@@ -4,7 +4,8 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { CampaignDashboard, type ProjectStatus } from "@/components/campaign-dashboard";
-import type { AdGeneration, AdGenerationStatus, AdStrategy } from "@/lib/ad-types";
+import type { AdGeneration, AdGenerationCreative, AdGenerationStatus, AdStrategy } from "@/lib/ad-types";
+import { creativeRowImages, listVisibleAdCreatives, type AdCreativeRow } from "@/lib/ad-creatives";
 import { parseAdStrategy } from "@/lib/ad-strategy";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { imageSetsFromCreativesData, imageSetsFromGenerationImages } from "@/lib/ad-project-media";
@@ -115,6 +116,21 @@ function readGeneration(row: Record<string, unknown>, projectId: string): AdGene
   };
 }
 
+function creativeRowToCard(row: AdCreativeRow): AdGenerationCreative {
+  const texts = row.texts;
+  return {
+    id: row.id,
+    images: creativeRowImages(row),
+    headline: texts?.headline?.trim() || row.headline?.trim() || "",
+    subheadline: texts?.subheadline?.trim() || row.body_text?.trim() || undefined,
+    bullets: texts?.benefit?.trim() ? [texts.benefit.trim()] : [],
+    badge: texts?.badge?.trim() || undefined,
+    buttonText: texts?.cta?.trim() || "Узнать подробнее",
+    styleId: row.style_id,
+    accentColor: row.accent_color ?? undefined,
+  };
+}
+
 async function loadProjectRow(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   id: string,
@@ -193,9 +209,29 @@ async function loadProject(id: string) {
     return generation ? [generation] : [];
   });
 
+  // Creative cards come from `ad_creatives` (soft delete: deleted_at IS NULL).
+  // Generations with rows render from them; legacy generations keep `images`.
+  const visible = await listVisibleAdCreatives(supabase, [projectId]);
+  if (visible.extended && visible.rows.length > 0) {
+    const byGeneration = new Map<string, AdCreativeRow[]>();
+    for (const row of visible.rows) {
+      if (!row.generation_id) continue;
+      const list = byGeneration.get(row.generation_id) ?? [];
+      list.push(row);
+      byGeneration.set(row.generation_id, list);
+    }
+    for (const generation of generations) {
+      const rows = (byGeneration.get(generation.id) ?? []).sort((a, b) => a.sort_index - b.sort_index);
+      if (rows.length === 0) continue;
+      generation.creatives = rows.map((row) => creativeRowToCard(row));
+      generation.imageSets = generation.creatives.map((creative) => creative.images);
+      generation.images = generation.imageSets.flat();
+    }
+  }
+
   // Prefer structured pairs from creatives_data when the active generation only has a flat URL list.
   const active = generations.find((generation) => generation.is_active);
-  if (active && active.imageSets.every((set) => set.length < 2)) {
+  if (active && !active.creatives?.length && active.imageSets.every((set) => set.length < 2)) {
     const fromCreatives = imageSetsFromCreativesData(data.creatives_data);
     if (fromCreatives.some((set) => set.length >= 2)) {
       active.imageSets = fromCreatives;

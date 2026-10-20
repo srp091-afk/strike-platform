@@ -154,14 +154,19 @@ export function CampaignDashboard({
     }
   }
 
-  async function deleteArchivedCreative(generationId: string, creativeIndex: number): Promise<boolean> {
+  async function deleteArchivedCreative(
+    generationId: string,
+    creativeIndex: number,
+    creativeId?: string | null,
+  ): Promise<boolean> {
     const snapshot = generations;
     setGenerations((current) =>
       current.flatMap((generation) => {
         if (generation.id !== generationId) return [generation];
         const imageSets = generation.imageSets.filter((_, index) => index !== creativeIndex);
-        if (imageSets.length === 0) return [];
-        return [{ ...generation, imageSets, images: imageSets.flat() }];
+        const creatives = generation.creatives?.filter((_, index) => index !== creativeIndex);
+        if (imageSets.length === 0 && !creatives?.length) return [];
+        return [{ ...generation, imageSets, images: imageSets.flat(), ...(creatives ? { creatives } : {}) }];
       }),
     );
 
@@ -169,7 +174,7 @@ export function CampaignDashboard({
       const response = await fetch(`/api/ads/${projectId}/creatives`, {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ generationId, creativeIndex }),
+        body: JSON.stringify({ generationId, creativeIndex, creativeId: creativeId ?? undefined }),
       });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
@@ -719,7 +724,7 @@ function ArchiveGenerationFolder({
   styleKey?: string | null;
   accentColor: string;
   onZoom: (creative: ZoomCreative) => void;
-  onDeleteCreative: (generationId: string, creativeIndex: number) => Promise<boolean>;
+  onDeleteCreative: (generationId: string, creativeIndex: number, creativeId?: string | null) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
   const creativeCount = generation.imageSets?.length
@@ -775,7 +780,7 @@ function CreativesGrid({
   styleKey?: string | null;
   accentColor: string;
   onZoom: (creative: ZoomCreative) => void;
-  onDeleteCreative?: (generationId: string, creativeIndex: number) => Promise<boolean>;
+  onDeleteCreative?: (generationId: string, creativeIndex: number, creativeId?: string | null) => Promise<boolean>;
   readOnly?: boolean;
   emptyText?: string;
 }) {
@@ -790,11 +795,6 @@ function CreativesGrid({
         ? generation.images.map((url) => [url])
         : [];
 
-  if (!generation || imageSets.length === 0) {
-    if (!readOnly && generation?.status === "processing") return <CreativeSkeletons />;
-    return <EmptyPanel text={emptyText} />;
-  }
-
   const headlines = strategy?.creatives.headlines ?? [];
   const subheadlines = strategy?.creatives.subheadlines ?? [];
   const bullets = strategy?.creatives.benefits ?? [];
@@ -803,6 +803,43 @@ function CreativesGrid({
   const scope = readOnly ? "archive" : "active";
   // CreativeRender strictly maps creative_templates UUIDs; normalize legacy keys here.
   const renderStyleId = resolveCreativeStyleId(styleKey) ?? styleKey ?? null;
+
+  // Cards prefer `ad_creatives` rows (per-creative texts + soft-delete id);
+  // legacy generations fall back to image sets + strategy copy.
+  const items = imageSets.map((urls, index) => {
+    const creative = generation?.creatives?.[index] ?? null;
+    const before = urls[0] ?? "";
+    const after = urls[1] ?? urls[0] ?? "";
+    const templateProps: CreativeTemplateProps = {
+      headline: creative?.headline || headlines[index % Math.max(headlines.length, 1)] || hook || "Оффер",
+      subheadline:
+        creative?.subheadline ??
+        subheadlines[index % Math.max(subheadlines.length, 1)] ??
+        strategy?.strategy.core_offer_angle ??
+        undefined,
+      bullets: creative?.bullets?.length
+        ? creative.bullets
+        : bullets.length > 0
+          ? bullets
+          : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"],
+      badge: (creative?.badge ? limitBadgeWords(creative.badge) : "") || limitBadgeWords(hook) || "Оффер",
+      buttonText: creative?.buttonText || buttons[index % Math.max(buttons.length, 1)] || "Узнать подробнее",
+      images: [before, after],
+      accentColor: creative?.accentColor ? resolveAccentHex(creative.accentColor, accentColor) : accentColor,
+    };
+    return {
+      key: creative?.id ?? `legacy:${index}`,
+      index,
+      creativeId: creative?.id ?? null,
+      styleId: resolveCreativeStyleId(creative?.styleId) ?? renderStyleId,
+      templateProps,
+    };
+  });
+
+  if (!generation || items.length === 0) {
+    if (!readOnly && generation?.status === "processing") return <CreativeSkeletons />;
+    return <EmptyPanel text={emptyText} />;
+  }
 
   async function downloadOne(nodeId: string, fileName: string, key: string) {
     if (busyKey) return;
@@ -819,15 +856,15 @@ function CreativesGrid({
 
   async function handleConfirmDelete() {
     if (!generation || !onDeleteCreative || creativeToDelete === null || isDeleting) return;
-    const creativeIndex = Number(creativeToDelete.split(":").pop());
-    if (!Number.isInteger(creativeIndex) || creativeIndex < 0) {
+    const item = items.find((candidate) => candidate.key === creativeToDelete);
+    if (!item) {
       setCreativeToDelete(null);
       return;
     }
     setIsDeleting(true);
     try {
-      // onDeleteCreative performs the API call and updates the list (optimistically).
-      const deleted = await onDeleteCreative(generation.id, creativeIndex);
+      // Soft delete on the server (deleted_at) + optimistic UI update.
+      const deleted = await onDeleteCreative(generation.id, item.index, item.creativeId);
       if (deleted) setCreativeToDelete(null);
     } finally {
       setIsDeleting(false);
@@ -837,40 +874,28 @@ function CreativesGrid({
   return (
     <>
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-      {imageSets.map((urls, index) => {
-        const before = urls[0] ?? "";
-        const after = urls[1] ?? urls[0] ?? "";
+      {items.map((item) => {
+        const index = item.index;
         const nodeId = `creative-node-${scope}-${generation.id}-${index}`;
         const busy = busyKey === nodeId;
-        const templateProps: CreativeTemplateProps = {
-          headline: headlines[index % Math.max(headlines.length, 1)] ?? (hook || "Оффер"),
-          subheadline:
-            subheadlines[index % Math.max(subheadlines.length, 1)] ??
-            strategy?.strategy.core_offer_angle ??
-            undefined,
-          bullets: bullets.length > 0 ? bullets : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"],
-          badge: limitBadgeWords(hook) || "Оффер",
-          buttonText: buttons[index % Math.max(buttons.length, 1)] ?? "Узнать подробнее",
-          images: [before, after],
-          accentColor,
-        };
+        const templateProps = item.templateProps;
 
         return (
           <article
-            key={`${generation.id}-${index}`}
+            key={`${generation.id}-${item.key}`}
             id={nodeId}
             data-export-scope={scope}
             data-export-name={`creative-${index + 1}.png`}
             className="creative-export-node group relative overflow-hidden rounded-xl border border-zinc-800 bg-black"
           >
-            <CreativeRender styleId={renderStyleId} {...templateProps} />
+            <CreativeRender styleId={item.styleId} {...templateProps} />
             <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
               <div className="flex w-[min(16rem,80%)] flex-col gap-2">
                 <Button
                   type="button"
                   variant="outline"
                   disabled={busy}
-                  onClick={() => onZoom({ styleId: renderStyleId, props: templateProps })}
+                  onClick={() => onZoom({ styleId: item.styleId, props: templateProps })}
                 >
                   <ZoomIn className="size-4" />
                   Увеличить
@@ -899,7 +924,7 @@ function CreativesGrid({
                     variant="outline"
                     className="border-red-900/60 text-red-300 hover:bg-red-950/60 hover:text-red-200"
                     disabled={busy || isDeleting || !onDeleteCreative}
-                    onClick={() => setCreativeToDelete(`${generation.id}:${index}`)}
+                    onClick={() => setCreativeToDelete(item.key)}
                   >
                     <Trash2 className="size-4" />
                     Удалить
@@ -925,7 +950,7 @@ function CreativesGrid({
         <div className="w-[min(90vw,28rem)] rounded-xl border border-zinc-800 bg-zinc-900 p-6 shadow-2xl">
           <h2 className="text-xl font-bold text-white">Удалить креатив?</h2>
           <p className="mt-3 text-gray-400">
-            Вы уверены? Это действие нельзя отменить, изображение и данные будут удалены навсегда.
+            Вы уверены? Креатив будет скрыт из списка. Данные и изображение сохранятся в базе — их можно будет восстановить.
           </p>
           <div className="mt-6 flex gap-4">
             <button

@@ -1,4 +1,5 @@
 import { accentColorForPrompt, DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
+import { insertAdCreatives } from "@/lib/ad-creatives";
 import { buildCreatives, parseFormattedBriefRow, publicCreativesError, resolveStyleId } from "@/lib/generate-creatives";
 import { parseAdStrategy } from "@/lib/ad-strategy";
 import { isRealCreativeImageUrl, plusDaysIso } from "@/lib/ad-project-media";
@@ -191,6 +192,28 @@ export async function POST(request: Request) {
     if (insertError) {
       console.error("[generate-creatives] insert ad_generations", insertError);
       return Response.json({ error: insertError.message }, { status: 500 });
+    }
+
+    // Source of truth for creative cards: one `ad_creatives` row per creative
+    // (soft-deletable via deleted_at). Legacy ad_generations.images is still
+    // written above, so a failed insert here must not fail the generation.
+    const creativesInsert = await insertAdCreatives(
+      supabase,
+      creatives.map((creative, index) => ({
+        project_id: projectId,
+        generation_id: typeof generation?.id === "string" ? generation.id : null,
+        image_url: creative.image_url,
+        image_urls: imageSets[index] ?? creative.image_urls,
+        headline: creative.texts.headline || null,
+        body_text: creative.texts.subheadline || creative.texts.benefit || null,
+        style_id: creative.style_id,
+        texts: creative.texts,
+        accent_color: accentHex,
+        sort_index: index,
+      })),
+    );
+    if (creativesInsert.error) {
+      console.error("[generate-creatives] insert ad_creatives", creativesInsert.error);
     }
 
     console.log("[generate-creatives] saved generation", generation);

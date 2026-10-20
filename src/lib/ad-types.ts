@@ -65,6 +65,22 @@ export interface AdStrategy {
   };
 }
 
+/** One creative card backed by an `ad_creatives` row (soft-deletable by `id`). */
+export interface AdGenerationCreative {
+  /** `ad_creatives.id`; null for legacy generations without rows yet. */
+  id: string | null;
+  /** `[url]` or `[before, after]`. */
+  images: string[];
+  headline: string;
+  subheadline?: string;
+  bullets: string[];
+  badge?: string;
+  buttonText: string;
+  /** `creative_templates` UUID (or legacy key, normalized at render). */
+  styleId: string | null;
+  accentColor?: string;
+}
+
 export type AdGenerationStatus = "processing" | "ready" | "error";
 
 export interface AdGeneration {
@@ -80,5 +96,7 @@ export interface AdGeneration {
    */
   images: string[];
   imageSets: string[][];
+  /** Visible `ad_creatives` rows of this generation, when available. */
+  creatives?: AdGenerationCreative[];
   created_at: string;
 }

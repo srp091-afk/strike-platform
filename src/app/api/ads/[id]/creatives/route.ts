@@ -1,5 +1,5 @@
+import { insertAdCreatives } from "@/lib/ad-creatives";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
-import { CREATIVES_BUCKET } from "@/lib/creative-storage";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 60;
@@ -7,12 +7,17 @@ export const maxDuration = 60;
 type RouteContext = { params: Promise<{ id: string }> };
 
 /**
- * Hard-delete ONE archived creative (an image set inside an archived
- * ad_generations row). There is no standalone `creatives` table in this
- * schema: a creative lives as one entry of ad_generations.images
- * (`[url]` or `[before, after]`), mirrored for the active batch in
- * ad_projects.creatives_data — archived rows exist only in ad_generations.
- * Storage files in the `creatives` bucket are removed best-effort.
+ * Soft-delete ONE archived creative.
+ *
+ * Creatives live as rows of `ad_creatives`; deletion is only
+ * `UPDATE ad_creatives SET deleted_at = now()` — the row, its texts and
+ * the Storage files stay intact, and every read filters
+ * `deleted_at IS NULL`, so the creative disappears from the UI.
+ *
+ * Body: `{ creativeId }` for creatives that already have a row.
+ * Legacy generations without rows use `{ generationId, creativeIndex }`:
+ * the generation's sets are backfilled into `ad_creatives` first, with
+ * `deleted_at` set on the target — still no physical deletion anywhere.
  */
 export async function DELETE(request: Request, context: RouteContext) {
   let userId: string;
@@ -33,15 +38,9 @@ export async function DELETE(request: Request, context: RouteContext) {
   }
 
   const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  const creativeId = typeof record.creativeId === "string" ? record.creativeId.trim() : "";
   const generationId = typeof record.generationId === "string" ? record.generationId.trim() : "";
   const creativeIndex = typeof record.creativeIndex === "number" ? record.creativeIndex : Number.NaN;
-
-  if (!isUuid(generationId)) {
-    return Response.json({ error: "Некорректный id генерации." }, { status: 400 });
-  }
-  if (!Number.isInteger(creativeIndex) || creativeIndex < 0) {
-    return Response.json({ error: "Некорректный индекс креатива." }, { status: 400 });
-  }
 
   const supabase = createSupabaseAdminClient();
 
@@ -54,6 +53,63 @@ export async function DELETE(request: Request, context: RouteContext) {
   if (projectError) return Response.json({ error: projectError.message }, { status: 500 });
   if (!project) return Response.json({ error: "Проект не найден." }, { status: 404 });
 
+  const deletedAt = new Date().toISOString();
+
+  if (creativeId) {
+    if (!isUuid(creativeId)) {
+      return Response.json({ error: "Некорректный id креатива." }, { status: 400 });
+    }
+    return softDeleteByCreativeId(supabase, projectId, creativeId, deletedAt);
+  }
+
+  if (!isUuid(generationId)) {
+    return Response.json({ error: "Некорректный id генерации." }, { status: 400 });
+  }
+  if (!Number.isInteger(creativeIndex) || creativeIndex < 0) {
+    return Response.json({ error: "Некорректный индекс креатива." }, { status: 400 });
+  }
+  return softDeleteByGenerationIndex(supabase, projectId, generationId, creativeIndex, deletedAt);
+}
+
+type AdminClient = ReturnType<typeof createSupabaseAdminClient>;
+
+async function softDeleteByCreativeId(
+  supabase: AdminClient,
+  projectId: string,
+  creativeId: string,
+  deletedAt: string,
+) {
+  const { data: creative, error: creativeError } = await supabase
+    .from("ad_creatives")
+    .select("id, generation_id, deleted_at")
+    .eq("id", creativeId)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (creativeError) return Response.json({ error: creativeError.message }, { status: 500 });
+  if (!creative) return Response.json({ error: "Креатив не найден." }, { status: 404 });
+  if (creative.deleted_at) return Response.json({ ok: true, creativeId, deletedAt: creative.deleted_at, alreadyDeleted: true });
+
+  const archivedError = await ensureArchivedGeneration(supabase, projectId, creative.generation_id);
+  if (archivedError) return archivedError;
+
+  const { error } = await supabase
+    .from("ad_creatives")
+    .update({ deleted_at: deletedAt })
+    .eq("id", creativeId)
+    .eq("project_id", projectId)
+    .is("deleted_at", null);
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+
+  return Response.json({ ok: true, softDeleted: true, creativeId, deletedAt });
+}
+
+async function softDeleteByGenerationIndex(
+  supabase: AdminClient,
+  projectId: string,
+  generationId: string,
+  creativeIndex: number,
+  deletedAt: string,
+) {
   const { data: generation, error: generationError } = await supabase
     .from("ad_generations")
     .select("id, images, is_active")
@@ -71,45 +127,69 @@ export async function DELETE(request: Request, context: RouteContext) {
     return Response.json({ error: "Креатив не найден." }, { status: 404 });
   }
 
-  const [removed] = sets.splice(creativeIndex, 1);
-  const removedUrls = removed ?? [];
-  const generationDeleted = sets.length === 0;
+  // Existing row for this set? Just stamp deleted_at on it.
+  const { data: existingRows, error: rowsError } = await supabase
+    .from("ad_creatives")
+    .select("id, sort_index, deleted_at")
+    .eq("generation_id", generationId)
+    .eq("project_id", projectId);
+  if (rowsError) return Response.json({ error: rowsError.message }, { status: 500 });
 
-  if (generationDeleted) {
-    const { error } = await supabase
-      .from("ad_generations")
-      .delete()
-      .eq("id", generationId)
-      .eq("project_id", projectId);
-    if (error) return Response.json({ error: error.message }, { status: 500 });
-  } else {
-    const { error } = await supabase
-      .from("ad_generations")
-      .update({ images: sets })
-      .eq("id", generationId)
-      .eq("project_id", projectId);
-    if (error) return Response.json({ error: error.message }, { status: 500 });
-  }
-
-  // Best-effort: remove the underlying files from Supabase Storage.
-  const storagePaths = removedUrls
-    .map((url) => storagePathFromPublicUrl(url))
-    .filter((path): path is string => Boolean(path));
-  if (storagePaths.length > 0) {
-    const { error: storageError } = await supabase.storage.from(CREATIVES_BUCKET).remove(storagePaths);
-    if (storageError) {
-      console.error("[ads creatives DELETE] storage remove", storageError.message);
+  const target = (existingRows ?? []).find((row) => row.sort_index === creativeIndex);
+  if (target) {
+    if (target.deleted_at) {
+      return Response.json({ ok: true, creativeId: target.id, deletedAt: target.deleted_at, alreadyDeleted: true });
     }
+    const { error } = await supabase
+      .from("ad_creatives")
+      .update({ deleted_at: deletedAt })
+      .eq("id", target.id)
+      .eq("project_id", projectId)
+      .is("deleted_at", null);
+    if (error) return Response.json({ error: error.message }, { status: 500 });
+    return Response.json({ ok: true, softDeleted: true, creativeId: target.id, deletedAt });
   }
 
-  return Response.json({
-    ok: true,
-    generationId,
-    creativeIndex,
-    generationDeleted,
-    remaining: sets.length,
-    removedUrls,
-  });
+  // Legacy generation without rows: backfill all sets as ad_creatives rows,
+  // stamping deleted_at only on the target. Images/Storage stay untouched.
+  const backfill = await insertAdCreatives(
+    supabase,
+    sets.map((urls, index) => ({
+      project_id: projectId,
+      generation_id: generationId,
+      image_url: urls[0] ?? "",
+      image_urls: urls,
+      headline: null,
+      body_text: null,
+      style_id: null,
+      texts: null,
+      accent_color: null,
+      sort_index: index,
+      deleted_at: index === creativeIndex ? deletedAt : null,
+    })),
+  );
+  if (backfill.error) return Response.json({ error: backfill.error }, { status: 500 });
+
+  return Response.json({ ok: true, softDeleted: true, generationId, creativeIndex, deletedAt });
+}
+
+async function ensureArchivedGeneration(
+  supabase: AdminClient,
+  projectId: string,
+  generationId: unknown,
+): Promise<Response | null> {
+  if (typeof generationId !== "string" || !generationId) return null;
+  const { data: generation, error } = await supabase
+    .from("ad_generations")
+    .select("id, is_active")
+    .eq("id", generationId)
+    .eq("project_id", projectId)
+    .maybeSingle();
+  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (generation?.is_active === true) {
+    return Response.json({ error: "Удалять можно только архивные креативы." }, { status: 400 });
+  }
+  return null;
 }
 
 function normalizeImageSets(value: unknown): string[][] {
@@ -129,19 +209,6 @@ function normalizeImageSets(value: unknown): string[][] {
     }
   }
   return sets;
-}
-
-function storagePathFromPublicUrl(url: string): string | null {
-  const marker = `/storage/v1/object/public/${CREATIVES_BUCKET}/`;
-  const index = url.indexOf(marker);
-  if (index < 0) return null;
-  const rawPath = url.slice(index + marker.length).split(/[?#]/)[0] ?? "";
-  if (!rawPath) return null;
-  try {
-    return decodeURIComponent(rawPath);
-  } catch {
-    return rawPath;
-  }
 }
 
 function isUuid(value: string) {

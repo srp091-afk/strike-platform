@@ -7,6 +7,7 @@ import {
   imageUrlsFromCreativesData,
   isRealCreativeImageUrl,
 } from "@/lib/ad-project-media";
+import { creativeRowImages, listVisibleAdCreatives, type AdCreativeRow } from "@/lib/ad-creatives";
 import type { AdsPreviewCreative, AdsProjectCard } from "@/lib/ad-project-types";
 import type { AdCreative, AdStrategy } from "@/lib/ad-types";
 import { limitBadgeWords } from "@/lib/badge-copy";
@@ -85,13 +86,31 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
     }
   }
 
+  // Visible `ad_creatives` rows (deleted_at IS NULL) are the preview source
+  // of truth; projects without rows fall back to generations/creatives_data.
+  const visible = projectIds.length > 0 ? await listVisibleAdCreatives(supabase, projectIds) : null;
+  const creativesByProject = new Map<string, AdCreativeRow[]>();
+  if (visible?.extended) {
+    for (const creativeRow of visible.rows) {
+      const list = creativesByProject.get(creativeRow.project_id) ?? [];
+      list.push(creativeRow);
+      creativesByProject.set(creativeRow.project_id, list);
+    }
+  }
+
   return (rows ?? []).map((row) => {
     const id = String(row.id);
     const generationSets = allSetsByProject.get(id) ?? [];
+    const creativeRows = creativesByProject.get(id) ?? [];
     const fromCreativesUrls = imageUrlsFromCreativesData(row.creatives_data);
     const fromGenerationUrls = generationSets.flat();
-    const previewImages = fromGenerationUrls.length > 0 ? fromGenerationUrls : fromCreativesUrls;
-    const previewCreatives = buildPreviewCreatives(row, generationSets);
+    const fromRowUrls = creativeRows.flatMap((creativeRow) => creativeRowImages(creativeRow));
+    const previewImages =
+      fromRowUrls.length > 0 ? fromRowUrls : fromGenerationUrls.length > 0 ? fromGenerationUrls : fromCreativesUrls;
+    const previewCreatives =
+      creativeRows.length > 0
+        ? buildPreviewFromCreativeRows(row, creativeRows)
+        : buildPreviewCreatives(row, generationSets);
 
     return {
       id,
@@ -125,6 +144,51 @@ function buildPreviewCreatives(row: ProjectRow, generationSets: string[][]): Ads
   }
 
   return previewFromCreativesData(row.creatives_data, styleKey, accentColor, strategy);
+}
+
+function buildPreviewFromCreativeRows(row: ProjectRow, creativeRows: AdCreativeRow[]): AdsPreviewCreative[] {
+  const fallbackStyle =
+    resolveCreativeStyleId(typeof row.style_key === "string" ? row.style_key : null) ??
+    CREATIVE_STYLE_IDS.beforeAfterVs;
+  const fallbackAccent = resolveAccentHex(row.accent_color, DEFAULT_ACCENT_COLOR);
+  const strategy = parseAdStrategy(row.strategy_data);
+  const hook = strategy?.strategy.hook_concept ?? "";
+
+  // Rows arrive newest-first; keep generation order via sort_index inside a batch.
+  return creativeRows.flatMap((creativeRow, index) => {
+    const images = creativeRowImages(creativeRow);
+    if (images.length === 0) return [];
+    const texts = creativeRow.texts;
+    return [
+      {
+        images,
+        headline:
+          texts?.headline?.trim() ||
+          creativeRow.headline?.trim() ||
+          strategy?.creatives.headlines[index % Math.max(strategy?.creatives.headlines.length ?? 1, 1)] ||
+          hook ||
+          "Оффер",
+        subheadline:
+          texts?.subheadline?.trim() ||
+          creativeRow.body_text?.trim() ||
+          strategy?.creatives.subheadlines[index % Math.max(strategy?.creatives.subheadlines.length ?? 1, 1)] ||
+          strategy?.strategy.core_offer_angle ||
+          undefined,
+        bullets: strategy?.creatives.benefits?.length
+          ? strategy.creatives.benefits.slice(0, 4)
+          : texts?.benefit?.trim()
+            ? [texts.benefit.trim()]
+            : ["Результат без хаоса"],
+        badge: (texts?.badge ? limitBadgeWords(texts.badge) : "") || limitBadgeWords(hook) || "Оффер",
+        buttonText:
+          texts?.cta?.trim() ||
+          strategy?.creatives.buttons[index % Math.max(strategy?.creatives.buttons.length ?? 1, 1)] ||
+          "Узнать подробнее",
+        styleKey: resolveCreativeStyleId(creativeRow.style_id) ?? fallbackStyle,
+        accentColor: resolveAccentHex(creativeRow.accent_color, fallbackAccent),
+      },
+    ];
+  });
 }
 
 function previewFromCreativesData(
