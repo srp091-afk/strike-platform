@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Clock, Copy, Download, Folder, Loader2, RefreshCw, Sparkles, ZoomIn } from "lucide-react";
+import { Check, Clock, Copy, Download, Folder, Loader2, RefreshCw, Sparkles, Trash2, ZoomIn } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FocusEvent } from "react";
@@ -16,6 +16,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "@/components/ui/toaster";
 import { DEFAULT_ACCENT_COLOR, resolveAccentHex } from "@/lib/accent-color";
 import { formatRuDate, toDateInputValue } from "@/lib/ad-project-media";
+import { downloadActiveCreativesAsZip } from "@/lib/export-utils";
 import type { AdGeneration, AdStrategy } from "@/lib/ad-types";
 import { limitBadgeWords } from "@/lib/badge-copy";
 import { cn } from "@/lib/utils";
@@ -60,6 +61,7 @@ export function CampaignDashboard({
   const [saving, setSaving] = useState(false);
   const [refreshOpen, setRefreshOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+  const [exportingZip, setExportingZip] = useState(false);
   const [activeTab, setActiveTab] = useState("active");
   const [accentColor, setAccentColor] = useState(
     resolveAccentHex(initialAccent, DEFAULT_ACCENT_COLOR),
@@ -132,6 +134,55 @@ export function CampaignDashboard({
   async function saveReplaceDate(value: string) {
     if (!value) return;
     await patchProject({ creatives_replace_at: value });
+  }
+
+  async function exportZip() {
+    if (exportingZip) return;
+    setExportingZip(true);
+    try {
+      const count = await downloadActiveCreativesAsZip(savedName || name);
+      if (count === 0) {
+        toast.error("Нет активных креативов для экспорта.");
+        return;
+      }
+      toast.success(`ZIP готов: креативов внутри — ${count}`);
+    } catch {
+      toast.error("Не удалось сформировать ZIP. Проверьте CORS бакета creatives.");
+    } finally {
+      setExportingZip(false);
+    }
+  }
+
+  async function deleteArchivedCreative(generationId: string, creativeIndex: number): Promise<boolean> {
+    const snapshot = generations;
+    setGenerations((current) =>
+      current.flatMap((generation) => {
+        if (generation.id !== generationId) return [generation];
+        const imageSets = generation.imageSets.filter((_, index) => index !== creativeIndex);
+        if (imageSets.length === 0) return [];
+        return [{ ...generation, imageSets, images: imageSets.flat() }];
+      }),
+    );
+
+    try {
+      const response = await fetch(`/api/ads/${projectId}/creatives`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ generationId, creativeIndex }),
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        setGenerations(snapshot);
+        toast.error(typeof payload.error === "string" ? payload.error : "Не удалось удалить креатив.");
+        return false;
+      }
+      toast.success("Креатив удалён");
+      return true;
+    } catch {
+      setGenerations(snapshot);
+      toast.error("Не удалось связаться с сервером.");
+      return false;
+    }
   }
 
   async function startRefresh(payload: RefreshCreativesPayload) {
@@ -233,10 +284,11 @@ export function CampaignDashboard({
           <Button
             type="button"
             className="bg-white text-black hover:bg-zinc-200 hover:shadow-none"
-            onClick={() => toast.success("Архив формируется... (в разработке)")}
+            disabled={exportingZip || refreshing || !activeGeneration}
+            onClick={() => void exportZip()}
           >
-            <Download className="size-4" />
-            Экспорт в ZIP
+            {exportingZip ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+            {exportingZip ? "Формируем ZIP…" : "Экспорт в ZIP"}
           </Button>
         </div>
       </header>
@@ -489,6 +541,7 @@ export function CampaignDashboard({
                     styleKey={styleKey}
                     accentColor={accentColor}
                     onZoom={setZoom}
+                    onDeleteCreative={deleteArchivedCreative}
                   />
                 ))
               )}
@@ -658,12 +711,14 @@ function ArchiveGenerationFolder({
   styleKey,
   accentColor,
   onZoom,
+  onDeleteCreative,
 }: {
   generation: AdGeneration;
   strategy: AdStrategy | null;
   styleKey?: string | null;
   accentColor: string;
   onZoom: (creative: ZoomCreative) => void;
+  onDeleteCreative: (generationId: string, creativeIndex: number) => Promise<boolean>;
 }) {
   const [open, setOpen] = useState(false);
   const creativeCount = generation.imageSets?.length
@@ -694,6 +749,7 @@ function ArchiveGenerationFolder({
             styleKey={styleKey}
             accentColor={accentColor}
             onZoom={onZoom}
+            onDeleteCreative={onDeleteCreative}
             readOnly
             emptyText="В этой папке нет креативов."
           />
@@ -709,6 +765,7 @@ function CreativesGrid({
   styleKey,
   accentColor,
   onZoom,
+  onDeleteCreative,
   readOnly = false,
   emptyText = "Креативов пока нет.",
 }: {
@@ -717,9 +774,11 @@ function CreativesGrid({
   styleKey?: string | null;
   accentColor: string;
   onZoom: (creative: ZoomCreative) => void;
+  onDeleteCreative?: (generationId: string, creativeIndex: number) => Promise<boolean>;
   readOnly?: boolean;
   emptyText?: string;
 }) {
+  const [busyKey, setBusyKey] = useState<string | null>(null);
   const imageSets =
     generation?.imageSets?.length
       ? generation.imageSets
@@ -737,12 +796,38 @@ function CreativesGrid({
   const bullets = strategy?.creatives.benefits ?? [];
   const buttons = strategy?.creatives.buttons ?? [];
   const hook = strategy?.strategy.hook_concept ?? "";
+  const scope = readOnly ? "archive" : "active";
+
+  async function downloadOne(nodeId: string, fileName: string, key: string) {
+    if (busyKey) return;
+    setBusyKey(key);
+    try {
+      const { downloadCreativeAsPng } = await import("@/lib/export-utils");
+      await downloadCreativeAsPng(nodeId, fileName);
+    } catch {
+      toast.error("Не удалось скачать PNG. Проверьте CORS бакета creatives.");
+    } finally {
+      setBusyKey(null);
+    }
+  }
+
+  async function deleteOne(key: string, creativeIndex: number) {
+    if (!generation || !onDeleteCreative || busyKey) return;
+    setBusyKey(key);
+    try {
+      await onDeleteCreative(generation.id, creativeIndex);
+    } finally {
+      setBusyKey(null);
+    }
+  }
 
   return (
     <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
       {imageSets.map((urls, index) => {
         const before = urls[0] ?? "";
         const after = urls[1] ?? urls[0] ?? "";
+        const nodeId = `creative-node-${scope}-${generation.id}-${index}`;
+        const busy = busyKey === nodeId;
         const templateProps: CreativeTemplateProps = {
           headline: headlines[index % Math.max(headlines.length, 1)] ?? (hook || "Оффер"),
           subheadline:
@@ -759,7 +844,10 @@ function CreativesGrid({
         return (
           <article
             key={`${generation.id}-${index}`}
-            className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-black"
+            id={nodeId}
+            data-export-scope={scope}
+            data-export-name={`creative-${index + 1}.png`}
+            className="creative-export-node group relative overflow-hidden rounded-xl border border-zinc-800 bg-black"
           >
             <CreativeRender styleId={styleKey} {...templateProps} />
             <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
@@ -767,10 +855,20 @@ function CreativesGrid({
                 <Button
                   type="button"
                   variant="outline"
+                  disabled={busy}
                   onClick={() => onZoom({ styleId: styleKey ?? null, props: templateProps })}
                 >
                   <ZoomIn className="size-4" />
                   Увеличить
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => void downloadOne(nodeId, `creative-${index + 1}.png`, nodeId)}
+                >
+                  {busy ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
+                  Скачать
                 </Button>
                 {!readOnly ? (
                   <Button
@@ -781,7 +879,18 @@ function CreativesGrid({
                     <RefreshCw className="size-4" />
                     Перегенерировать (1 токен)
                   </Button>
-                ) : null}
+                ) : (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-red-900/60 text-red-300 hover:bg-red-950/60 hover:text-red-200"
+                    disabled={busy || !onDeleteCreative}
+                    onClick={() => void deleteOne(nodeId, index)}
+                  >
+                    {busy ? <Loader2 className="size-4 animate-spin" /> : <Trash2 className="size-4" />}
+                    Удалить
+                  </Button>
+                )}
               </div>
             </div>
           </article>

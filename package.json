@@ -18,6 +18,9 @@
     "@supabase/supabase-js": "^2.117.3",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "file-saver": "^2.0.5",
+    "html-to-image": "^1.11.13",
+    "jszip": "^3.10.2",
     "lucide-react": "^1.54.0",
     "next": "16.4.0",
     "openai": "^7.31.0",
@@ -31,6 +34,7 @@
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
+    "@types/file-saver": "^2.0.7",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
