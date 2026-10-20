@@ -26,6 +26,18 @@ type ProjectRow = {
   accent_color?: string | null;
 };
 
+type GenerationPreviewSource = {
+  id: string;
+  createdAt: string | null;
+  sets: string[][];
+};
+
+/** Preview plus its generation timestamp, for newest-first merging. */
+type DatedPreview = {
+  preview: AdsPreviewCreative;
+  timestamp: number;
+};
+
 export async function listAdProjectCards(userId: string): Promise<AdsProjectCard[]> {
   const supabase = createSupabaseAdminClient();
   const full = await supabase
@@ -65,17 +77,18 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
   }
 
   const projectIds = (rows ?? []).map((row) => String(row.id));
-  /** All creative image sets per project (active + archived), newest generations first. */
-  const allSetsByProject = new Map<string, string[][]>();
+  /**
+   * ALL generations per project (active + archived), newest first — no
+   * `is_active` filter and no limit(1): card previews flatten creatives
+   * from every generation. `createdAt` is kept per generation so merged
+   * previews can be sorted newest-first across sources.
+   */
+  const generationsByProject = new Map<string, GenerationPreviewSource[]>();
 
   if (projectIds.length > 0) {
-    // ALL generations (active + archived) feed the card previews — no
-    // `is_active` filter here. Newest first. Soft-deleted creatives are
-    // excluded at the `ad_creatives` level (.is("deleted_at", null) in
-    // listVisibleAdCreatives), which is the preview source of truth.
     const generations = await supabase
       .from("ad_generations")
-      .select("project_id, images, is_active, created_at")
+      .select("id, project_id, images, is_active, created_at")
       .in("project_id", projectIds)
       .order("created_at", { ascending: false });
 
@@ -84,14 +97,19 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
         const projectId = String(row.project_id);
         const sets = imageSetsFromGenerationImages(row.images);
         if (sets.length === 0) continue;
-        const existing = allSetsByProject.get(projectId) ?? [];
-        allSetsByProject.set(projectId, existing.concat(sets));
+        const existing = generationsByProject.get(projectId) ?? [];
+        existing.push({
+          id: String(row.id),
+          createdAt: typeof row.created_at === "string" ? row.created_at : null,
+          sets,
+        });
+        generationsByProject.set(projectId, existing);
       }
     }
   }
 
-  // Visible `ad_creatives` rows (deleted_at IS NULL) are the preview source
-  // of truth; projects without rows fall back to generations/creatives_data.
+  // Visible `ad_creatives` rows (deleted_at IS NULL only — soft-deleted
+  // rows never reach previews).
   const visible = projectIds.length > 0 ? await listVisibleAdCreatives(supabase, projectIds) : null;
   const creativesByProject = new Map<string, AdCreativeRow[]>();
   if (visible?.extended) {
@@ -102,19 +120,37 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
     }
   }
 
+  // Generation ids that own ANY `ad_creatives` row (visible or soft-deleted).
+  // Such generations are represented by their rows; only generations with no
+  // rows at all (legacy, pre-`ad_creatives`) fall back to their image sets.
+  // This keeps soft-deleted creatives from reappearing via generation images.
+  const generationsWithRows = new Set<string>();
+  if (visible?.extended && projectIds.length > 0) {
+    for (const creativeRow of visible.rows) {
+      if (creativeRow.generation_id) generationsWithRows.add(creativeRow.generation_id);
+    }
+    const anyRows = await supabase
+      .from("ad_creatives")
+      .select("generation_id")
+      .in("project_id", projectIds)
+      .not("generation_id", "is", null);
+    if (!anyRows.error) {
+      for (const raw of anyRows.data ?? []) {
+        const generationId = (raw as { generation_id?: unknown }).generation_id;
+        if (typeof generationId === "string") generationsWithRows.add(generationId);
+      }
+    }
+  }
+
   return (rows ?? []).map((row) => {
     const id = String(row.id);
-    const generationSets = allSetsByProject.get(id) ?? [];
+    const generations = generationsByProject.get(id) ?? [];
     const creativeRows = creativesByProject.get(id) ?? [];
+    // Flat list across ALL generations (active + archived), newest first.
+    const previewCreatives = buildMergedPreviews(row, creativeRows, generations, generationsWithRows);
     const fromCreativesUrls = imageUrlsFromCreativesData(row.creatives_data);
-    const fromGenerationUrls = generationSets.flat();
-    const fromRowUrls = creativeRows.flatMap((creativeRow) => creativeRowImages(creativeRow));
     const previewImages =
-      fromRowUrls.length > 0 ? fromRowUrls : fromGenerationUrls.length > 0 ? fromGenerationUrls : fromCreativesUrls;
-    const previewCreatives =
-      creativeRows.length > 0
-        ? buildPreviewFromCreativeRows(row, creativeRows)
-        : buildPreviewCreatives(row, generationSets);
+      previewCreatives.length > 0 ? previewCreatives.flatMap((preview) => preview.images) : fromCreativesUrls;
 
     return {
       id,
@@ -132,25 +168,54 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
   });
 }
 
-function buildPreviewCreatives(row: ProjectRow, generationSets: string[][]): AdsPreviewCreative[] {
-  // Preview style must be a creative_templates UUID for CreativeRender.
-  const styleKey =
+/**
+ * Flatten creatives from ALL generations (active + archived) into a single
+ * newest-first preview list:
+ *  - generations that own `ad_creatives` rows contribute their visible rows
+ *    (soft-deleted excluded by listVisibleAdCreatives);
+ *  - legacy generations without any rows contribute their image sets.
+ * Sources are merged and sorted by generation timestamp (created_at DESC),
+ * so archived creatives always join the active ones instead of being
+ * dropped whenever rows exist.
+ */
+function buildMergedPreviews(
+  row: ProjectRow,
+  creativeRows: AdCreativeRow[],
+  generations: GenerationPreviewSource[],
+  generationsWithRows: Set<string>,
+): AdsPreviewCreative[] {
+  const fallbackStyle =
     resolveCreativeStyleId(typeof row.style_key === "string" ? row.style_key : null) ??
     CREATIVE_STYLE_IDS.beforeAfterVs;
-  const accentColor = resolveAccentHex(row.accent_color, DEFAULT_ACCENT_COLOR);
+  const fallbackAccent = resolveAccentHex(row.accent_color, DEFAULT_ACCENT_COLOR);
   const strategy = parseAdStrategy(row.strategy_data);
 
-  // Prefer all generation sets (active + archived, already newest-first).
-  if (generationSets.length > 0) {
-    return generationSets.map((images, index) =>
-      previewFromStrategy(images, index, styleKey, accentColor, strategy),
-    );
+  const dated: DatedPreview[] = buildPreviewItemsFromCreativeRows(row, creativeRows);
+
+  let legacyIndex = dated.length;
+  for (const generation of generations) {
+    // Represented by ad_creatives rows — never duplicate via image sets,
+    // and never resurrect soft-deleted rows through them.
+    if (generationsWithRows.has(generation.id)) continue;
+    const timestamp = generation.createdAt ? Date.parse(generation.createdAt) : 0;
+    for (const images of generation.sets) {
+      dated.push({
+        preview: previewFromStrategy(images, legacyIndex, fallbackStyle, fallbackAccent, strategy),
+        timestamp: Number.isNaN(timestamp) ? 0 : timestamp,
+      });
+      legacyIndex += 1;
+    }
   }
 
-  return previewFromCreativesData(row.creatives_data, styleKey, accentColor, strategy);
+  // Newest first; Array.sort is stable, so same-timestamp items keep their
+  // source order (rows by sort_index, sets by generation order).
+  dated.sort((a, b) => b.timestamp - a.timestamp);
+
+  if (dated.length > 0) return dated.map((item) => item.preview);
+  return previewFromCreativesData(row.creatives_data, fallbackStyle, fallbackAccent, strategy);
 }
 
-function buildPreviewFromCreativeRows(row: ProjectRow, creativeRows: AdCreativeRow[]): AdsPreviewCreative[] {
+function buildPreviewItemsFromCreativeRows(row: ProjectRow, creativeRows: AdCreativeRow[]): DatedPreview[] {
   const fallbackStyle =
     resolveCreativeStyleId(typeof row.style_key === "string" ? row.style_key : null) ??
     CREATIVE_STYLE_IDS.beforeAfterVs;
@@ -163,8 +228,11 @@ function buildPreviewFromCreativeRows(row: ProjectRow, creativeRows: AdCreativeR
     const images = creativeRowImages(creativeRow);
     if (images.length === 0) return [];
     const texts = creativeRow.texts;
+    const timestamp = creativeRow.created_at ? Date.parse(creativeRow.created_at) : 0;
     return [
       {
+        timestamp: Number.isNaN(timestamp) ? 0 : timestamp,
+        preview: {
         images,
         headline:
           texts?.headline?.trim() ||
@@ -190,6 +258,7 @@ function buildPreviewFromCreativeRows(row: ProjectRow, creativeRows: AdCreativeR
           "Узнать подробнее",
         styleKey: resolveCreativeStyleId(creativeRow.style_id) ?? fallbackStyle,
         accentColor: resolveAccentHex(creativeRow.accent_color, fallbackAccent),
+        },
       },
     ];
   });
