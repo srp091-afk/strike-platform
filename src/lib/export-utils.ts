@@ -19,6 +19,11 @@ const PNG_OPTIONS = {
     mode: "cors" as RequestMode,
     credentials: "omit" as RequestCredentials,
   },
+  // Belt-and-braces: system UI (hover overlays with Увеличить/Скачать/…)
+  // is marked data-export-ignore and never lands in the exported PNG,
+  // even if an export node ever wraps it again.
+  filter: (node: HTMLElement) =>
+    !(node instanceof HTMLElement && node.hasAttribute("data-export-ignore")),
 };
 
 function sanitizeFileName(value: string): string {

@@ -818,10 +818,13 @@ function CreativesGrid({
         subheadlines[index % Math.max(subheadlines.length, 1)] ??
         strategy?.strategy.core_offer_angle ??
         undefined,
-      bullets: creative?.bullets?.length
-        ? creative.bullets
-        : bullets.length > 0
-          ? bullets
+      // Full benefits list (3–4 items) comes from the strategy; the
+      // per-creative row only carries a single `benefit` string, which
+      // previously collapsed every template to one bullet.
+      bullets: bullets.length > 0
+        ? bullets
+        : creative?.bullets?.length
+          ? creative.bullets
           : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"],
       badge: (creative?.badge ? limitBadgeWords(creative.badge) : "") || limitBadgeWords(hook) || "Оффер",
       buttonText: creative?.buttonText || buttons[index % Math.max(buttons.length, 1)] || "Узнать подробнее",
@@ -884,13 +887,22 @@ function CreativesGrid({
         return (
           <article
             key={`${generation.id}-${item.key}`}
-            id={nodeId}
-            data-export-scope={scope}
-            data-export-name={`creative-${index + 1}.png`}
-            className="creative-export-node group relative overflow-hidden rounded-xl border border-zinc-800 bg-black"
+            className="group relative overflow-hidden rounded-xl border border-zinc-800 bg-black"
           >
-            <CreativeRender styleId={item.styleId} {...templateProps} />
-            <div className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100">
+            {/* Export node wraps ONLY the creative itself — never the UI overlay,
+                so html-to-image cannot capture system buttons into the PNG. */}
+            <div
+              id={nodeId}
+              data-export-scope={scope}
+              data-export-name={`creative-${index + 1}.png`}
+              className="creative-export-node"
+            >
+              <CreativeRender styleId={item.styleId} {...templateProps} />
+            </div>
+            <div
+              data-export-ignore="true"
+              className="absolute inset-0 flex items-center justify-center bg-black/60 opacity-0 backdrop-blur-sm transition-opacity duration-200 group-hover:opacity-100 group-focus-within:opacity-100"
+            >
               <div className="flex w-[min(16rem,80%)] flex-col gap-2">
                 <Button
                   type="button"
