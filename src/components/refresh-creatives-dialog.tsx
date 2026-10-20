@@ -10,7 +10,6 @@ import { StylePackPicker } from "@/components/style-pack-picker";
 import { Button } from "@/components/ui/button";
 import type { CreativeTemplate } from "@/lib/creative-templates";
 import { DEFAULT_CREDITS_BALANCE, creditsForCreatives } from "@/lib/credits";
-import { resolveCreativeStyleId } from "@/lib/studio-styles";
 import { cn } from "@/lib/utils";
 
 const QUANTITIES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
@@ -29,7 +28,6 @@ export function RefreshCreativesDialog({
   onClose,
   onConfirm,
   pending = false,
-  initialStyle,
   initialAccent,
   creditsBalance = DEFAULT_CREDITS_BALANCE,
 }: {
@@ -42,10 +40,8 @@ export function RefreshCreativesDialog({
   creditsBalance?: number;
 }) {
   // Slot-based pack: one template UUID per generated creative (≤ quantity).
-  const [selectedStyles, setSelectedStyles] = useState<string[]>(() => {
-    const initial = resolveCreativeStyleId(initialStyle);
-    return initial ? [initial] : [];
-  });
+  // Always starts EMPTY — no style is preselected when the dialog opens.
+  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [quantity, setQuantity] = useState(3);
   const [accentColor, setAccentColor] = useState(initialAccent?.trim() || DEFAULT_ACCENT_COLOR);
   const [templates, setTemplates] = useState<CreativeTemplate[]>([]);
@@ -91,12 +87,12 @@ export function RefreshCreativesDialog({
 
   useEffect(() => {
     if (!open) return;
-    const initial = resolveCreativeStyleId(initialStyle);
-    setSelectedStyles(initial ? [initial] : []);
+    // Strictly empty pack on every open (0 из quantity) — no preselection.
+    setSelectedStyles([]);
     setQuantity(3);
     setFullscreen(false);
     setAccentColor(initialAccent?.trim() || DEFAULT_ACCENT_COLOR);
-  }, [open, initialStyle, initialAccent]);
+  }, [open, initialAccent]);
 
   useEffect(() => {
     if (!open) return;

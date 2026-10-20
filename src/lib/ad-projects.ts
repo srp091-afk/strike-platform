@@ -69,6 +69,10 @@ export async function listAdProjectCards(userId: string): Promise<AdsProjectCard
   const allSetsByProject = new Map<string, string[][]>();
 
   if (projectIds.length > 0) {
+    // ALL generations (active + archived) feed the card previews — no
+    // `is_active` filter here. Newest first. Soft-deleted creatives are
+    // excluded at the `ad_creatives` level (.is("deleted_at", null) in
+    // listVisibleAdCreatives), which is the preview source of truth.
     const generations = await supabase
       .from("ad_generations")
       .select("project_id, images, is_active, created_at")

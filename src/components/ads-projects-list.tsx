@@ -24,7 +24,8 @@ import type { AdsPreviewCreative, AdsProjectCard } from "@/lib/ad-project-types"
 
 export type { AdsProjectCard };
 
-const visibleCreatives = 5;
+/** Max thumbnails per project card; the 4th carries the "+N" overflow badge. */
+const maxThumbnails = 4;
 
 export function AdsProjectsList({
   initialProjects,
@@ -102,11 +103,13 @@ function ProjectCard({
 }) {
   const previewCreatives = project.previewCreatives ?? [];
   const previewImages = project.previewImages ?? [];
+  const total = previewCreatives.length > 0 ? previewCreatives.length : previewImages.length;
+  // Up to 4 thumbnails. If there are more, the 4th becomes a counter tile:
+  // it shows "+{total - 3}" (itself + everything after it stays hidden).
   const shown = (
     previewCreatives.length > 0 ? previewCreatives : previewImages.map((src) => fallbackPreview(src))
-  ).slice(0, visibleCreatives);
-  const total = previewCreatives.length > 0 ? previewCreatives.length : previewImages.length;
-  const extra = total - shown.length;
+  ).slice(0, maxThumbnails);
+  const extra = total > maxThumbnails ? total - 3 : 0;
 
   return (
     <Card className="flex flex-col justify-between gap-6 border-zinc-800 bg-zinc-900/40 p-5 backdrop-blur-md sm:p-6 lg:flex-row lg:items-center">
@@ -168,7 +171,7 @@ function ProjectCard({
                   />
                 </div>
                 {overflow ? (
-                  <span className="absolute inset-0 z-10 grid place-items-center bg-black/70 text-base font-semibold tracking-tight text-white backdrop-blur-[2px]">
+                  <span className="absolute inset-0 z-10 grid place-items-center bg-black/60 text-base font-semibold tracking-tight text-white backdrop-blur-[1px]">
                     +{extra}
                   </span>
                 ) : null}

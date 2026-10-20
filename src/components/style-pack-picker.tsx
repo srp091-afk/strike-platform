@@ -175,7 +175,7 @@ export function StylePackPicker({
                 // Resting: slightly dimmed, standard size. Hover/active:
                 // fully lit and zoomed.
                 selected
-                  ? "scale-[1.03] opacity-100 shadow-2xl shadow-primary/20 ring-2 ring-primary ring-inset"
+                  ? "scale-[1.03] opacity-100 shadow-2xl shadow-red-500/20 ring-2 ring-inset ring-red-500"
                   : "scale-100 cursor-pointer opacity-70 ring-1 ring-white/10 ring-inset hover:scale-[1.03] hover:opacity-100",
                 full && !selected && "saturate-50",
               )}
