@@ -258,6 +258,17 @@ export function CampaignDashboard({
                 event.currentTarget.parentElement?.querySelector("textarea")?.focus();
               }}
             />
+            {name.trim().length > 0 && name.trim() !== savedName.trim() ? (
+              <button
+                type="button"
+                // Keep focus in the title: blur would autosave + unmount.
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => void saveName()}
+                className="animate-in mt-1.5 shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition-all hover:brightness-110"
+              >
+                Сохранить
+              </button>
+            ) : null}
             <ProjectStatusBadge status={status} />
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
@@ -492,7 +503,15 @@ export function CampaignDashboard({
                         })
                       }
                     />
-                    <LeadQuestions questions={strategy.lead_form.questions} />
+                    <LeadQuestions
+                      questions={strategy.lead_form.questions}
+                      onCommit={(questions) =>
+                        saveStrategy({
+                          ...strategy,
+                          lead_form: { ...strategy.lead_form, questions },
+                        })
+                      }
+                    />
                     <EditableText
                       label="Экран благодарности — заголовок"
                       value={strategy.lead_form.thank_you_screen.headline}
@@ -710,7 +729,7 @@ function EditableList({
   items: string[];
   marked?: boolean;
   multiline?: boolean;
-  onCommit: (items: string[]) => void;
+  onCommit: (items: string[]) => Promise<boolean> | boolean | void;
 }) {
   return (
     <div className="grid gap-2">
@@ -725,7 +744,7 @@ function EditableList({
               onCommit={(value) => {
                 const next = [...items];
                 next[index] = value;
-                onCommit(next);
+                return onCommit(next);
               }}
             />
           </li>
@@ -744,18 +763,64 @@ function EditableRow({
   text: string;
   marked?: boolean;
   multiline?: boolean;
-  onCommit: (value: string) => void;
+  onCommit: (value: string) => Promise<boolean> | boolean | void;
 }) {
   const [draft, setDraft] = useState(text);
-  useEffect(() => setDraft(text), [text]);
+  const [baseline, setBaseline] = useState(text);
+  const [pending, setPending] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    setDraft(text);
+    setBaseline(text);
+  }, [text]);
+
+  useEffect(() => {
+    if (!saved) return;
+    const timer = setTimeout(() => setSaved(false), 1600);
+    return () => clearTimeout(timer);
+  }, [saved]);
+
+  // Same rule as EditableText: a contextual "Сохранить" appears for EVERY
+  // editable field in the panel as soon as its value diverges from baseline.
+  const isDirty = draft.trim().length > 0 && draft.trim() !== baseline.trim();
+
+  async function save() {
+    const next = draft.trim();
+    if (!next || next === baseline.trim() || pending) return;
+    setPending(true);
+    try {
+      const result = await onCommit(next);
+      if (result !== false) {
+        setBaseline(next);
+        setDraft(next);
+        setSaved(true);
+      }
+    } finally {
+      setPending(false);
+    }
+  }
 
   function commit() {
-    const next = draft.trim();
-    if (!next || next === text) {
-      setDraft(text);
+    // Blur keeps the previous autosave behaviour; the explicit button is
+    // the primary affordance while the field is being edited.
+    if (!isDirty) {
+      setDraft(baseline);
       return;
     }
-    onCommit(next);
+    void save();
+  }
+
+  function handleKeyDown(event: ReactKeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) {
+    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      void save();
+      return;
+    }
+    if (!multiline && event.key === "Enter") {
+      event.preventDefault();
+      void save();
+    }
   }
 
   return (
@@ -769,6 +834,7 @@ function EditableRow({
             maxRows={8}
             onChange={(event) => setDraft(event.target.value)}
             onBlur={commit}
+            onKeyDown={handleKeyDown}
             className="scrollbar-macos min-w-0 flex-1 resize-none bg-transparent outline-none"
           />
         ) : (
@@ -776,10 +842,27 @@ function EditableRow({
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
             onBlur={commit}
+            onKeyDown={handleKeyDown}
             className="min-w-0 flex-1 bg-transparent outline-none"
           />
         )}
       </div>
+      {saved ? (
+        <span className="animate-in grid size-8 shrink-0 place-items-center rounded-md bg-emerald-500/15 text-emerald-400">
+          <Check className="size-4" strokeWidth={3} />
+        </span>
+      ) : isDirty ? (
+        <button
+          type="button"
+          disabled={pending}
+          // Keep focus in the field: blur would autosave + unmount the button.
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => void save()}
+          className="animate-in shrink-0 rounded-md bg-primary px-3 py-1.5 text-xs font-semibold text-white shadow-lg transition-all hover:brightness-110 disabled:opacity-50"
+        >
+          {pending ? "Сохраняем…" : "Сохранить"}
+        </button>
+      ) : null}
       <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 px-2 text-zinc-400" onClick={() => copyText(text)}>
         <Copy className="size-3.5" />
         Скопировать
@@ -1125,14 +1208,27 @@ function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
   );
 }
 
-function LeadQuestions({ questions }: { questions: AdStrategy["lead_form"]["questions"] }) {
+function LeadQuestions({
+  questions,
+  onCommit,
+}: {
+  questions: AdStrategy["lead_form"]["questions"];
+  onCommit: (questions: AdStrategy["lead_form"]["questions"]) => Promise<boolean>;
+}) {
   return (
     <div className="grid gap-3">
       <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-500">Вопросы</p>
       <ul className="grid gap-3">
         {questions.map((question, index) => (
           <li key={`${question.question}-${index}`} className="grid gap-2">
-            <CopyRow text={question.question} />
+            <EditableRow
+              text={question.question}
+              onCommit={(value) => {
+                const next = [...questions];
+                next[index] = { ...question, question: value };
+                return onCommit(next);
+              }}
+            />
             <div className="flex flex-wrap gap-2">
               {question.options.map((answer, optionIndex) => (
                 <Badge key={`${answer}-${optionIndex}`} variant="outline" className="text-zinc-400">
@@ -1156,18 +1252,6 @@ function LinkBack() {
     <Link href="/ads" className="text-sm text-zinc-400 transition-colors hover:text-white">
       ← Все кампании
     </Link>
-  );
-}
-
-function CopyRow({ text }: { text: string }) {
-  return (
-    <div className="flex items-start justify-between gap-3 rounded-lg border border-zinc-800 bg-black/40 px-3 py-2">
-      <p className="text-sm leading-6 text-zinc-200">{text}</p>
-      <Button type="button" variant="ghost" size="sm" className="h-8 shrink-0 px-2 text-zinc-400" onClick={() => copyText(text)}>
-        <Copy className="size-3.5" />
-        Скопировать
-      </Button>
-    </div>
   );
 }
 
