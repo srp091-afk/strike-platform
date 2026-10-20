@@ -402,6 +402,9 @@ async function directArt(input: {
     : isSplitActionStyle(input.styleId)
       ? `\n\nCONTEXTUAL SPLIT RULE (style 2, Split Action): build both prompts around the client's niche as the subject, following this exact frame: "Split screen before and after shot of ${niche}. Left side is BEFORE: black and white grayscale, messy, bad quality. Right side is AFTER: full color, premium, perfect. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only." prompt_before = the LEFT (grayscale, messy, bad-quality) version, prompt_after = the RIGHT (full-color, premium, perfect) version. Same subject, same space/product, only the state changes. NEVER substitute a generic interior/object that is unrelated to ${niche}.`
       : "";
+  const nicheSingleRule = isPremiumDarkStyle(input.styleId)
+    ? `\n\nCONTEXTUAL PREMIUM RULE (style 3, Premium Dark): build flux_prompt around the client's niche as the hero subject, following this exact frame: "Premium, cinematic, dark moody photography of ${niche}. Highly detailed, 8k, architectural digest style. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only." Darken the lower part of the scene for typography. NEVER substitute a generic scene that is unrelated to ${niche}.`
+    : "";
   const accentRule = `Акцентный цвет рекламного макета: ${input.accentLabel} (HEX ${input.accentHex}). При генерации промпта для Flux добавляй тонкие отсветы, освещение или детали фона в этом оттенке, чтобы картинка гармонировала с версткой.`;
   const visualDiversityRule =
     "Для каждого креатива генерируй АБСОЛЮТНО НОВОЕ, уникальное визуальное описание (меняй ракурсы, освещение, атмосферу, композицию), даже если тексты повторяются. Визуал должен быть разнообразным.";
@@ -457,7 +460,7 @@ CRITICAL IMAGE RULE:
 ${badgeRule}
 flux_prompt — строго на английском, готов к Flux.1: только чистая фотография фона, без типографики.
 ${accentRule}
-${visualDiversityRule}
+${visualDiversityRule}${nicheSingleRule}
 
 CRITICAL IMAGE RULE (Flux background only):
 - NEVER put text, letters, numbers, logos with words, watermarks, or captions in flux_prompt.
@@ -527,7 +530,12 @@ CRITICAL IMAGE RULE (Flux background only):
           prompt_before: `Split screen before and after shot of ${niche}. BEFORE (left side): black and white grayscale, messy, bad quality version of ${niche}. ${parsed.prompt_before} CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`,
           prompt_after: `Split screen before and after shot of ${niche}. AFTER (right side): full color, premium, perfect version of ${niche}. ${parsed.prompt_after} CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`,
         }
-      : {};
+      : isPremiumDarkStyle(input.styleId)
+        ? (() => {
+            const single = `Premium, cinematic, dark moody photography of ${niche}. Highly detailed, 8k, architectural digest style. ${parsed.image_prompt} CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`;
+            return { image_prompt: single, prompt_before: single, prompt_after: single };
+          })()
+        : {};
   return {
     ...parsed,
     ...framed,

@@ -18,7 +18,7 @@ export const studioStyles = [
     name: "Premium Dark",
     category: "Премиум",
     note: "Одно фото на весь экран, тёмный градиент и акцентная кнопка",
-    masterPrompt: `Visual system: Premium Dark full-bleed ad. One cinematic photographic background for a vertical 4:5 Meta creative, darker and calmer toward the bottom so React typography stays readable. Single hero scene, premium mood, no typography, no signage, no logos with words.`,
+    masterPrompt: `Visual system: Premium Dark full-bleed ad. Premium, cinematic, dark moody photography of the client's niche (formatted_brief.product) — the niche is the mandatory hero subject. One photographic background for a vertical 4:5 Meta creative, darker and calmer toward the bottom so React typography stays readable. Highly detailed, 8k, architectural digest style. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only, no signage, no logos with words.`,
   },
   {
     key: "side-fade",

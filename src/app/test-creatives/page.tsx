@@ -48,6 +48,7 @@ const mockPremiumDark: CreativeTemplateProps = {
   headline: "Сильное тело без хаоса",
   subheadline: "Персональная программа и контроль тренера",
   badge: "Первый разбор — в подарок",
+  fontStyle: "ultra",
   bullets: ["План под ваш график", "Контроль техники", "Питание без жёстких диет"],
   buttonText: "Получить программу",
   images: [mockSingleImage],
