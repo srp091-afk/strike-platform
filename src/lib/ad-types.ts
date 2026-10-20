@@ -10,7 +10,7 @@ export interface AdCreativeTexts {
   subheadline: string;
   benefit: string;
   cta: string;
-  /** Short marketing trigger badge (1–6 words), derived from hook. */
+  /** Short marketing trigger badge (complete phrase, up to 8 words), derived from hook. */
   badge?: string;
 }
 

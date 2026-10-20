@@ -1,10 +1,11 @@
-/** Squeeze marketing trigger copy into a badge of 1–6 words. */
-export function limitBadgeWords(value: string | null | undefined, maxWords = 6): string {
-  const words = (value ?? "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .split(" ")
-    .filter(Boolean);
-  if (words.length === 0) return "";
-  return words.slice(0, Math.max(1, maxWords)).join(" ");
+/**
+ * Normalize badge (УТП/триггер) copy for display.
+ *
+ * No mechanical word truncation: cutting by word count produced broken
+ * fragments ("...ДО КОНЦА"). The generation prompt is responsible for a
+ * grammatically complete phrase of up to 8 words; here we only collapse
+ * whitespace and trim.
+ */
+export function limitBadgeWords(value: string | null | undefined): string {
+  return (value ?? "").replace(/\s+/g, " ").trim();
 }
