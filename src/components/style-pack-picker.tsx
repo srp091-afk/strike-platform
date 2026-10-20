@@ -1,10 +1,9 @@
 "use client";
 
-import { Plus, X } from "lucide-react";
+import { Minus, Plus, X } from "lucide-react";
 import { useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
 import { CreativeRender } from "@/components/creatives/CreativeRender";
-import { StudioStylePreview } from "@/components/studio-style-preview";
 import type { CreativeTemplate } from "@/lib/creative-templates";
 import { UNIVERSAL_PREVIEW_CONCEPT } from "@/lib/preview-concept";
 import { cn } from "@/lib/utils";
@@ -84,6 +83,32 @@ export function StylePackPicker({
     onChange([...selectedStyles, id]);
   }
 
+  /** Remove exactly ONE instance of the style from the pack. */
+  function removeOneStyle(id: string) {
+    if (disabled) return;
+    const index = selectedStyles.lastIndexOf(id);
+    if (index < 0) return;
+    onChange(selectedStyles.filter((_, itemIndex) => itemIndex !== index));
+  }
+
+  function onRemoveOne(event: ReactMouseEvent, id: string) {
+    event.stopPropagation();
+    if (dragRef.current.moved) {
+      dragRef.current.moved = false;
+      return;
+    }
+    removeOneStyle(id);
+  }
+
+  function onAddMore(event: ReactMouseEvent, id: string) {
+    event.stopPropagation();
+    if (dragRef.current.moved) {
+      dragRef.current.moved = false;
+      return;
+    }
+    addStyle(id);
+  }
+
   function onCardClick(id: string) {
     // The click right after a drag is a scroll gesture, not a pick.
     if (dragRef.current.moved) {
@@ -145,9 +170,12 @@ export function StylePackPicker({
               disabled={disabled}
               className={cn(
                 "group relative w-[300px] min-w-[300px] shrink-0 snap-center overflow-hidden rounded-xl bg-zinc-950 text-left transition-all duration-300 ease-out",
+                // Unified hover language: every card rests slightly dimmed,
+                // lights up + zooms on hover; the in-pack state pins that
+                // same bright/zoomed look.
                 selected
-                  ? "scale-[1.02] opacity-100 shadow-2xl shadow-primary/20 ring-2 ring-primary ring-offset-2 ring-offset-black"
-                  : "cursor-pointer opacity-60 ring-1 ring-white/10 hover:scale-[1.02] hover:opacity-100",
+                  ? "scale-[1.03] opacity-100 shadow-2xl shadow-primary/20 ring-2 ring-primary ring-offset-2 ring-offset-black"
+                  : "cursor-pointer opacity-80 ring-1 ring-white/10 hover:scale-[1.03] hover:opacity-100",
                 full && !selected && "saturate-50",
               )}
               onClick={() => onCardClick(template.id)}
@@ -175,18 +203,43 @@ export function StylePackPicker({
                 </span>
               ) : null}
 
-              <span
-                className={cn(
-                  "absolute inset-0 z-10 grid place-items-center bg-black/50 transition-opacity duration-300",
-                  full ? "opacity-0" : "opacity-0 group-hover:opacity-100",
-                )}
-              >
-                <span className="flex flex-col items-center gap-2 text-white">
-                  <span className="grid size-11 place-items-center rounded-full bg-primary shadow-xl shadow-primary/30">
-                    <Plus className="size-5" />
+              <span className="absolute inset-0 z-10 grid place-items-center bg-black/50 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+                {inPack > 0 ? (
+                  <span className="flex gap-4">
+                    <span
+                      role="button"
+                      tabIndex={-1}
+                      aria-label={`Убрать один стиль ${template.name} из пака`}
+                      className="flex items-center gap-1.5 rounded-full bg-red-600/90 px-3.5 py-2 text-[11px] font-bold text-white shadow-xl transition hover:bg-red-500"
+                      onClick={(event) => onRemoveOne(event, template.id)}
+                    >
+                      <Minus className="size-4" />
+                      УБРАТЬ
+                    </span>
+                    <span
+                      role="button"
+                      tabIndex={-1}
+                      aria-label={`Добавить ещё стиль ${template.name} в пак`}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-full bg-primary px-3.5 py-2 text-[11px] font-bold text-white shadow-xl transition hover:brightness-110",
+                        full && "pointer-events-none opacity-40",
+                      )}
+                      onClick={(event) => onAddMore(event, template.id)}
+                    >
+                      <Plus className="size-4" />
+                      ДОБАВИТЬ ЕЩЕ
+                    </span>
                   </span>
-                  <span className="text-xs font-semibold tracking-wide uppercase">Добавить</span>
-                </span>
+                ) : full ? (
+                  <span className="text-xs font-semibold tracking-wide text-white uppercase">Пак заполнен</span>
+                ) : (
+                  <span className="flex flex-col items-center gap-2 text-white">
+                    <span className="grid size-11 place-items-center rounded-full bg-primary shadow-xl shadow-primary/30">
+                      <Plus className="size-5" />
+                    </span>
+                    <span className="text-xs font-semibold tracking-wide uppercase">Добавить</span>
+                  </span>
+                )}
               </span>
 
               <span className="block px-3 pt-3 text-sm font-medium text-white">{template.name}</span>
@@ -226,20 +279,27 @@ export function StylePackPicker({
                 title={template?.name ?? "Стиль"}
               >
                 <div className="h-full w-full overflow-hidden rounded-xl ring-1 ring-white/15">
-                  {template?.preview_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={template.preview_url} alt="" className="h-full w-full object-cover" />
-                  ) : (
-                    <div className="h-full w-full [&>*]:aspect-auto [&>*]:h-full">
-                      <StudioStylePreview styleId={styleId} />
-                    </div>
-                  )}
+                  {/* Live mini-render: the real 1080×1350 template scaled
+                      into the 64px slot (CreativeWrapper measures the slot
+                      and applies scale(64 / 1080), origin top left). */}
+                  <div className="pointer-events-none relative h-full w-full overflow-hidden">
+                    <CreativeRender
+                      styleId={styleId}
+                      headline={UNIVERSAL_PREVIEW_CONCEPT.headline}
+                      subheadline={UNIVERSAL_PREVIEW_CONCEPT.subheadline}
+                      bullets={UNIVERSAL_PREVIEW_CONCEPT.bullets}
+                      badge={UNIVERSAL_PREVIEW_CONCEPT.badge}
+                      buttonText={UNIVERSAL_PREVIEW_CONCEPT.cta}
+                      images={UNIVERSAL_PREVIEW_CONCEPT.image_urls}
+                      accentColor={accentColor || UNIVERSAL_PREVIEW_CONCEPT.accent_color}
+                    />
+                  </div>
                 </div>
                 <button
                   type="button"
                   aria-label={`Убрать стиль из слота ${index + 1}`}
                   disabled={disabled}
-                  className="absolute -top-2 -right-2 z-10 grid size-5 place-items-center rounded-full bg-red-600 text-white shadow-lg transition-colors hover:bg-red-500 disabled:opacity-40"
+                  className="absolute -top-2 -right-2 z-20 grid size-5 place-items-center rounded-full bg-red-600 text-white shadow-lg transition-colors hover:bg-red-500 disabled:opacity-40"
                   onClick={() => removeAt(index)}
                 >
                   <X className="size-3" />
