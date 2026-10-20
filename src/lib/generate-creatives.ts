@@ -399,7 +399,9 @@ async function directArt(input: {
   const niche = input.brief?.product?.trim() || "the advertised product or service";
   const nicheSplitRule = isSplitVsStyle(input.styleId)
     ? `\n\nCONTEXTUAL SPLIT RULE (style 1, До/После): build both prompts around the client's niche as the subject, following this exact frame: "Split screen before and after shot. Subject: ${niche}. Left side: terrible, bad quality, messy version of ${niche}. Right side: perfect, premium, clean, professional version of ${niche}. Cinematic lighting, highly detailed." prompt_before = the LEFT (terrible/messy) version, prompt_after = the RIGHT (perfect/premium) version. Same subject, same space/product, only the state changes. NEVER substitute a generic interior/object that is unrelated to ${niche}.`
-    : "";
+    : isSplitActionStyle(input.styleId)
+      ? `\n\nCONTEXTUAL SPLIT RULE (style 2, Split Action): build both prompts around the client's niche as the subject, following this exact frame: "Split screen before and after shot of ${niche}. Left side is BEFORE: black and white grayscale, messy, bad quality. Right side is AFTER: full color, premium, perfect. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only." prompt_before = the LEFT (grayscale, messy, bad-quality) version, prompt_after = the RIGHT (full-color, premium, perfect) version. Same subject, same space/product, only the state changes. NEVER substitute a generic interior/object that is unrelated to ${niche}.`
+      : "";
   const accentRule = `Акцентный цвет рекламного макета: ${input.accentLabel} (HEX ${input.accentHex}). При генерации промпта для Flux добавляй тонкие отсветы, освещение или детали фона в этом оттенке, чтобы картинка гармонировала с версткой.`;
   const visualDiversityRule =
     "Для каждого креатива генерируй АБСОЛЮТНО НОВОЕ, уникальное визуальное описание (меняй ракурсы, освещение, атмосферу, композицию), даже если тексты повторяются. Визуал должен быть разнообразным.";
@@ -520,7 +522,12 @@ CRITICAL IMAGE RULE (Flux background only):
         prompt_before: `Split-screen BEFORE photograph. Subject: ${niche}. Terrible, bad quality, messy, neglected version of ${niche}. ${parsed.prompt_before} Cinematic lighting, highly detailed, photographic, no text.`,
         prompt_after: `Split-screen AFTER photograph. Subject: ${niche}. Perfect, premium, clean, professional version of ${niche}. ${parsed.prompt_after} Cinematic lighting, highly detailed, photographic, no text.`,
       }
-    : {};
+    : isSplitActionStyle(input.styleId)
+      ? {
+          prompt_before: `Split screen before and after shot of ${niche}. BEFORE (left side): black and white grayscale, messy, bad quality version of ${niche}. ${parsed.prompt_before} CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`,
+          prompt_after: `Split screen before and after shot of ${niche}. AFTER (right side): full color, premium, perfect version of ${niche}. ${parsed.prompt_after} CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`,
+        }
+      : {};
   return {
     ...parsed,
     ...framed,

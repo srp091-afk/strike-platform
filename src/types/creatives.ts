@@ -21,6 +21,8 @@ export interface CreativeTemplateProps {
   buttonText: string;
   /** Typography preset value (studio-styles FontStyle); "ultra" = Bebas. */
   fontStyle?: string;
+  /** Extra claim line rendered inside the image overlay (Split Action). */
+  overlayText?: string;
   /** Image URLs — splits need 2–3, single-panel layouts need 1. */
   images: string[];
   /** HEX (or resolved) accent for buttons, checks, borders — applied via inline styles. */

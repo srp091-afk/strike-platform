@@ -11,7 +11,7 @@ export const studioStyles = [
     name: "Split Action",
     category: "Сплит",
     note: "Два вертикальных кадра + акцентная типографика и CTA",
-    masterPrompt: `Visual system: Dual vertical split-action ad. Two side-by-side photographic panels for a 4:5 Meta creative. Left and right scenes should feel like a before/after or contrast pair without any on-image text. Strong subject clarity, bold lighting contrast, no typography, no signage.`,
+    masterPrompt: `Visual system: Dual vertical split-action ad. Two side-by-side photographic panels for a 4:5 Meta creative. The subject MUST be the client's niche (formatted_brief.product) — the SAME subject on both sides. Left ("before") is black-and-white grayscale, messy, bad quality. Right ("after") is full color, premium, perfect. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only, no typography, no signage.`,
   },
   {
     key: "premium-dark",

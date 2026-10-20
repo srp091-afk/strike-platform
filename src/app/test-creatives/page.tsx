@@ -30,6 +30,8 @@ const mockSplitAction: CreativeTemplateProps = {
   headline: "Заявки без слива",
   subheadline: "Система под ключ",
   badge: "Старт за 7 дней",
+  overlayText: "Даём официальную гарантию результата по договору",
+  fontStyle: "ultra",
   bullets: ["Чёткий оффер", "Контроль CPL", "Масштаб без хаоса", "Прозрачная аналитика"],
   buttonText: "Получить план",
   images: [

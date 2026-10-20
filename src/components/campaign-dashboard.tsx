@@ -1012,6 +1012,7 @@ function CreativesGrid({
           : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"],
       antiBullets: strategy?.creatives.anti_benefits ?? [],
       fontStyle,
+      overlayText: strategy?.strategy.core_offer_angle,
       badge:
         (creative?.badge ? limitBadgeWords(creative.badge) : "") ||
         (badges.length > 0 ? limitBadgeWords(badges[index % badges.length]) : "") ||
