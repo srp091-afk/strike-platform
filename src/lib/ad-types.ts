@@ -3,6 +3,8 @@ import type { CreativeFormat } from "@/types/creatives";
 export interface AdFormattedBrief {
   product: string;
   audience: string;
+  /** Audience pains/fears from brief step 3 ("Боли ЦА"). */
+  pains?: string;
   key_advantages: string;
   offer: string;
 }

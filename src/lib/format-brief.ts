@@ -9,6 +9,7 @@ const formatPrompt = `Роль: Редактор-копирайтер. Возь�
 Поля JSON:
 - product — продукт / ниша
 - audience — целевая аудитория
+- pains — боли и страхи аудитории (шаг "Боли ЦА"): что тревожит клиентов при заказе — задержки, отсутствие прозрачности, переплаты и т.д. Бери только из ответов про боли; не выдумывай, если болей в выжимке нет — верни пустую строку.
 - key_advantages — ключевые преимущества бизнеса (сильные стороны, чем выделяются среди конкурентов). Явно извлеки их из сырого текста, если клиент их назвал.
 - offer — Спецпредложение и Триггер (УТП): акция, подарок или ограничение из ПОСЛЕДНЕГО ответа клиента в брифе. Примеры: "Скидка 20% до пятницы", "Возьмем 2 проекта до конца месяца". Это поле позже мапится в strategy.hook_concept.
 
@@ -17,10 +18,11 @@ const formatPrompt = `Роль: Редактор-копирайтер. Возь�
 const formatSchema = {
   type: "object",
   additionalProperties: false,
-  required: ["product", "audience", "key_advantages", "offer"],
+  required: ["product", "audience", "pains", "key_advantages", "offer"],
   properties: {
     product: { type: "string" },
     audience: { type: "string" },
+    pains: { type: "string" },
     key_advantages: { type: "string" },
     offer: { type: "string" },
   },
@@ -31,10 +33,11 @@ export function parseFormattedBrief(value: unknown): AdFormattedBrief | null {
   const row = value as Record<string, unknown>;
   const product = text(row.product);
   const audience = text(row.audience);
+  const pains = text(row.pains);
   const key_advantages = text(row.key_advantages);
   const offer = text(row.offer);
   if (!product || !audience || !offer) return null;
-  return { product, audience, key_advantages, offer };
+  return { product, audience, pains, key_advantages, offer };
 }
 
 export async function formatBriefSummary(briefSummary: string): Promise<AdFormattedBrief> {

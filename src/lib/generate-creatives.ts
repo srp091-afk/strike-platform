@@ -565,10 +565,11 @@ export function parseFormattedBriefRow(value: unknown): AdFormattedBrief | null 
   const row = value as Record<string, unknown>;
   const product = readText(row.product);
   const audience = readText(row.audience);
+  const pains = readText(row.pains);
   const key_advantages = readText(row.key_advantages);
   const offer = readText(row.offer);
   if (!product || !audience || !offer) return null;
-  return { product, audience, key_advantages, offer };
+  return { product, audience, pains, key_advantages, offer };
 }
 
 export function resolveStyleId(value: string): StudioStyleKey | null {

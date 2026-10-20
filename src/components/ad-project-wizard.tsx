@@ -55,9 +55,15 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
   // Real-time pool filtering: chips already present in the draft (exact
   // duplicates) and semantic competitors of picked values (same stem
   // category — гарантия/скидка/рассрочка/опыт/…) disappear instantly.
+  // Prior user answers are selections too: on the УТП step the chips must
+  // never repeat advantages the user already named on the previous step.
   const visibleSuggestions = useMemo(
-    () => filterSuggestions(suggestions, [draft]),
-    [suggestions, draft],
+    () =>
+      filterSuggestions(suggestions, [
+        draft,
+        ...messages.filter((message) => message.role === "user").map((message) => message.content),
+      ]),
+    [suggestions, draft, messages],
   );
   const [listening, setListening] = useState(false);
   const [strategyJson, setStrategyJson] = useState("");
@@ -114,6 +120,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
         setFormattedBrief({
           product: payload.product.trim(),
           audience: payload.audience.trim(),
+          pains: payload.pains?.trim() ?? "",
           key_advantages: payload.key_advantages.trim(),
           offer: payload.offer.trim(),
         });
@@ -415,7 +422,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
                             <Bot className="size-4" />
                           </span>
                           <div className="min-w-0 rounded-2xl rounded-tl-sm border border-zinc-800/50 bg-zinc-900/40 px-5 py-4 backdrop-blur-sm">
-                            <p className="text-sm leading-relaxed tracking-wide text-zinc-100">{message.content}</p>
+                            <p className="whitespace-pre-wrap text-sm leading-relaxed tracking-wide text-zinc-100">{message.content}</p>
                           </div>
                         </div>
                       ) : (
@@ -518,7 +525,6 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
               templates={templates}
               creating={creating}
               generating={generating}
-              onBack={() => setStage("intake")}
             />
           </form>
         )}

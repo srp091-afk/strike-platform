@@ -2,11 +2,13 @@ import {
   applyQuestionLimit,
   briefSystemPrompt,
   confirmMessage,
+  hasConfirmBullets,
   knownFacts,
   parseBriefReply,
   sanitizeBriefTurns,
 } from "@/lib/brief-chat";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { filterSuggestions } from "@/lib/suggestion-filter";
 import { getOpenAI } from "@/lib/openai";
 
 export const maxDuration = 60;
@@ -50,7 +52,7 @@ export async function POST(request: Request) {
       if (asked >= 10) {
         const summary = knownFacts(messages);
         return Response.json({
-          message: confirmMessage(summary),
+          message: confirmMessage(summary, messages),
           suggestions: ["Да, всё супер, генерируем!", "Хочу добавить деталь"],
           status: "confirm",
           brief_summary: summary,
@@ -65,9 +67,23 @@ export async function POST(request: Request) {
     }
 
     const limited = applyQuestionLimit(messages, parsed);
+    // Chips for the next step must not repeat anything the user already
+    // answered — most importantly, УТП chips (step 5) vs the advantages
+    // picked on step 4.
+    const userAnswers = messages.filter((turn) => turn.role === "user").map((turn) => turn.content);
+    const suggestions =
+      limited.status === "in_progress"
+        ? filterSuggestions(limited.suggestions, userAnswers)
+        : limited.suggestions;
+    // Guarantee the labeled bullet format for the final summary even if
+    // the model answered with prose.
+    const message =
+      limited.status === "confirm" && !hasConfirmBullets(limited.message)
+        ? confirmMessage(limited.briefSummary ?? knownFacts(messages), messages)
+        : limited.message;
     return Response.json({
-      message: limited.message,
-      suggestions: limited.suggestions,
+      message,
+      suggestions,
       status: limited.status,
       brief_summary: limited.briefSummary,
     });

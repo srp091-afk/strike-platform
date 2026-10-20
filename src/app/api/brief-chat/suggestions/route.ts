@@ -50,7 +50,12 @@ export async function POST(request: Request) {
  * from completely different aspects — up to MAX_ATTEMPTS times.
  */
 async function generateFreshSuggestions(history: BriefTurn[], draftText: string): Promise<string[]> {
-  const selectedFragments = splitSelectedTexts([draftText]);
+  // Everything the user already answered in the brief counts as "selected":
+  // on the УТП step chips must never repeat the advantages named on the
+  // previous step (nor pains/audience facts from earlier steps).
+  const priorAnswers = history.filter((turn) => turn.role === "user").map((turn) => turn.content);
+  const selections = [draftText, ...priorAnswers];
+  const selectedFragments = splitSelectedTexts(selections);
   const bannedCategories = Array.from(
     new Set(
       selectedFragments
@@ -71,10 +76,11 @@ async function generateFreshSuggestions(history: BriefTurn[], draftText: string)
       selectedFragments,
       bannedCategories,
       attempted,
+      priorAnswers,
     });
     attempted.push(...raw);
 
-    const fresh = filterSuggestions(raw, [draftText, ...collected, ...previousAttempted]);
+    const fresh = filterSuggestions(raw, [...selections, ...collected, ...previousAttempted]);
     for (const item of fresh) {
       if (!collected.includes(item)) collected.push(item);
     }
@@ -92,14 +98,20 @@ async function requestSuggestions(
     selectedFragments: string[];
     bannedCategories: string[];
     attempted: string[];
+    priorAnswers: string[];
   },
 ): Promise<string[]> {
-  const { attempt, selectedFragments, bannedCategories, attempted } = context;
+  const { attempt, selectedFragments, bannedCategories, attempted, priorAnswers } = context;
 
   const exclusions: string[] = [];
   if (selectedFragments.length > 0) {
     exclusions.push(
       `УЖЕ ВЫБРАНО пользователем (НЕ повторяй и НЕ перефразируй): ${selectedFragments.map((item) => `"${item}"`).join(", ")}.`,
+    );
+  }
+  if (priorAnswers.length > 0) {
+    exclusions.push(
+      `РАНЕЕ НАЗВАНО В БРИФЕ (ответы на прошлые вопросы): ${priorAnswers.map((item) => `"${item.slice(0, 300)}"`).join(" | ")}. КРИТИЧНО для шага ОФФЕР/УТП: варианты НЕ должны пересекаться с уже названными КЛЮЧЕВЫМИ ПРЕИМУЩЕСТВАМИ — скидки/акции/подарки предлагай только те, которых ещё не было в преимуществах.`,
     );
   }
   if (bannedCategories.length > 0) {
@@ -130,7 +142,7 @@ ${exclusions.join("\n")}
 - Вопрос про ЦА -> ТОЛЬКО конкретные сегменты.
 - Вопрос про БОЛИ -> ТОЛЬКО страхи и проблемы. Не предлагай выгоды.
 - Вопрос про КЛЮЧЕВЫЕ ПРЕИМУЩЕСТВА -> ТОЛЬКО конкретные отличия и сильные стороны (например, 'Свое производство', 'Опыт 15 лет', 'Работа по договору').
-- Вопрос про ОФФЕР -> ТОЛЬКО оцифрованные факты по формуле: [Конкретная услуга/Факт] + [Цифра / Срок / Гарантия в деньгах].
+- Вопрос про ОФФЕР -> ТОЛЬКО оцифрованные факты по формуле: [Конкретная услуга/Факт] + [Цифра / Срок / Гарантия в деньгах]. УТП не должно дублировать преимущества из прошлого ответа.
 КРИТИЧЕСКОЕ ПРАВИЛО ДЛЯ ОФФЕРОВ: ЗАПРЕЩЕНЫ качественные прилагательные и маркетинг-клише.
 СЛОВА-ТРИГГЕРЫ (ЗАПРЕЩЕНЫ): "Качественный", "Индивидуальный", "Быстрый", "Профессиональный", "Широкий", "Надежный", "Опытный", "Современный", "Комплексный".
 Плохо: "быстрая доставка", "индивидуальный подход", "профессиональная команда".

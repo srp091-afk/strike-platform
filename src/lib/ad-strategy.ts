@@ -8,9 +8,10 @@ const strategyPrompt = `Роль: Ты — легендарный direct-respons
 
 Входные данные:
 - brief_summary: {brief_summary}
+- formatted_brief.pains (боли и страхи аудитории): {pains}
 - formatted_brief.key_advantages (ключевые преимущества бизнеса): {key_advantages}
 - formatted_brief.offer (Спецпредложение и Триггер / УТП): {offer}
-Опирайся на key_advantages при сборке выгод (benefits) и welcome_screen_bullets.
+Опирайся на key_advantages при сборке выгод (benefits) и welcome_screen_bullets, а на pains — при сборке заголовков и target_audience_insight (бей в названные боли, не выдумывай новые).
 Поле hook_concept ОБЯЗАНО опираться на formatted_brief.offer (акция / подарок / ограничение). Сохрани смысл спецпредложения клиента.
 
 ПРАВИЛА ГЕНЕРАЦИИ (КРИТИЧЕСКИ ВАЖНО):
@@ -278,11 +279,15 @@ async function requestStrategy(brief: string, formattedBrief?: AdFormattedBrief 
   const keyAdvantages =
     formattedBrief?.key_advantages?.trim() ||
     "Ключевые преимущества не выделены отдельно — извлеки их из brief_summary.";
+  const pains =
+    formattedBrief?.pains?.trim() ||
+    "Боли аудитории не выделены отдельно — извлеки их из brief_summary.";
   const offer =
     formattedBrief?.offer?.trim() ||
     "Спецпредложение не выделено отдельно — извлеки акцию/подарок/лимит из brief_summary в hook_concept.";
   const system = strategyPrompt
     .replace("{brief_summary}", brief)
+    .replace("{pains}", pains)
     .replace("{key_advantages}", keyAdvantages)
     .replace("{offer}", offer);
   const userPayload = {
@@ -291,6 +296,7 @@ async function requestStrategy(brief: string, formattedBrief?: AdFormattedBrief 
       ? {
           product: formattedBrief.product,
           audience: formattedBrief.audience,
+          pains: formattedBrief.pains ?? "",
           key_advantages: formattedBrief.key_advantages,
           offer: formattedBrief.offer,
         }

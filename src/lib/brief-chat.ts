@@ -10,10 +10,14 @@ export const briefSystemPrompt = `Роль: Ты — дружелюбный ИИ
 В качестве опорной валюты для любых примеров с цифрами, ценами, штрафами или гарантиями используй ТОЛЬКО доллар США ($ / USD) или Евро (€).
 Пример правильной генерации: "Штраф $100 за каждый день просрочки" или "Скидка $50 на первый заказ".
 4. На статусах "confirm" и "complete" в поле "brief_summary" выводи просто сырую выжимку всех собранных фактов. Никак не форматируй и не украшай текст.
-5. НА СТАТУСЕ "confirm": КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО сухо выдавать текст анкеты. Поле "message" — живая речь со структурой:
-   1) Радостное вводное слово (например: "Супер! Мы собрали отличную базу. Позвольте подытожить:").
-   2) Перечисление собранных фактов (Ниша, ЦА, Боли, Ключевые преимущества, Спецпредложение/Триггер).
-   3) Уточняющий вопрос (например: "Всё верно, или добавим какую-то важную деталь?").
+5. НА СТАТУСЕ "confirm": КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНО сухо выдавать текст анкеты сплошной "простынёй". Поле "message" — живая речь СТРОГО в формате маркированного списка, каждый пункт с новой строки и с подписью:
+Супер! Мы собрали отличную базу. Позвольте подытожить:
+• Ниша: <факт>
+• Целевая аудитория: <факт>
+• Боли ЦА: <факт>
+• Ключевые преимущества: <факт>
+• Спецпредложение/Триггер: <факт>
+Всё верно, или добавим какую-то важную деталь?
    В "suggestions" передай ["Да, всё супер, генерируем!", "Хочу добавить деталь"].
 6. СТРОГИЙ КОНТЕКСТ И ФОРМАТ ПОДСКАЗОК (suggestions):
 - Вопрос про нишу/продукт -> ТОЛЬКО конкретные варианты продукта/ниши.
@@ -21,6 +25,7 @@ export const briefSystemPrompt = `Роль: Ты — дружелюбный ИИ
 - Вопрос про БОЛИ -> ТОЛЬКО страхи и проблемы.
 - Вопрос про КЛЮЧЕВЫЕ ПРЕИМУЩЕСТВА -> ТОЛЬКО конкретные отличия и сильные стороны (например, 'Свое производство', 'Опыт 15 лет', 'Работа по договору').
 - Вопрос про СПЕЦПРЕДЛОЖЕНИЕ / ТРИГГЕР (шаг 5) -> ТОЛЬКО акции, подарки, лимиты и срочность. Спроси явно: акция, подарок или ограничение. Примеры подсказок: "Скидка 20% до пятницы", "Возьмем только 2 проекта до конца месяца", "Бесплатный расчет и консультация в подарок".
+ФИЛЬТР ШАГА 5: подсказки УТП НЕ должны пересекаться с тем, что клиент уже назвал на шаге 4 (Ключевые преимущества). Если преимущество уже содержит скидку/опыт/сроки — не предлагай то же самое как УТП, дай принципиально другой триггер.
 КРИТИЧЕСКОЕ ПРАВИЛО ДЛЯ ШАГА 5: В массиве \`suggestions\` ЗАПРЕЩЕНО использовать качественные прилагательные без цифр.
 Каждая подсказка ОБЯЗАНА строиться по формуле: [Акция / Подарок / Лимит] + [Цифра / Срок / Ограничение].
 СЛОВА-ТРИГГЕРЫ (КАТЕГОРИЧЕСКИ ЗАПРЕЩЕНЫ К ИСПОЛЬЗОВАНИЮ В ПОДСКАЗКАХ): "Качественный", "Индивидуальный", "Быстрый", "Профессиональный", "Широкий", "Надежный", "Опытный", "Современный", "Комплексный".
@@ -86,15 +91,54 @@ export function applyQuestionLimit(turns: BriefTurn[], reply: BriefReply): Brief
   if (asked < 10 || reply.status !== "in_progress") return reply;
   const summary = reply.briefSummary ?? knownFacts(turns);
   return {
-    message: confirmMessage(summary),
+    message: confirmMessage(summary, turns),
     suggestions: confirmSuggestions,
     status: "confirm",
     briefSummary: summary,
   };
 }
 
-export function confirmMessage(summary: string) {
-  return `Супер! Мы собрали отличную базу. Позвольте подытожить:\n\n${summary}\n\nВсё верно, или добавим какую-то важную деталь?`;
+/** Step labels for the final summary — order matches the brief flow. */
+const confirmLabels = [
+  "Ниша",
+  "Целевая аудитория",
+  "Боли ЦА",
+  "Ключевые преимущества",
+  "Спецпредложение/Триггер",
+];
+
+/**
+ * Final bot message as a neat bullet list. When the conversation turns are
+ * available, user answers map onto the step labels in order; extra answers
+ * (details added mid-flow) go under "Дополнительно". Falls back to splitting
+ * the raw summary into one bullet per statement.
+ */
+export function confirmMessage(summary: string, turns?: BriefTurn[]) {
+  const answers = (turns ?? [])
+    .filter((turn) => turn.role === "user")
+    .map((turn) => turn.content.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+
+  const bullets =
+    answers.length > 0
+      ? answers.map((answer, index) =>
+          index < confirmLabels.length
+            ? `• ${confirmLabels[index]}: ${answer}`
+            : `• Дополнительно: ${answer}`,
+        )
+      : summary
+          .split(/(?<=[.!?])\s+|\n+/)
+          .map((part) => part.trim())
+          .filter(Boolean)
+          .map((part) => `• ${part}`);
+
+  const body = bullets.length > 0 ? bullets.join("\n") : `• ${summary}`;
+  return `Супер! Мы собрали отличную базу. Позвольте подытожить:\n${body}\nВсё верно, или добавим какую-то важную деталь?`;
+}
+
+/** True when a confirm message already uses the labeled bullet format. */
+export function hasConfirmBullets(message: string) {
+  return message.includes("• Ниша:") && message.includes("• Целевая аудитория:");
 }
 
 export function knownFacts(turns: BriefTurn[]) {

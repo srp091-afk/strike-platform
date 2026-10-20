@@ -31,7 +31,6 @@ export function AdStyleStudio({
   templates,
   creating,
   generating,
-  onBack,
 }: {
   formattedBrief: AdFormattedBrief | null;
   formattedPending: boolean;
@@ -42,7 +41,6 @@ export function AdStyleStudio({
   templates: CreativeTemplate[];
   creating: boolean;
   generating: boolean;
-  onBack: () => void;
 }) {
   const busy = creating || generating;
   const [creativesCount, setCreativesCount] = useState(3);
@@ -99,6 +97,8 @@ export function AdStyleStudio({
         <BriefFact label="Продукт / Ниша" value={formattedBrief?.product} pending={formattedPending} />
         <div className="my-4 border-t border-zinc-800/60" />
         <BriefFact label="Целевая аудитория" value={formattedBrief?.audience} pending={formattedPending} />
+        <div className="my-4 border-t border-zinc-800/60" />
+        <BriefFact label="Боли и страхи аудитории" value={formattedBrief?.pains} pending={formattedPending} />
         <div className="my-4 border-t border-zinc-800/60" />
         <BriefFact label="Ключевые преимущества" value={formattedBrief?.key_advantages} pending={formattedPending} />
         <div className="my-4 border-t border-zinc-800/60" />
@@ -186,15 +186,6 @@ export function AdStyleStudio({
       <footer className="flex flex-col gap-3 border-t border-zinc-800/80 pt-4 sm:flex-row sm:items-center sm:justify-between lg:col-span-12">
         <GenerationCostBadge creativesCount={creativesCount} />
         <div className="flex items-center justify-end gap-2">
-          <Button
-            type="button"
-            variant="ghost"
-            className="text-zinc-400 hover:text-white"
-            disabled={busy}
-            onClick={onBack}
-          >
-            Назад
-          </Button>
           <Button
             type="submit"
             disabled={!packComplete || busy || strategyPending}
