@@ -4,6 +4,7 @@ import { buildCreatives, parseFormattedBriefRow, publicCreativesError, resolveSt
 import { parseAdStrategy } from "@/lib/ad-strategy";
 import { isRealCreativeImageUrl, plusDaysIso } from "@/lib/ad-project-media";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getCreativeTemplatePrompts } from "@/lib/creative-templates";
 import { isCreativeLanguage, resolveCreativeStyleId, studioStyles } from "@/lib/studio-styles";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -28,7 +29,15 @@ export async function POST(request: Request) {
 
   const record = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
   const projectId = typeof record.projectId === "string" ? record.projectId.trim() : "";
-  const creativesCount = Number(record.quantity ?? record.creativesCount);
+  // Style pack: `styleIds` = one template UUID per creative. Legacy callers
+  // send a single `styleId`, repeated `quantity` times.
+  const styleIdsRaw = Array.isArray(record.styleIds)
+    ? record.styleIds.flatMap((value) =>
+        typeof value === "string" && value.trim() ? [value.trim()] : [],
+      )
+    : [];
+  const hasPack = styleIdsRaw.length > 0;
+  const creativesCount = hasPack ? styleIdsRaw.length : Number(record.quantity ?? record.creativesCount);
   const creativeLanguageRaw = typeof record.creativeLanguage === "string" ? record.creativeLanguage.trim() : "";
   const styleIdRaw = typeof record.styleId === "string" ? record.styleId.trim() : "";
   const accentColorRaw = typeof record.accentColor === "string" ? record.accentColor.trim() : "";
@@ -40,14 +49,6 @@ export async function POST(request: Request) {
     return Response.json({ error: "Выберите от 1 до 10 креативов." }, { status: 400 });
   }
 
-  const styleId = resolveStyleId(styleIdRaw);
-  if (!styleId) {
-    return Response.json({ error: "Выберите визуальный стиль." }, { status: 400 });
-  }
-
-  const styleName = studioStyles.find((style) => style.key === styleId)?.name ?? styleId;
-  // Persist the creative_templates UUID (not the canonical key) as style_key.
-  const storedStyleId = resolveCreativeStyleId(styleId) ?? styleId;
   const supabase = createSupabaseAdminClient();
   const { data: project, error: projectError } = await supabase
     .from("ad_projects")
@@ -63,6 +64,31 @@ export async function POST(request: Request) {
   if (!project) {
     return Response.json({ error: "Проект не найден." }, { status: 404 });
   }
+
+  // Resolve the pack: every entry keeps its own style + its DB system_prompt.
+  const packRaws = hasPack
+    ? styleIdsRaw
+    : Array.from({ length: creativesCount }, () =>
+        styleIdRaw || (typeof project.style_key === "string" ? project.style_key : ""),
+      );
+  const templatePrompts = await getCreativeTemplatePrompts(packRaws.filter((raw) => isUuid(raw)));
+  const packEntries: { key: NonNullable<ReturnType<typeof resolveStyleId>>; name: string; masterPrompt: string | null }[] = [];
+  for (const raw of packRaws) {
+    const key = resolveStyleId(raw);
+    if (!key) {
+      return Response.json({ error: "Выберите визуальный стиль." }, { status: 400 });
+    }
+    const template = templatePrompts.get(raw.toLowerCase());
+    packEntries.push({
+      key,
+      name: template?.name || studioStyles.find((style) => style.key === key)?.name || key,
+      masterPrompt: template?.systemPrompt || null,
+    });
+  }
+  const styleId = packEntries[0]!.key;
+  // Persist the primary (first) style's creative_templates UUID as style_key.
+  const storedStyleId = resolveCreativeStyleId(styleId) ?? styleId;
+  const styleName = [...new Set(packEntries.map((entry) => entry.name))].join(", ");
 
   const strategy = parseAdStrategy(project.strategy_data);
   if (!strategy) {
@@ -89,9 +115,11 @@ export async function POST(request: Request) {
 
   try {
     const creatives = await buildCreatives({
-      count: creativesCount,
+      // One pack entry per creative: own style, own DB system_prompt.
+      // Results stay index-aligned with packEntries, so creative.style_id
+      // (stamped inside buildCreatives) links each image to its style.
+      styles: packEntries.map((entry) => ({ styleId: entry.key, masterPrompt: entry.masterPrompt })),
       language: creativeLanguage,
-      styleId,
       brief: parseFormattedBriefRow(project.formatted_brief),
       strategy,
       accentColor: accentLabel,

@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 
 import { AccentColorField, DEFAULT_ACCENT_COLOR } from "@/components/accent-color-field";
 import { GenerationCostBadge } from "@/components/generation-cost-badge";
-import { StudioStylePreview } from "@/components/studio-style-preview";
+import { StylePackPicker } from "@/components/style-pack-picker";
 import { Button } from "@/components/ui/button";
 import type { CreativeTemplate } from "@/lib/creative-templates";
 import { DEFAULT_CREDITS_BALANCE, creditsForCreatives } from "@/lib/credits";
@@ -16,8 +16,8 @@ import { cn } from "@/lib/utils";
 const QUANTITIES = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10] as const;
 
 export type RefreshCreativesPayload = {
-  /** `creative_templates.id` (UUID). */
-  styleId: string;
+  /** Style pack: one `creative_templates.id` (UUID) per generated creative. */
+  styleIds: string[];
   quantity: number;
   accentColor: string;
 };
@@ -41,22 +41,26 @@ export function RefreshCreativesDialog({
   initialAccent?: string | null;
   creditsBalance?: number;
 }) {
-  const [category, setCategory] = useState("Все");
-  const [selectedStyle, setSelectedStyle] = useState<string>(
-    () => resolveCreativeStyleId(initialStyle) ?? "",
-  );
+  // Slot-based pack: one template UUID per generated creative (≤ quantity).
+  const [selectedStyles, setSelectedStyles] = useState<string[]>(() => {
+    const initial = resolveCreativeStyleId(initialStyle);
+    return initial ? [initial] : [];
+  });
   const [quantity, setQuantity] = useState(3);
   const [accentColor, setAccentColor] = useState(initialAccent?.trim() || DEFAULT_ACCENT_COLOR);
   const [templates, setTemplates] = useState<CreativeTemplate[]>([]);
   const [templatesLoading, setTemplatesLoading] = useState(false);
   const [templatesError, setTemplatesError] = useState<string | null>(null);
 
-  const filters = ["Все", ...Array.from(new Set(templates.map((template) => template.category).filter(Boolean)))];
-  const visibleStyles = templates.filter(
-    (template) => category === "Все" || template.category === category,
-  );
   const cost = creditsForCreatives(quantity);
   const insufficient = creditsBalance < cost;
+  const packComplete = selectedStyles.length === quantity;
+  const remaining = quantity - selectedStyles.length;
+
+  function changeQuantity(count: number) {
+    setQuantity(count);
+    setSelectedStyles((current) => current.slice(0, count));
+  }
 
   // Dynamic style list from Supabase `creative_templates` via /api/creative-templates.
   useEffect(() => {
@@ -86,17 +90,11 @@ export function RefreshCreativesDialog({
 
   useEffect(() => {
     if (!open) return;
-    setSelectedStyle(resolveCreativeStyleId(initialStyle) ?? "");
+    const initial = resolveCreativeStyleId(initialStyle);
+    setSelectedStyles(initial ? [initial] : []);
     setQuantity(3);
-    setCategory("Все");
     setAccentColor(initialAccent?.trim() || DEFAULT_ACCENT_COLOR);
   }, [open, initialStyle, initialAccent]);
-
-  useEffect(() => {
-    if (visibleStyles.some((template) => template.id === selectedStyle)) return;
-    const next = visibleStyles[0];
-    if (next) setSelectedStyle(next.id);
-  }, [category, selectedStyle, visibleStyles]);
 
   useEffect(() => {
     if (!open) return;
@@ -163,7 +161,7 @@ export function RefreshCreativesDialog({
                       "h-10 rounded-lg text-sm",
                       active ? "bg-white font-bold text-black" : "border border-zinc-800 bg-zinc-900 text-zinc-400",
                     )}
-                    onClick={() => setQuantity(count)}
+                    onClick={() => changeQuantity(count)}
                   >
                     {count}
                   </button>
@@ -175,27 +173,7 @@ export function RefreshCreativesDialog({
           <AccentColorField value={accentColor} onChange={setAccentColor} disabled={pending} />
 
           <div>
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">Визуальный стиль</p>
-            <div className="mb-3 flex flex-wrap gap-2">
-              {filters.map((filter) => {
-                const active = filter === category;
-                return (
-                  <button
-                    key={filter}
-                    type="button"
-                    aria-pressed={active}
-                    disabled={pending}
-                    className={cn(
-                      "rounded-full px-3 py-1.5 text-sm",
-                      active ? "bg-white font-semibold text-black" : "border border-zinc-800 bg-zinc-900 text-zinc-400",
-                    )}
-                    onClick={() => setCategory(filter)}
-                  >
-                    {filter}
-                  </button>
-                );
-              })}
-            </div>
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-zinc-400">Визуальные стили</p>
             {templatesLoading ? (
               <p className="flex items-center gap-2 text-sm text-zinc-400">
                 <Loader2 className="size-4 animate-spin" />
@@ -206,33 +184,13 @@ export function RefreshCreativesDialog({
             ) : templates.length === 0 ? (
               <p className="text-sm text-zinc-500">В базе нет активных стилей (таблица creative_templates пуста).</p>
             ) : (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                {visibleStyles.map((template) => {
-                  const active = template.id === selectedStyle;
-                  return (
-                    <button
-                      key={template.id}
-                      type="button"
-                      aria-pressed={active}
-                      disabled={pending}
-                      className={cn(
-                        "overflow-hidden rounded-xl border-2 bg-zinc-950 text-left transition-colors",
-                        active ? "border-white ring-2 ring-white/20" : "border-zinc-800 hover:border-zinc-500",
-                      )}
-                      onClick={() => setSelectedStyle(template.id)}
-                    >
-                      {template.preview_url ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={template.preview_url} alt="" className="aspect-[4/5] w-full object-cover" />
-                      ) : (
-                        <StudioStylePreview styleId={template.id} />
-                      )}
-                      <span className="block px-3 pt-3 text-sm font-medium text-white">{template.name}</span>
-                      <span className="block px-3 pt-1 pb-3 text-xs text-zinc-500">{template.category}</span>
-                    </button>
-                  );
-                })}
-              </div>
+              <StylePackPicker
+                templates={templates}
+                quantity={quantity}
+                selectedStyles={selectedStyles}
+                onChange={setSelectedStyles}
+                disabled={pending}
+              />
             )}
           </div>
         </div>
@@ -241,17 +199,19 @@ export function RefreshCreativesDialog({
           <GenerationCostBadge creativesCount={quantity} balance={creditsBalance} />
           <Button
             type="button"
-            disabled={pending || insufficient || !selectedStyle || templatesLoading}
+            disabled={pending || insufficient || !packComplete || templatesLoading}
             className="rounded-xl bg-white px-6 py-2.5 font-bold text-black shadow-lg hover:bg-zinc-200 disabled:opacity-40"
-            onClick={() => onConfirm({ styleId: selectedStyle, quantity, accentColor })}
+            onClick={() => onConfirm({ styleIds: selectedStyles, quantity, accentColor })}
           >
             {pending ? (
               <>
                 <Loader2 className="size-4 animate-spin" />
                 Запускаем…
               </>
+            ) : !packComplete ? (
+              `Выберите ещё ${remaining} ${remaining === 1 ? "стиль" : "стиля"}`
             ) : (
-              "Запустить генерацию"
+              "Сгенерировать пак"
             )}
           </Button>
         </footer>

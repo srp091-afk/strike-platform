@@ -204,9 +204,10 @@ export function CampaignDashboard({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           projectId,
-          styleId: payload.styleId,
-          quantity: payload.quantity,
-          creativesCount: payload.quantity,
+          styleId: payload.styleIds[0],
+          styleIds: payload.styleIds,
+          quantity: payload.styleIds.length || payload.quantity,
+          creativesCount: payload.styleIds.length || payload.quantity,
           accentColor: payload.accentColor,
         }),
       });

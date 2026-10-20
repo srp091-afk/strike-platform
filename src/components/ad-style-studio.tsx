@@ -1,11 +1,11 @@
 "use client";
 
 import { Globe, Loader2, Sparkles } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useState } from "react";
 
 import { AccentColorField, DEFAULT_ACCENT_COLOR } from "@/components/accent-color-field";
 import { GenerationCostBadge } from "@/components/generation-cost-badge";
-import { StudioStylePreview } from "@/components/studio-style-preview";
+import { StylePackPicker } from "@/components/style-pack-picker";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select-field";
@@ -45,26 +45,21 @@ export function AdStyleStudio({
   const [creativesCount, setCreativesCount] = useState(3);
   const [creativeLanguage, setCreativeLanguage] = useState<CreativeLanguage>("ru");
   const [fontStyle, setFontStyle] = useState<FontStyle>("premium");
-  const [category, setCategory] = useState("Все");
-  const [selectedStyleId, setSelectedStyleId] = useState<string>(templates[0]?.id ?? "");
+  // Slot-based pack: one creative_templates UUID per generated creative (≤ quantity).
+  const [selectedStyles, setSelectedStyles] = useState<string[]>([]);
   const [accentColor, setAccentColor] = useState(DEFAULT_ACCENT_COLOR);
 
-  const filters = useMemo(
-    () => ["Все", ...Array.from(new Set(templates.map((template) => template.category).filter(Boolean)))],
-    [templates],
-  );
-  const visibleStyles = templates.filter(
-    (template) => category === "Все" || template.category === category,
-  );
-  const selected = templates.find((template) => template.id === selectedStyleId) ?? null;
+  const primaryTemplateId = selectedStyles[0] ?? "";
+  const selected = templates.find((template) => template.id === primaryTemplateId) ?? null;
   const templateId = selected?.id ?? "";
   const font = fontStyles.find((item) => item.value === fontStyle) ?? fontStyles[0];
+  const packComplete = selectedStyles.length === creativesCount;
+  const remaining = creativesCount - selectedStyles.length;
 
-  useEffect(() => {
-    if (visibleStyles.some((template) => template.id === selectedStyleId)) return;
-    const next = visibleStyles[0];
-    if (next) setSelectedStyleId(next.id);
-  }, [category, selectedStyleId, visibleStyles]);
+  function changeCount(count: number) {
+    setCreativesCount(count);
+    setSelectedStyles((current) => current.slice(0, count));
+  }
 
   return (
     <>
@@ -73,6 +68,7 @@ export function AdStyleStudio({
       <input type="hidden" name="creative_language" value={creativeLanguage} />
       <input type="hidden" name="font_style" value={fontStyle} />
       <input type="hidden" name="style_key" value={templateId} />
+      <input type="hidden" name="style_ids" value={JSON.stringify(selectedStyles)} />
       <input type="hidden" name="style_name" value={selected?.name ?? ""} />
       <input type="hidden" name="accent_color" value={accentColor} />
 
@@ -124,7 +120,7 @@ export function AdStyleStudio({
                       "h-10 flex-1 rounded-lg text-sm",
                       active ? "bg-white font-bold text-black" : "border border-zinc-800 bg-zinc-900 text-zinc-400",
                     )}
-                    onClick={() => setCreativesCount(count)}
+                    onClick={() => changeCount(count)}
                   >
                     {count}
                   </button>
@@ -164,59 +160,17 @@ export function AdStyleStudio({
 
         <AccentColorField value={accentColor} onChange={setAccentColor} disabled={busy} />
 
-        <div className="flex flex-wrap gap-2">
-          {filters.map((filter) => {
-            const active = filter === category;
-            return (
-              <button
-                key={filter}
-                type="button"
-                aria-pressed={active}
-                className={cn(
-                  "rounded-full px-3 py-1.5 text-sm",
-                  active ? "bg-white font-semibold text-black" : "border border-zinc-800 bg-zinc-900 text-zinc-400",
-                )}
-                onClick={() => setCategory(filter)}
-              >
-                {filter}
-              </button>
-            );
-          })}
-        </div>
-
         {templates.length === 0 ? (
           <p className="text-sm text-zinc-500">В базе нет активных стилей (таблица creative_templates пуста).</p>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {visibleStyles.map((template) => {
-              const active = template.id === selectedStyleId;
-              return (
-                <button
-                  key={template.id}
-                  type="button"
-                  aria-pressed={active}
-                  className={cn(
-                    "overflow-hidden rounded-xl border-2 bg-zinc-950 text-left transition-colors",
-                    active ? "border-white ring-2 ring-white/20" : "border-zinc-800 hover:border-zinc-500",
-                  )}
-                  onClick={() => setSelectedStyleId(template.id)}
-                >
-                  {template.preview_url ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img src={template.preview_url} alt="" className="aspect-[4/5] w-full object-cover" />
-                  ) : (
-                    <StudioStylePreview styleId={template.id} />
-                  )}
-                  <span className="block px-3 pt-3 text-sm font-medium text-white">{template.name}</span>
-                  <span className="block px-3 pt-1 pb-3 text-xs text-zinc-500">{template.category}</span>
-                </button>
-              );
-            })}
-          </div>
+          <StylePackPicker
+            templates={templates}
+            quantity={creativesCount}
+            selectedStyles={selectedStyles}
+            onChange={setSelectedStyles}
+            disabled={busy}
+          />
         )}
-        {!templateId && templates.length > 0 ? (
-          <p className="text-sm text-zinc-500">Выберите визуальный стиль.</p>
-        ) : null}
       </section>
 
       <footer className="flex flex-col gap-3 border-t border-zinc-800/80 pt-4 sm:flex-row sm:items-center sm:justify-between lg:col-span-12">
@@ -233,8 +187,8 @@ export function AdStyleStudio({
           </Button>
           <Button
             type="submit"
-            disabled={!templateId || busy || strategyPending}
-            className="rounded-xl bg-white px-6 py-2.5 font-bold text-black shadow-lg hover:bg-zinc-200"
+            disabled={!packComplete || busy || strategyPending}
+            className="rounded-xl bg-white px-6 py-2.5 font-bold text-black shadow-lg hover:bg-zinc-200 disabled:opacity-40"
           >
             {strategyPending
               ? "Собираем стратегию"
@@ -242,7 +196,9 @@ export function AdStyleStudio({
                 ? "Генерируем креативы"
                 : creating
                   ? "Сохраняем кампанию"
-                  : `Сгенерировать кампанию (${creativesCount})`}
+                  : !packComplete
+                    ? `Выберите ещё ${remaining} ${remaining === 1 ? "стиль" : "стиля"}`
+                    : "Сгенерировать пак"}
           </Button>
         </div>
       </footer>

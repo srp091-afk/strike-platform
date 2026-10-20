@@ -289,13 +289,21 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
     const creativesCount = Number(String(formData.get("creatives_count") ?? "").trim());
     const creativeLanguage = String(formData.get("creative_language") ?? "").trim();
     const styleId = String(formData.get("style_key") ?? "").trim();
+    const styleIds = readStyleIds(formData.get("style_ids"));
     const accentColor = String(formData.get("accent_color") ?? "").trim();
 
     try {
       const response = await fetch("/api/generate-creatives", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectId, creativesCount, creativeLanguage, styleId, accentColor }),
+        body: JSON.stringify({
+          projectId,
+          creativesCount: styleIds.length > 0 ? styleIds.length : creativesCount,
+          creativeLanguage,
+          styleId: styleIds[0] ?? styleId,
+          styleIds: styleIds.length > 0 ? styleIds : undefined,
+          accentColor,
+        }),
       });
       const payload = (await response.json()) as { error?: string };
       if (!response.ok) {
@@ -504,6 +512,20 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
       </Card>
     </div>
   );
+}
+
+/** Selected style pack from the studio step: JSON array of template UUIDs. */
+function readStyleIds(value: FormDataEntryValue | null): string[] {
+  if (typeof value !== "string" || !value.trim()) return [];
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.flatMap((item) =>
+      typeof item === "string" && item.trim() ? [item.trim()] : [],
+    );
+  } catch {
+    return [];
+  }
 }
 
 function isStrategyPayload(value: unknown) {

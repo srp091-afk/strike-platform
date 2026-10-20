@@ -202,31 +202,48 @@ export function publicCreativesError(error: unknown) {
   return "Не удалось сгенерировать креативы.";
 }
 
-export async function buildCreatives(input: {
-  count: number;
-  language: CreativeLanguage;
+export interface CreativeStylePlan {
   styleId: StudioStyleKey;
+  /** `creative_templates.system_prompt`; falls back to the built-in master prompt. */
+  masterPrompt?: string | null;
+}
+
+export async function buildCreatives(input: {
+  /** Legacy single-style mode: repeat `styleId` `count` times. */
+  count?: number;
+  styleId?: StudioStyleKey;
+  /** Style pack: one entry per generated creative (its own style + prompt). */
+  styles?: CreativeStylePlan[];
+  language: CreativeLanguage;
   brief: AdFormattedBrief | null;
   strategy: AdStrategy | null;
   accentColor?: string | null;
 }): Promise<AdCreative[]> {
-  const style = studioStyles.find((item) => item.key === input.styleId);
-  if (!style) throw new Error("Неизвестный визуальный стиль.");
+  const plan: CreativeStylePlan[] =
+    input.styles && input.styles.length > 0
+      ? input.styles
+      : Array.from({ length: input.count ?? 0 }, () => ({ styleId: input.styleId as StudioStyleKey }));
+  if (plan.length === 0) throw new Error("Не выбран ни один визуальный стиль.");
+
   const accentLabel = accentColorForPrompt(input.accentColor);
   const accentHex = resolveAccentHex(input.accentColor, DEFAULT_ACCENT_COLOR);
 
-  const tasks = Array.from({ length: input.count }, (_, index) =>
-    composeCreative({
+  // Each pack entry is generated with ITS style and ITS DB system_prompt;
+  // composeCreative stamps the matching template UUID into creative.style_id.
+  const tasks = plan.map((entry, index) => {
+    const style = studioStyles.find((item) => item.key === entry.styleId);
+    if (!style) throw new Error("Неизвестный визуальный стиль.");
+    return composeCreative({
       index,
       language: input.language,
-      styleId: input.styleId,
-      masterPrompt: style.masterPrompt,
+      styleId: entry.styleId,
+      masterPrompt: entry.masterPrompt?.trim() ? entry.masterPrompt : style.masterPrompt,
       brief: input.brief,
       strategy: input.strategy,
       accentLabel,
       accentHex,
-    }),
-  );
+    });
+  });
 
   return Promise.all(tasks);
 }
