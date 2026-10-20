@@ -169,17 +169,20 @@ export function StylePackPicker({
               aria-label={`Добавить стиль ${template.name} в пак`}
               disabled={disabled}
               className={cn(
-                "group relative w-[300px] min-w-[300px] shrink-0 snap-center overflow-hidden rounded-xl bg-zinc-950 text-left transition-all duration-300 ease-out",
-                // Unified hover language: every card rests slightly dimmed,
-                // lights up + zooms on hover; the in-pack state pins that
-                // same bright/zoomed look.
+                // Outer container: scale + ring only (NO overflow-hidden,
+                // so the accent ring/shadow is never clipped by the slider).
+                "group relative w-[300px] min-w-[300px] shrink-0 snap-center transform rounded-xl text-left transition-all duration-300 ease-out",
+                // Resting: slightly dimmed, standard size. Hover/active:
+                // fully lit and zoomed.
                 selected
-                  ? "scale-[1.03] opacity-100 shadow-2xl shadow-primary/20 ring-2 ring-primary ring-offset-2 ring-offset-black"
-                  : "cursor-pointer opacity-80 ring-1 ring-white/10 hover:scale-[1.03] hover:opacity-100",
+                  ? "scale-[1.03] opacity-100 shadow-2xl shadow-primary/20 ring-2 ring-primary ring-inset"
+                  : "scale-100 cursor-pointer opacity-70 ring-1 ring-white/10 ring-inset hover:scale-[1.03] hover:opacity-100",
                 full && !selected && "saturate-50",
               )}
               onClick={() => onCardClick(template.id)}
             >
+              {/* Inner content wrapper owns the clipping + corners. */}
+              <div className="relative overflow-hidden rounded-xl bg-zinc-950">
               {/* Live component rendering: the real creative template at
                   1080×1350, scaled into the 300px card. CreativeWrapper
                   applies transform: scale(cardWidth / 1080) with
@@ -203,7 +206,7 @@ export function StylePackPicker({
                 </span>
               ) : null}
 
-              <span className="absolute inset-0 z-10 grid place-items-center bg-black/50 opacity-0 transition-opacity duration-300 group-hover:opacity-100">
+              <span className="absolute inset-0 z-10 grid place-items-center bg-gradient-to-t from-black/30 via-transparent to-transparent opacity-0 transition-opacity duration-300 group-hover:opacity-100">
                 {inPack > 0 ? (
                   <span className="flex gap-4">
                     <span
@@ -244,6 +247,7 @@ export function StylePackPicker({
 
               <span className="block px-3 pt-3 text-sm font-medium text-white">{template.name}</span>
               <span className="block px-3 pt-1 pb-3 text-xs text-zinc-500">{template.category}</span>
+              </div>
             </button>
           );
         })}

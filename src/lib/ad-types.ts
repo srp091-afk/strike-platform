@@ -47,6 +47,8 @@ export interface AdStrategy {
     subheadlines: string[];
     benefits: string[];
     buttons: string[];
+    /** Editable badge (УТП/триггер) variants; applied at generation time. */
+    badges: string[];
   };
   facebook_setup: {
     primary_texts: string[];

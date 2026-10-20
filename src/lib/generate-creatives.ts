@@ -327,6 +327,7 @@ type SampledCopy = {
   subheadline: string | null;
   bullets: string[];
   button: string | null;
+  badge: string | null;
 };
 
 function pickRandom<T>(items: T[]): T | undefined {
@@ -348,17 +349,20 @@ function pickRandomSubset<T>(items: T[], count: number): T[] {
 
 function sampleStrategyCopy(strategy: AdStrategy | null): SampledCopy {
   if (!strategy) {
-    return { headline: null, subheadline: null, bullets: [], button: null };
+    return { headline: null, subheadline: null, bullets: [], button: null, badge: null };
   }
   const headlines = strategy.creatives.headlines.filter((item) => item.trim());
   const subheadlines = strategy.creatives.subheadlines.filter((item) => item.trim());
   const benefits = strategy.creatives.benefits.filter((item) => item.trim());
   const buttons = strategy.creatives.buttons.filter((item) => item.trim());
+  const badges = (strategy.creatives.badges ?? []).filter((item) => item.trim());
   return {
     headline: pickRandom(headlines) ?? null,
     subheadline: pickRandom(subheadlines) ?? null,
     bullets: pickRandomSubset(benefits, Math.min(4, Math.max(2, benefits.length || 0))),
     button: pickRandom(buttons) ?? null,
+    // User-edited badges (панель «БЕЙДЖИ (УТП / ТРИГГЕРЫ)») win at generation.
+    badge: pickRandom(badges) ?? null,
   };
 }
 
@@ -491,7 +495,7 @@ CRITICAL IMAGE RULE (Flux background only):
     subheadline: input.sampled.subheadline?.trim() || parsed.subheadline,
     benefit: input.sampled.bullets[0]?.trim() || parsed.benefit,
     cta: input.sampled.button?.trim() || parsed.cta,
-    badge: parsed.badge || limitBadgeWords(hook) || undefined,
+    badge: input.sampled.badge?.trim() || parsed.badge || limitBadgeWords(hook) || undefined,
   };
 }
 

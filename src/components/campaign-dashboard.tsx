@@ -317,6 +317,21 @@ export function CampaignDashboard({
                 {strategy ? (
                   <>
                     <EditableList
+                      label="БЕЙДЖИ (УТП / ТРИГГЕРЫ)"
+                      items={
+                        strategy.creatives.badges?.length
+                          ? strategy.creatives.badges
+                          : [strategy.strategy.hook_concept]
+                      }
+                      multiline
+                      onCommit={(items) =>
+                        saveStrategy({
+                          ...strategy,
+                          creatives: { ...strategy.creatives, badges: items },
+                        })
+                      }
+                    />
+                    <EditableList
                       label="Заголовки"
                       items={strategy.creatives.headlines}
                       onCommit={(items) =>
@@ -861,6 +876,7 @@ function CreativesGrid({
   const subheadlines = strategy?.creatives.subheadlines ?? [];
   const bullets = strategy?.creatives.benefits ?? [];
   const buttons = strategy?.creatives.buttons ?? [];
+  const badges = strategy?.creatives.badges ?? [];
   const hook = strategy?.strategy.hook_concept ?? "";
   const scope = readOnly ? "archive" : "active";
   // CreativeRender strictly maps creative_templates UUIDs; normalize legacy keys here.
@@ -887,7 +903,11 @@ function CreativesGrid({
         : creative?.bullets?.length
           ? creative.bullets
           : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"],
-      badge: (creative?.badge ? limitBadgeWords(creative.badge) : "") || limitBadgeWords(hook) || "Оффер",
+      badge:
+        (creative?.badge ? limitBadgeWords(creative.badge) : "") ||
+        (badges.length > 0 ? limitBadgeWords(badges[index % badges.length]) : "") ||
+        limitBadgeWords(hook) ||
+        "Оффер",
       buttonText: creative?.buttonText || buttons[index % Math.max(buttons.length, 1)] || "Узнать подробнее",
       images: [before, after],
       accentColor: creative?.accentColor ? resolveAccentHex(creative.accentColor, accentColor) : accentColor,

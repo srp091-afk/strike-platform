@@ -99,6 +99,7 @@ const strategySchema = {
         subheadlines: stringList(5),
         benefits: stringList(10),
         buttons: stringList(3),
+        badges: stringList(5),
       },
     },
     facebook_setup: {
@@ -168,6 +169,10 @@ export function parseAdStrategy(value: unknown): AdStrategy | null {
   const subheadlines = texts(creatives.subheadlines, 5);
   const benefits = texts(creatives.benefits, 10);
   const buttons = texts(creatives.buttons, 3);
+  // Badges are optional in stored strategies; default to the hook trigger.
+  const badges = Array.isArray(creatives.badges)
+    ? creatives.badges.map((item) => text(item)).filter(Boolean).slice(0, 8)
+    : [];
   const primaryTexts = texts(facebook.primary_texts, 2);
   const adHeadlines = texts(facebook.headlines, 3);
   const descriptions = texts(facebook.descriptions, 3);
@@ -211,6 +216,7 @@ export function parseAdStrategy(value: unknown): AdStrategy | null {
       subheadlines,
       benefits,
       buttons,
+      badges: badges.length > 0 ? badges : [hook],
     },
     facebook_setup: {
       primary_texts: primaryTexts,
