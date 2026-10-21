@@ -168,6 +168,7 @@ function ProjectCard({
                     headline={creative.headline}
                     subheadline={creative.subheadline}
                     bullets={creative.bullets}
+                    antiBullets={creative.antiBullets}
                     badge={creative.badge}
                     buttonText={creative.buttonText}
                     images={creative.images}

@@ -5,6 +5,8 @@ export type AdsPreviewCreative = {
   headline: string;
   subheadline?: string;
   bullets: string[];
+  /** Strategy anti-benefits for the "before" list in split templates. */
+  antiBullets?: string[];
   badge?: string;
   buttonText: string;
   styleKey: string;

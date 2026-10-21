@@ -86,6 +86,8 @@ export interface AdGenerationCreative {
   headline: string;
   subheadline?: string;
   bullets: string[];
+  /** Strategy anti-benefits for the "before" list in split templates. */
+  antiBullets?: string[];
   badge?: string;
   buttonText: string;
   /** `creative_templates` UUID (or legacy key, normalized at render). */

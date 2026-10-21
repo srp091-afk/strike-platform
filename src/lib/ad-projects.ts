@@ -274,6 +274,7 @@ function buildPreviewItemsFromCreativeRows(
           : texts?.benefit?.trim()
             ? [texts.benefit.trim()]
             : ["Результат без хаоса"],
+        antiBullets: strategy?.creatives.anti_benefits?.slice(0, 4) ?? [],
         badge: (texts?.badge ? limitBadgeWords(texts.badge) : "") || limitBadgeWords(hook) || "Оффер",
         buttonText:
           texts?.cta?.trim() ||
@@ -342,6 +343,7 @@ function previewFromCreativesData(
           : texts.benefit
             ? [texts.benefit]
             : ["Результат без хаоса"],
+        antiBullets: strategy?.creatives.anti_benefits?.slice(0, 4) ?? [],
         badge,
         buttonText:
           texts.cta?.trim() ||
@@ -376,6 +378,7 @@ function previewFromStrategy(
     subheadline:
       subheadlines[index % Math.max(subheadlines.length, 1)] ?? strategy?.strategy.core_offer_angle ?? undefined,
     bullets: benefits.length > 0 ? benefits.slice(0, 4) : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"],
+    antiBullets: strategy?.creatives.anti_benefits?.slice(0, 4) ?? [],
     badge: limitBadgeWords(hook) || "Оффер",
     buttonText: buttons[index % Math.max(buttons.length, 1)] ?? "Узнать подробнее",
     styleKey,

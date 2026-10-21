@@ -121,7 +121,11 @@ function readGeneration(row: Record<string, unknown>, projectId: string): AdGene
   };
 }
 
-function creativeRowToCard(row: AdCreativeRow, strategyBenefits: string[] = []): AdGenerationCreative {
+function creativeRowToCard(
+  row: AdCreativeRow,
+  strategyBenefits: string[] = [],
+  strategyAntiBenefits: string[] = [],
+): AdGenerationCreative {
   const texts = row.texts;
   // Templates render the full bullets array (3–4): the strategy benefits
   // list is the source; the row's single `benefit` is only a fallback.
@@ -137,6 +141,9 @@ function creativeRowToCard(row: AdCreativeRow, strategyBenefits: string[] = []):
     headline: texts?.headline?.trim() || row.headline?.trim() || "",
     subheadline: texts?.subheadline?.trim() || row.body_text?.trim() || undefined,
     bullets,
+    // Split templates render the left "before" list from strategy
+    // anti_benefits; without this the template falls back to hardcoded pains.
+    antiBullets: strategyAntiBenefits.slice(0, 4),
     badge: texts?.badge?.trim() || undefined,
     buttonText: texts?.cta?.trim() || "Узнать подробнее",
     styleId: row.style_id,
@@ -239,10 +246,14 @@ async function loadProject(id: string) {
     for (const generation of generations) {
       const rows = (byGeneration.get(generation.id) ?? []).sort((a, b) => a.sort_index - b.sort_index);
       if (rows.length === 0) continue;
-      const strategyBenefits = (parseAdStrategy(data.strategy_data)?.creatives.benefits ?? []).filter(
+      const parsedStrategy = parseAdStrategy(data.strategy_data);
+      const strategyBenefits = (parsedStrategy?.creatives.benefits ?? []).filter(
         (benefit) => benefit.trim().length > 0,
       );
-      generation.creatives = rows.map((row) => creativeRowToCard(row, strategyBenefits));
+      const strategyAntiBenefits = (parsedStrategy?.creatives.anti_benefits ?? []).filter(
+        (benefit) => benefit.trim().length > 0,
+      );
+      generation.creatives = rows.map((row) => creativeRowToCard(row, strategyBenefits, strategyAntiBenefits));
       generation.imageSets = generation.creatives.map((creative) => creative.images);
       generation.images = generation.imageSets.flat();
     }

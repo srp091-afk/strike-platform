@@ -1010,7 +1010,9 @@ function CreativesGrid({
         : creative?.bullets?.length
           ? creative.bullets
           : [strategy?.strategy.core_offer_angle ?? "Результат без хаоса"],
-      antiBullets: strategy?.creatives.anti_benefits ?? [],
+      // Per-creative anti-benefits (threaded from the strategy by the page
+      // mapper) win; the live strategy is the fallback for legacy rows.
+      antiBullets: creative?.antiBullets?.length ? creative.antiBullets : (strategy?.creatives.anti_benefits ?? []),
       fontStyle,
       overlayText: strategy?.strategy.core_offer_angle,
       region: strategy?.strategy.region,
