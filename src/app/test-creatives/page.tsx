@@ -15,6 +15,7 @@ export const metadata: Metadata = {
 const mockSplit: CreativeTemplateProps = {
   headline: "До / После",
   subheadline: "Одна ниша — разный результат",
+  badge: "Старт за 7 дней",
   bullets: ["Системные креативы", "Стабильный CPL", "Масштаб без хаоса"],
   antiBullets: ["Хаос в заявках", "Слив бюджета", "Нет системы"],
   fontStyle: "ultra",

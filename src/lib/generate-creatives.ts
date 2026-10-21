@@ -41,16 +41,24 @@ const languageLabels: Record<CreativeLanguage, string> = {
   es: "Spanish",
 };
 
-const FLUX_SCHNELL = "black-forest-labs/flux-schnell";
+const FLUX_MODEL = "black-forest-labs/flux-dev";
 
 const FLUX_NO_TEXT_PREFIX =
   "CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE. ";
 
-export async function generateImage(prompt: string, format: CreativeFormat = DEFAULT_CREATIVE_FORMAT): Promise<string> {
-  return generateImageWithFlux(prompt, format);
+export async function generateImage(
+  prompt: string,
+  format: CreativeFormat = DEFAULT_CREATIVE_FORMAT,
+  seed?: number,
+): Promise<string> {
+  return generateImageWithFlux(prompt, format, seed);
 }
 
-export async function generateImageWithFlux(prompt: string, format: CreativeFormat = DEFAULT_CREATIVE_FORMAT): Promise<string> {
+export async function generateImageWithFlux(
+  prompt: string,
+  format: CreativeFormat = DEFAULT_CREATIVE_FORMAT,
+  seed?: number,
+): Promise<string> {
   try {
     if (!process.env.REPLICATE_API_TOKEN?.trim()) {
       throw new Error("REPLICATE_API_TOKEN is not set");
@@ -58,8 +66,8 @@ export async function generateImageWithFlux(prompt: string, format: CreativeForm
 
     const safePrompt = prompt.startsWith("CRITICAL RULE:") ? prompt : `${FLUX_NO_TEXT_PREFIX}${prompt}`;
 
-    // Official flux-schnell schema: prompt, aspect_ratio, output_format, output_quality, …
-    // https://replicate.com/black-forest-labs/flux-schnell/api
+    // Official flux-dev schema: prompt, aspect_ratio, output_format, output_quality, …
+    // https://replicate.com/black-forest-labs/flux-dev/api
     const input = {
       prompt: safePrompt,
       // Feed 4:5 (1856×2304 class) or stories 9:16 (1080×1920 class).
@@ -67,12 +75,13 @@ export async function generateImageWithFlux(prompt: string, format: CreativeForm
       output_format: "webp" as const,
       output_quality: 90,
       num_outputs: 1,
-      // Explicit random seed so batch variants never share a fixed seed.
-      seed: Math.floor(Math.random() * 2_147_483_647),
+      // Paired split frames pass ONE shared seed to lock composition/framing;
+      // everyone else gets an explicit random seed so variants never collide.
+      seed: seed ?? Math.floor(Math.random() * 2_147_483_647),
     };
 
     console.log("[generateImageWithFlux] request", {
-      model: FLUX_SCHNELL,
+      model: FLUX_MODEL,
       input,
       authPrefix: process.env.REPLICATE_API_TOKEN.slice(0, 5),
     });
@@ -81,7 +90,7 @@ export async function generateImageWithFlux(prompt: string, format: CreativeForm
     // status !== "starting" as done, so a Prefer:wait timeout with
     // status:"processing" + output:null returns null without throwing.
     let prediction = await replicate.predictions.create({
-      model: FLUX_SCHNELL,
+      model: FLUX_MODEL,
       input,
     });
 
@@ -287,9 +296,17 @@ async function composeCreative(input: {
   });
 
   if (dual) {
+    // Style 1 (До/После): each half is rendered as a tall 9:16 frame (the
+    // template column is ~half the canvas width, so a 4:5 source would be
+    // brutally cropped), and BOTH halves share one seed so Flux locks the
+    // same composition, subject scale and camera angle — only the state of
+    // the scene differs between the paired prompts.
+    const splitVs = isSplitVsStyle(input.styleId);
+    const pairSeed = splitVs ? Math.floor(Math.random() * 1_000_000) : undefined;
+    const imageFormat: CreativeFormat = splitVs ? "9:16" : input.format;
     const [beforeUrl, afterUrl] = await Promise.all([
-      generateImage(art.prompt_before, input.format),
-      generateImage(art.prompt_after, input.format),
+      generateImage(art.prompt_before, imageFormat, pairSeed),
+      generateImage(art.prompt_after, imageFormat, pairSeed),
     ]);
     const image_urls = [beforeUrl, afterUrl].filter((url) => Boolean(url.trim()));
     return {
@@ -398,7 +415,7 @@ async function directArt(input: {
   // split "before/after" frames must show THIS business, not a generic scene.
   const niche = input.brief?.product?.trim() || "the advertised product or service";
   const nicheSplitRule = isSplitVsStyle(input.styleId)
-    ? `\n\nCONTEXTUAL SPLIT RULE (style 1, До/После): build both prompts around the client's niche as the subject, following this exact frame: "Split screen before and after shot. Subject: ${niche}. Left side: terrible, bad quality, messy version of ${niche}. Right side: perfect, premium, clean, professional version of ${niche}. Cinematic lighting, highly detailed." prompt_before = the LEFT (terrible/messy) version, prompt_after = the RIGHT (perfect/premium) version. Same subject, same space/product, only the state changes. NEVER substitute a generic interior/object that is unrelated to ${niche}.`
+    ? `\n\nCONTEXTUAL SPLIT RULE (style 1, До/После): imagine ONE single photographic scene of the client's niche — one subject, one camera angle, one setting. prompt_before describes that same scene in a terrible, messy, chaotic condition with bad lighting; prompt_after describes the SAME scene in a perfect, premium, clean condition with cinematic lighting. Each prompt is a standalone single photograph: NEVER ask for a combined, diptych or collage composition, never mention sides, panels or comparisons, and never include any words, letters, labels or captions in the image. NEVER substitute a generic interior/object that is unrelated to ${niche}.`
     : isSplitActionStyle(input.styleId)
       ? `\n\nCONTEXTUAL SPLIT RULE (style 2, Split Action): build both prompts around the client's niche as the subject, following this exact frame: "Split screen before and after shot of ${niche}. Left side is BEFORE: black and white grayscale, messy, bad quality. Right side is AFTER: full color, premium, perfect. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only." prompt_before = the LEFT (grayscale, messy, bad-quality) version, prompt_after = the RIGHT (full-color, premium, perfect) version. Same subject, same space/product, only the state changes. NEVER substitute a generic interior/object that is unrelated to ${niche}.`
       : "";
@@ -439,7 +456,7 @@ CRITICAL IMAGE RULE:
 - NEVER put text, letters, numbers, logos with words, watermarks, or captions in either Flux prompt.
 - prompt_before: мрачный / холодный / проблемный кадр «до» (pain state).
 - prompt_after: светлый / тёплый / успешный кадр «после» (без текста на фото).
-- Both prompts MUST be English, vertical 4:5 photographic backgrounds only.
+- Both prompts MUST be English, single vertical portrait photographic backgrounds only (one standalone photo each, never a combined composition).
 - Weave subtle accent-color light / reflections (${input.accentHex}) into the scene — not text, not UI chrome.
 
 Верни JSON:
@@ -519,13 +536,16 @@ CRITICAL IMAGE RULE (Flux background only):
 
   const hook = input.strategy?.strategy.hook_concept?.trim() ?? "";
   const parsed = parseArtDirection(completion.choices[0]?.message?.content ?? "", input.dual, hook);
-  // Deterministic niche framing for the До/После split: whatever the model
-  // wrote, the Flux prompt always opens with the client's niche as subject
-  // (bad/messy "before" vs perfect/premium "after" of the SAME subject).
+  // Deterministic paired framing for the До/После split. Both Flux prompts
+  // are built by CODE from one shared base scene and differ ONLY in the
+  // state of that scene; together with the shared seed (see composeCreative)
+  // this locks subject, scale and camera angle across the pair. Trigger
+  // words that make Flux draw diptychs and baked-in labels are banned here.
+  const baseScene = `Photography of ${niche}`;
   const framed = isSplitVsStyle(input.styleId)
     ? {
-        prompt_before: `Split-screen BEFORE photograph. Subject: ${niche}. Terrible, bad quality, messy, neglected version of ${niche}. ${parsed.prompt_before} Cinematic lighting, highly detailed, photographic, no text.`,
-        prompt_after: `Split-screen AFTER photograph. Subject: ${niche}. Perfect, premium, clean, professional version of ${niche}. ${parsed.prompt_after} Cinematic lighting, highly detailed, photographic, no text.`,
+        prompt_before: `${baseScene} in terrible, messy, chaotic condition. Bad lighting, dull flat colors, neglected and unappetizing presentation, highly detailed photograph. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`,
+        prompt_after: `${baseScene} in perfect, premium, clean condition. Cinematic lighting, fresh, polished and appetizing presentation, highly detailed photograph. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`,
       }
     : isSplitActionStyle(input.styleId)
       ? {

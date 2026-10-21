@@ -1,4 +1,4 @@
-import { Check, ChevronRight, X } from "lucide-react";
+import { ArrowRight, Calendar, Check, X } from "lucide-react";
 
 import { CreativeWrapper } from "@/components/creatives/CreativeWrapper";
 import { DEFAULT_ACCENT_COLOR, resolveAccentHex, withAccentAlpha } from "@/lib/accent-color";
@@ -12,6 +12,7 @@ export function Style1_VS({
   subheadline,
   bullets,
   antiBullets,
+  badge,
   buttonText,
   images,
   accentColor,
@@ -22,14 +23,17 @@ export function Style1_VS({
   const beforeSrc = images[0] ?? "";
   const afterSrc = images[1] ?? images[0] ?? "";
   const stories = format === "9:16";
-  const winItems = (bullets.length > 0 ? bullets : ["Чёткая система", "Заявки каждый день", "Контроль ROI"]).slice(
-    0,
-    4,
-  );
   // Left ("before") list = anti_benefits generated as opposites of benefits;
   // legacy strategies without them fall back to the old hardcoded pains.
-  const antiItems = (antiBullets ?? []).map((item) => item.trim()).filter(Boolean);
-  const painItems = (antiItems.length > 0 ? antiItems : FAKE_PAINS).slice(0, Math.max(3, winItems.length));
+  const winAll = bullets.map((item) => item.trim()).filter(Boolean);
+  const antiAll = (antiBullets ?? []).map((item) => item.trim()).filter(Boolean);
+  // Both panels always show the SAME number of rows (trimmed to the shorter
+  // list, max 4) so the two cards stay exactly the same height.
+  const pairCount = Math.min(4, (winAll.length > 0 ? winAll : ["Чёткая система", "Заявки каждый день", "Контроль ROI"]).length, (antiAll.length > 0 ? antiAll : FAKE_PAINS).length);
+  const winItems = (winAll.length > 0 ? winAll : ["Чёткая система", "Заявки каждый день", "Контроль ROI"]).slice(0, pairCount);
+  const painItems = (antiAll.length > 0 ? antiAll : FAKE_PAINS).slice(0, pairCount);
+  // Strict conditional badge: empty/whitespace hides the footer offer part.
+  const badgeLabel = badge?.trim() ?? "";
 
   return (
     <CreativeWrapper format={format}>
@@ -48,7 +52,7 @@ export function Style1_VS({
             <div className="relative overflow-hidden">
               {beforeSrc ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={beforeSrc} alt="" className="absolute inset-0 h-full w-full object-cover" />
+                <img src={beforeSrc} alt="" className="absolute inset-0 h-full w-full object-cover grayscale brightness-75" />
               ) : (
                 <div className="absolute inset-0 bg-zinc-800" />
               )}
@@ -71,15 +75,18 @@ export function Style1_VS({
             </div>
           </div>
 
+          {/* Strict center seam between the two photos. */}
+          <div className="absolute top-0 bottom-0 left-1/2 z-10 w-[2px] -translate-x-1/2 bg-white/20" />
+
           <div
-            className="absolute left-1/2 top-1/2 z-20 grid size-24 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-4 bg-black font-anton text-4xl tracking-wider text-white"
+            className="absolute top-1/2 left-1/2 z-20 grid size-32 -translate-x-1/2 -translate-y-1/2 place-items-center rounded-full border-4 bg-black font-anton text-5xl tracking-wider text-white"
             style={{ borderColor: accent }}
           >
             VS
           </div>
 
-          <div className="absolute inset-x-6 bottom-6 z-10 grid grid-cols-2 gap-4">
-            <div className="rounded-2xl border border-zinc-600/60 bg-zinc-900/75 p-5 backdrop-blur-md">
+          <div className="absolute inset-x-6 bottom-6 z-10 grid grid-cols-2 items-stretch gap-4">
+            <div className="h-full rounded-2xl border border-zinc-600/60 bg-zinc-900/75 p-5 backdrop-blur-md">
               <p className="mb-3 text-center font-montserrat text-sm font-bold tracking-[0.18em] text-red-500 uppercase">
                 Обычный подход
               </p>
@@ -94,7 +101,7 @@ export function Style1_VS({
                 ))}
               </ul>
             </div>
-            <div className="rounded-2xl border-2 bg-black/70 p-5 backdrop-blur-md" style={{ borderColor: accent }}>
+            <div className="h-full rounded-2xl border-2 bg-black/70 p-5 backdrop-blur-md" style={{ borderColor: accent }}>
               <p
                 className="mb-3 text-center font-montserrat text-sm font-bold tracking-[0.18em] uppercase"
                 style={{ color: accent }}
@@ -118,17 +125,22 @@ export function Style1_VS({
           </div>
         </div>
 
-        <footer className={`shrink-0 bg-black px-10 ${stories ? "pt-6 pb-28" : "py-8"}`}>
+        {/* Monolith black footer: offer on the left, CTA on the right. */}
+        <footer
+          className={`flex w-full shrink-0 items-center gap-4 border-t-2 bg-black px-6 py-4 ${badgeLabel ? "justify-between" : "justify-end"} ${stories ? "pb-24" : ""}`}
+          style={{ borderTopColor: accent }}
+        >
+          {badgeLabel ? (
+            <div className="flex min-w-0 items-center gap-3 text-left font-montserrat text-xl font-bold tracking-wide text-white uppercase">
+              <Calendar className="size-8 shrink-0" strokeWidth={2.4} style={{ color: accent }} />
+              <span>{badgeLabel}</span>
+            </div>
+          ) : null}
           <div
-            className="flex w-full items-center justify-center gap-3 rounded-2xl px-8 py-6"
-            style={{ backgroundColor: accent, boxShadow: `0 0 48px ${withAccentAlpha(accent, 0.45)}` }}
+            className={`flex shrink-0 items-center gap-3 ${headlineFontClass(fontStyle)} text-4xl leading-none tracking-wide text-white uppercase`}
           >
-            <p
-              className={`${headlineFontClass(fontStyle)} text-center text-5xl leading-none tracking-wide text-black uppercase`}
-            >
-              {buttonText}
-            </p>
-            <ChevronRight className="size-12 shrink-0 text-black" strokeWidth={3.5} />
+            <span>{buttonText}</span>
+            <ArrowRight className="size-9 shrink-0" strokeWidth={3} style={{ color: accent }} />
           </div>
         </footer>
       </article>
