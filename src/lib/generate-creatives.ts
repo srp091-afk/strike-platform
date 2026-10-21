@@ -43,8 +43,9 @@ const languageLabels: Record<CreativeLanguage, string> = {
 
 const FLUX_MODEL = "black-forest-labs/flux-dev";
 
-const FLUX_NO_TEXT_PREFIX =
-  "CRITICAL RULE: DO NOT GENERATE ANY TEXT, LETTERS, NUMBERS, OR WORDS ON THE IMAGE. GENERATE ONLY A CLEAN BACKGROUND PHOTOGRAPH. ANY TEXT WILL RUIN THE IMAGE. ";
+// Short on purpose: Flux CLIP truncates prompts at 77 tokens, so a long
+// prefix pushes the subject/condition tail out of the prompt entirely.
+const FLUX_NO_TEXT_PREFIX = "No text, no letters, no words in the image. Pure photography only. ";
 
 export async function generateImage(
   prompt: string,
@@ -58,13 +59,14 @@ export async function generateImageWithFlux(
   prompt: string,
   format: CreativeFormat = DEFAULT_CREATIVE_FORMAT,
   seed?: number,
+  attempt = 0,
 ): Promise<string> {
   try {
     if (!process.env.REPLICATE_API_TOKEN?.trim()) {
       throw new Error("REPLICATE_API_TOKEN is not set");
     }
 
-    const safePrompt = prompt.startsWith("CRITICAL RULE:") ? prompt : `${FLUX_NO_TEXT_PREFIX}${prompt}`;
+    const safePrompt = prompt.startsWith("No text,") ? prompt : `${FLUX_NO_TEXT_PREFIX}${prompt}`;
 
     // Official flux-dev schema: prompt, aspect_ratio, output_format, output_quality, …
     // https://replicate.com/black-forest-labs/flux-dev/api
@@ -136,6 +138,20 @@ export async function generateImageWithFlux(
     // Split styles call this via Promise.all, so before/after persist in parallel.
     return persistCreativeImage(imageUrl);
   } catch (error) {
+    // Replicate throttles hard on low-credit accounts (429, "6 requests per
+    // minute, burst of 1, retry_after ~10s"). Parallel split/pack calls hit
+    // this routinely: wait out the window (plus jitter so simultaneous
+    // retries do not collide again) and retry instead of losing the image.
+    const status =
+      (error as { response?: { status?: number }; status?: number })?.response?.status ??
+      (error as { status?: number })?.status;
+    const message = error instanceof Error ? error.message : String(error);
+    if ((status === 429 || /\b429\b/.test(message)) && attempt < 3) {
+      const waitMs = 11_000 + Math.floor(Math.random() * 4_000) + attempt * 3_000;
+      console.warn(`[generateImageWithFlux] 429 throttled, retry ${attempt + 1}/3 in ${waitMs}ms`);
+      await new Promise((resolve) => setTimeout(resolve, waitMs));
+      return generateImageWithFlux(prompt, format, seed, attempt + 1);
+    }
     console.error("[generateImageWithFlux]", error);
     return fallbackImage(format);
   }
@@ -304,10 +320,23 @@ async function composeCreative(input: {
     const splitVs = isSplitVsStyle(input.styleId);
     const pairSeed = splitVs ? Math.floor(Math.random() * 1_000_000) : undefined;
     const imageFormat: CreativeFormat = splitVs ? "9:16" : input.format;
-    const [beforeUrl, afterUrl] = await Promise.all([
+    let [beforeUrl, afterUrl] = await Promise.all([
       generateImage(art.prompt_before, imageFormat, pairSeed),
       generateImage(art.prompt_after, imageFormat, pairSeed),
     ]);
+    // A failed Flux call returns the placehold.co fallback. Retry a failed
+    // half once (varied seed: a repeated identical request can fail the same
+    // way), and if it still fails, mirror the surviving half — the template
+    // grayscales the left side, so the pair still reads as before/after and
+    // a placeholder never leaks into the stored creative.
+    const isPlaceholder = (url: string) => url.includes("placehold.co");
+    if (isPlaceholder(beforeUrl) && !isPlaceholder(afterUrl)) {
+      const retry = await generateImage(art.prompt_before, imageFormat, pairSeed != null ? pairSeed + 1 : undefined);
+      beforeUrl = isPlaceholder(retry) ? afterUrl : retry;
+    } else if (isPlaceholder(afterUrl) && !isPlaceholder(beforeUrl)) {
+      const retry = await generateImage(art.prompt_after, imageFormat, pairSeed != null ? pairSeed + 1 : undefined);
+      afterUrl = isPlaceholder(retry) ? beforeUrl : retry;
+    }
     const image_urls = [beforeUrl, afterUrl].filter((url) => Boolean(url.trim()));
     return {
       id: randomUUID(),
@@ -352,6 +381,8 @@ type ArtDirection = AdCreativeTexts & {
   image_prompt: string;
   prompt_before: string;
   prompt_after: string;
+  /** English visual scene of the niche (photographable subject), state-free. */
+  scene_prompt: string;
 };
 
 type SampledCopy = {
@@ -415,7 +446,7 @@ async function directArt(input: {
   // split "before/after" frames must show THIS business, not a generic scene.
   const niche = input.brief?.product?.trim() || "the advertised product or service";
   const nicheSplitRule = isSplitVsStyle(input.styleId)
-    ? `\n\nCONTEXTUAL SPLIT RULE (style 1, До/После): imagine ONE single photographic scene of the client's niche — one subject, one camera angle, one setting. prompt_before describes that same scene in a terrible, messy, chaotic condition with bad lighting; prompt_after describes the SAME scene in a perfect, premium, clean condition with cinematic lighting. Each prompt is a standalone single photograph: NEVER ask for a combined, diptych or collage composition, never mention sides, panels or comparisons, and never include any words, letters, labels or captions in the image. NEVER substitute a generic interior/object that is unrelated to ${niche}.`
+    ? `\n\nCONTEXTUAL SPLIT RULE (style 1, До/После): imagine ONE single photographic scene of the client's niche — one subject, one camera angle, one setting. First translate the niche into a concrete PHOTOGRAPHABLE visual subject in ENGLISH and put it in scene_prompt (e.g. niche "Продажа квартир в Милане" → scene_prompt "a bright modern apartment interior in Milan with large windows and a view of Milan rooftops"). scene_prompt names only the place/object and setting — no condition, no state, no quality adjectives. prompt_before describes that same scene in a terrible, messy, chaotic condition with bad lighting; prompt_after describes the SAME scene in a perfect, premium, clean condition with cinematic lighting. Each prompt is a standalone single photograph: NEVER ask for a combined, diptych or collage composition, never mention sides, panels or comparisons, and never include any words, letters, labels or captions in the image. NEVER substitute a generic interior/object that is unrelated to ${niche}.`
     : isSplitActionStyle(input.styleId)
       ? `\n\nCONTEXTUAL SPLIT RULE (style 2, Split Action): build both prompts around the client's niche as the subject, following this exact frame: "Split screen before and after shot of ${niche}. Left side is BEFORE: black and white grayscale, messy, bad quality. Right side is AFTER: full color, premium, perfect. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only." prompt_before = the LEFT (grayscale, messy, bad-quality) version, prompt_after = the RIGHT (full-color, premium, perfect) version. Same subject, same space/product, only the state changes. NEVER substitute a generic interior/object that is unrelated to ${niche}.`
       : "";
@@ -466,6 +497,7 @@ CRITICAL IMAGE RULE:
   "benefit": "выгода, строго до 5 слов (или склейка первого буллита)",
   "cta": "короткий CTA",
   "badge": "триггер до 8 слов из hook, полная завершенная фраза",
+  "scene_prompt": "ONE English description of the concrete photographable visual scene of the niche (place/object + setting, e.g. 'modern apartment interior in Milan with large windows'), no condition/state, no text",
   "prompt_before": "English Flux prompt — bleak problem-state photo, no text",
   "prompt_after": "English Flux prompt — bright success-state photo, no text"
 }`
@@ -527,7 +559,7 @@ CRITICAL IMAGE RULE (Flux background only):
           accent_color: input.accentLabel,
           accent_hex: input.accentHex,
           instruction: input.dual
-            ? "Use sampled_copy texts. Return two contrasting Flux backgrounds (prompt_before vs prompt_after). Absolutely unique visual description for this creative_index. No on-image text."
+            ? "Use sampled_copy texts. Return scene_prompt (English visual scene of the niche) plus two contrasting Flux backgrounds of that same scene (prompt_before vs prompt_after). Absolutely unique visual description for this creative_index. No on-image text."
             : "Use sampled_copy texts. Return exactly ONE flux_prompt (single image). Absolutely unique visual description for this creative_index even if copy repeats. Reflect accent color in lighting.",
         }),
       },
@@ -541,11 +573,16 @@ CRITICAL IMAGE RULE (Flux background only):
   // state of that scene; together with the shared seed (see composeCreative)
   // this locks subject, scale and camera angle across the pair. Trigger
   // words that make Flux draw diptychs and baked-in labels are banned here.
-  const baseScene = `Photography of ${niche}`;
+  // The raw niche is often an abstract service phrase in Russian ("Продажа
+  // квартир в Милане") — Flux cannot photograph that and falls back to a
+  // random still life. The art director therefore returns an English visual
+  // scene (scene_prompt); only that concrete subject goes into the prompts.
+  const visualSubject = parsed.scene_prompt.trim() || niche;
+  const baseScene = `Photography of ${visualSubject}`;
   const framed = isSplitVsStyle(input.styleId)
     ? {
-        prompt_before: `${baseScene} in terrible, messy, chaotic condition. Bad lighting, dull flat colors, neglected and unappetizing presentation, highly detailed photograph. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`,
-        prompt_after: `${baseScene} in perfect, premium, clean condition. Cinematic lighting, fresh, polished and appetizing presentation, highly detailed photograph. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`,
+        prompt_before: `${baseScene} in terrible, messy, chaotic condition. Bad lighting, dull flat colors, neglected, cluttered and run-down, highly detailed photograph. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`,
+        prompt_after: `${baseScene} in perfect, premium, clean condition. Cinematic lighting, bright, polished, renovated and inviting, highly detailed photograph. CRITICAL: NO TEXT, NO LETTERS, NO WORDS, NO FONTS anywhere in the image. Pure photography only.`,
       }
     : isSplitActionStyle(input.styleId)
       ? {
@@ -588,6 +625,7 @@ function parseArtDirection(content: string, dual: boolean, hookFallback: string)
   const benefit = readText(row.benefit);
   const cta = readText(row.cta);
   const badge = limitBadgeWords(readText(row.badge) || hookFallback);
+  const scenePrompt = readText(row.scene_prompt) || readText(row.visual_scene) || readText(row.scene);
   const imagePrompt = readText(row.image_prompt) || readText(row.flux_prompt);
   const promptBefore =
     readText(row.prompt_before) || readText(row.flux_prompt_before) || (dual ? "" : imagePrompt);
@@ -613,6 +651,7 @@ function parseArtDirection(content: string, dual: boolean, hookFallback: string)
     image_prompt: single,
     prompt_before: promptBefore || single,
     prompt_after: promptAfter || single,
+    scene_prompt: scenePrompt,
   };
 }
 
