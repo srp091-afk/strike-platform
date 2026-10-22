@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { ChevronDown, MessagesSquare, Trash } from "lucide-react";
+import { ChevronDown, Download, MessagesSquare, Trash } from "lucide-react";
 
 import { deleteChat, setChatBotActive } from "@/app/chats/actions";
 import { ChannelIcon } from "@/components/channel-icons";
+import { generateChatHtml } from "@/lib/export-chat";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -215,6 +216,21 @@ export function ChatInbox({
     }
   }
 
+  function exportSelectedChat() {
+    if (!selected) return;
+    const agent = agents.find((item) => item.id === selected.agentId) ?? null;
+    const html = generateChatHtml(selected, messages, agent);
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `dialog_${selected.id}.html`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
   async function removeSelected() {
     if (!selected || deleting) return;
     const id = selected.id;
@@ -317,6 +333,10 @@ export function ChatInbox({
                       className={cn(botSaving && "opacity-70")}
                     />
                   </label>
+                  <Button type="button" variant="outline" size="sm" onClick={exportSelectedChat} disabled={deleting}>
+                    <Download className="size-4" strokeWidth={2} />
+                    Экспорт
+                  </Button>
                   <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
                     <AlertDialogTrigger asChild>
                       <Button type="button" variant="ghost" className="text-red-500" aria-label="Удалить чат">
