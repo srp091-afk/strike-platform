@@ -71,8 +71,16 @@ export type TelegramConfig = {
   telegram_session: string | null;
 };
 
+export const WIDGET_POSITIONS = ["bottom-right", "bottom-center", "bottom-left"] as const;
+export type WidgetPosition = (typeof WIDGET_POSITIONS)[number];
+
+export function readWidgetPosition(value: unknown): WidgetPosition {
+  return WIDGET_POSITIONS.includes(value as WidgetPosition) ? (value as WidgetPosition) : "bottom-right";
+}
+
 /** Настройки веб-виджета чата на сайте клиента. */
 export type WidgetSettings = {
+  widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;
   widget_auto_open: boolean;
@@ -85,6 +93,7 @@ export type WidgetSettings = {
 };
 
 export const DEFAULT_WIDGET_SETTINGS: WidgetSettings = {
+  widget_position: "bottom-right",
   widget_agent_name: "AI-Ассистент",
   widget_operator_name: "Менеджер",
   widget_auto_open: false,
@@ -120,6 +129,7 @@ export function readWidgetAvatar(value: unknown): string | null {
 export function readWidgetSettings(source: Record<string, unknown> | null | undefined): WidgetSettings {
   const row = source ?? {};
   return {
+    widget_position: readWidgetPosition(row.widget_position),
     widget_agent_name: readWidgetText(row.widget_agent_name, DEFAULT_WIDGET_SETTINGS.widget_agent_name),
     widget_operator_name: readWidgetText(row.widget_operator_name, DEFAULT_WIDGET_SETTINGS.widget_operator_name),
     widget_auto_open: row.widget_auto_open === true,
@@ -159,6 +169,7 @@ export type AgentRecord = {
   telegram_api_hash: string | null;
   telegram_session: string | null;
   telegram_chat_id: string | null;
+  widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;
   widget_auto_open: boolean;

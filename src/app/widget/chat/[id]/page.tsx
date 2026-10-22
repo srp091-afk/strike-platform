@@ -10,22 +10,18 @@ export const metadata: Metadata = {
 };
 
 /**
- * Публичная страница веб-виджета: только интерфейс чата без навигации
- * платформы (шапка/подвал скрыты для /widget/*). Грузится в iframe, поэтому
- * занимает весь вьюпорт и скруглена по краям.
+ * Публичная страница веб-виджета: только плавающий чат без навигации
+ * платформы (шапка/подвал скрыты для /widget/*). Грузится в iframe из
+ * /widget/embed.js, поэтому фон страницы прозрачный — иначе свёрнутый
+ * лаунчер закрывал бы сайт клиента непрозрачным квадратом.
  * Данные агента — runtime-доступ, поэтому чтение вынесено под <Suspense>
  * (Cache Components: иначе prerender страницы падает на сборке).
  */
 export default function WidgetChatPage({ params }: { params: Promise<{ id: string }> }) {
   return (
-    <div className="h-dvh w-full overflow-hidden bg-[#0a0a0a] sm:rounded-2xl">
-      <Suspense
-        fallback={
-          <div className="grid h-full place-items-center px-6">
-            <p className="text-sm text-zinc-500">Загрузка чата…</p>
-          </div>
-        }
-      >
+    <div className="h-dvh w-full overflow-hidden">
+      <style>{"html,body{background:transparent!important}"}</style>
+      <Suspense fallback={null}>
         <WidgetChatContent params={params} />
       </Suspense>
     </div>

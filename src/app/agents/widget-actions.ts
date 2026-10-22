@@ -7,6 +7,7 @@ import {
   readWidgetAvatar,
   readWidgetColor,
   readWidgetDelay,
+  readWidgetPosition,
   readWidgetSettings,
   readWidgetText,
   DEFAULT_WIDGET_SETTINGS,
@@ -53,6 +54,7 @@ async function agentInWorkspace(agentId: string) {
 
 function normalizeWidgetSettings(input: WidgetSettings): WidgetSettings | { error: string } {
   const settings: WidgetSettings = {
+    widget_position: readWidgetPosition(input.widget_position),
     widget_agent_name: readWidgetText(input.widget_agent_name, DEFAULT_WIDGET_SETTINGS.widget_agent_name),
     widget_operator_name: readWidgetText(input.widget_operator_name, DEFAULT_WIDGET_SETTINGS.widget_operator_name),
     widget_auto_open: input.widget_auto_open === true,
@@ -85,6 +87,13 @@ export async function saveWidgetSettings(agentId: string, input: WidgetSettings)
     if (!supabase) return { ok: false as const, error: "Агент не найден.", settings: null };
 
     const { error } = await supabase.from("agents").update({ ...normalized }).eq("id", agentId);
+    if (error?.message.includes("widget_position")) {
+      return {
+        ok: false as const,
+        error: "Примените миграцию 20261022_widget_position.sql, чтобы сохранять расположение виджета.",
+        settings: null,
+      };
+    }
     if (error) return { ok: false as const, error: error.message, settings: null };
 
     revalidatePath("/agents");
@@ -179,13 +188,22 @@ export async function loadWidgetSettings(agentId: string) {
   try {
     const supabase = await agentInWorkspace(agentId);
     if (!supabase) return { ok: false as const, error: "Агент не найден.", settings: null };
-    const { data, error } = await supabase
+    const withPosition = await supabase
       .from("agents")
       .select(
-        "widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator",
+        "widget_position, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator",
       )
       .eq("id", agentId)
       .maybeSingle();
+    const { data, error } = withPosition.error?.message.includes("widget_position")
+      ? await supabase
+          .from("agents")
+          .select(
+            "widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator",
+          )
+          .eq("id", agentId)
+          .maybeSingle()
+      : withPosition;
     if (error) return { ok: false as const, error: error.message, settings: null };
     return { ok: true as const, error: null, settings: readWidgetSettings(data as Record<string, unknown>) };
   } catch (error) {

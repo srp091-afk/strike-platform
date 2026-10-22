@@ -124,11 +124,19 @@ export async function listChatAgents(): Promise<ChatAgentOption[]> {
 export async function listAgents(): Promise<AgentRecord[]> {
   const supabase = createSupabaseAdminClient();
   const userId = await getAuthenticatedUserId();
-  const withDelay = await supabase
+  const withPosition = await supabase
     .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")
+    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_position, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
+
+  const withDelay = withPosition.error?.message.includes("widget_position")
+    ? await supabase
+        .from("agents")
+        .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+    : withPosition;
 
   const rows =
     withDelay.error?.message.includes("telegram_chat_id") ||

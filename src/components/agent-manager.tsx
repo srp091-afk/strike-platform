@@ -128,6 +128,7 @@ export function AgentManager({
         fresh.telegram_api_id === current.telegram_api_id &&
         fresh.telegram_api_hash === current.telegram_api_hash &&
         fresh.telegram_session === current.telegram_session &&
+        fresh.widget_position === current.widget_position &&
         fresh.widget_agent_name === current.widget_agent_name &&
         fresh.widget_operator_name === current.widget_operator_name &&
         fresh.widget_auto_open === current.widget_auto_open &&

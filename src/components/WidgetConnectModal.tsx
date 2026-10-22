@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Copy, Loader2, Trash, Upload, X } from "lucide-react";
+import { Check, Copy, Loader2, MessageCircle, Send, Trash, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -9,12 +9,24 @@ import { mutate as swrMutate } from "swr";
 import { saveWidgetSettings, uploadWidgetAvatar, type WidgetAvatarRole } from "@/app/agents/widget-actions";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { DEFAULT_WIDGET_SETTINGS, type WidgetSettings } from "@/lib/agent-models";
+import { DEFAULT_WIDGET_SETTINGS, type WidgetPosition, type WidgetSettings } from "@/lib/agent-models";
 
 const fieldClass =
   "w-full rounded-xl border border-zinc-800 bg-black px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-white";
 const labelClass = "text-[10px] font-semibold uppercase tracking-widest text-zinc-400";
 const cardClass = "grid gap-3 rounded-2xl border border-zinc-800/60 bg-[#171717] p-4";
+
+const POSITION_OPTIONS: { value: WidgetPosition; label: string }[] = [
+  { value: "bottom-left", label: "Слева" },
+  { value: "bottom-center", label: "По центру" },
+  { value: "bottom-right", label: "Справа" },
+];
+
+const PREVIEW_LAUNCHER_ALIGN: Record<WidgetPosition, string> = {
+  "bottom-left": "justify-start",
+  "bottom-center": "justify-center",
+  "bottom-right": "justify-end",
+};
 
 export type WidgetConnectModalProps = {
   agentId: string;
@@ -26,7 +38,7 @@ export type WidgetConnectModalProps = {
 /**
  * Конструктор веб-виджета: настройки (имена, поведение, цвета, аватары,
  * приветствие) с live-превью и вкладкой установки iframe-кода на сайт.
- * Строго тёмный стиль STRIKE: карточки #171717, акцент #dd0005.
+ * Строго тёмный стиль STRIKE: карточки #171717, белые акцентные кнопки.
  */
 export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved }: WidgetConnectModalProps) {
   const router = useRouter();
@@ -90,8 +102,9 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
     });
   }
 
-  const widgetUrl = `${origin || "https://strike-platform.vercel.app"}/widget/chat/${agentId}`;
-  const embedCode = `<iframe src="${widgetUrl}" width="400" height="600" style="border:none;border-radius:16px;max-width:100%;" title="Чат STRIKE" loading="lazy"></iframe>`;
+  const platformOrigin = origin || "https://strike-platform.vercel.app";
+  const widgetUrl = `${platformOrigin}/widget/chat/${agentId}`;
+  const embedCode = `<script src="${platformOrigin}/widget/embed.js" data-agent="${agentId}" async></script>`;
 
   async function copyEmbed() {
     try {
@@ -173,6 +186,31 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
                 </section>
 
                 <section className={cardClass}>
+                  <h3 className="text-sm font-semibold text-white">Расположение</h3>
+                  <div role="radiogroup" aria-label="Расположение виджета" className="grid grid-cols-3 gap-2">
+                    {POSITION_OPTIONS.map((option) => {
+                      const active = settings.widget_position === option.value;
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          role="radio"
+                          aria-checked={active}
+                          onClick={() => patch({ widget_position: option.value })}
+                          className={`rounded-xl border px-3 py-2.5 text-sm font-medium transition-colors ${
+                            active
+                              ? "border-white bg-white text-black"
+                              : "border-zinc-800 bg-black text-zinc-300 hover:border-zinc-600 hover:text-white"
+                          }`}
+                        >
+                          {option.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </section>
+
+                <section className={cardClass}>
                   <h3 className="text-sm font-semibold text-white">Поведение</h3>
                   <label className="flex items-center justify-between gap-3">
                     <span className="text-sm text-zinc-300">Автоматическое раскрытие виджета</span>
@@ -229,12 +267,13 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
                   />
                 </section>
 
-                <section className={cardClass}>
+                <section className="flex h-auto flex-col gap-3 rounded-2xl border border-zinc-800/60 bg-[#171717] p-4">
                   <h3 className="text-sm font-semibold text-white">Приветствие</h3>
-                  <label className="grid gap-2">
+                  <label className="flex flex-col gap-2">
                     <span className={labelClass}>Стартовое сообщение</span>
                     <textarea
-                      className={`${fieldClass} min-h-24 resize-y`}
+                      className={`${fieldClass} scrollbar-strike min-h-[100px] resize-none`}
+                      rows={4}
                       value={settings.widget_greeting}
                       maxLength={1000}
                       onChange={(event) => patch({ widget_greeting: event.target.value })}
@@ -273,7 +312,10 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
               <section className={cardClass}>
                 <h3 className="text-sm font-semibold text-white">Инструкция по установке</h3>
                 <ol className="grid list-none gap-3 text-sm leading-6 text-zinc-300">
-                  <InstallStep n={1}>Скопируйте код виджета кнопкой выше.</InstallStep>
+                  <InstallStep n={1}>
+                    Скопируйте код виджета кнопкой выше. Это лёгкий скрипт: он сам добавит плавающую кнопку чата в
+                    выбранный угол и не перекрывает сайт, пока чат свёрнут.
+                  </InstallStep>
                   <InstallStep n={2}>
                     Откройте исходный код вашего сайта (или настройки CMS, например Tilda, WordPress).
                   </InstallStep>
@@ -300,7 +342,7 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
           </button>
           <button
             type="button"
-            className="rounded-xl bg-[#dd0005] px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-neutral-200 disabled:opacity-50"
             disabled={pending || uploadingRole !== null}
             onClick={onSave}
           >
@@ -316,7 +358,7 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
 function InstallStep({ n, children }: { n: number; children: ReactNode }) {
   return (
     <li className="flex gap-3">
-      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-[#dd0005] text-xs font-semibold text-white">{n}</span>
+      <span className="grid size-6 shrink-0 place-items-center rounded-full bg-white text-xs font-semibold text-black">{n}</span>
       <span>{children}</span>
     </li>
   );
@@ -413,16 +455,22 @@ function WidgetPreview({ settings }: { settings: WidgetSettings }) {
   return (
     <div className="scrollbar-strike min-w-0 lg:sticky lg:top-0 lg:max-h-[calc(90vh-250px)] lg:overflow-y-auto">
       <p className={labelClass}>Live-превью</p>
-      <div className="mt-2 overflow-hidden rounded-[24px] border border-zinc-800 bg-[#0a0a0a]">
+      <div className="mt-2 overflow-hidden rounded-2xl border border-white/10 bg-[#0a0a0a] shadow-2xl shadow-black/50">
         <header
-          className="flex items-center gap-3 px-4 py-3"
-          style={{ backgroundColor: settings.widget_color_header_bg, color: settings.widget_color_header_text }}
+          className="flex items-center gap-3 border-b border-white/10 px-4 py-3 backdrop-blur-md"
+          style={{ backgroundColor: `${settings.widget_color_header_bg}cc`, color: settings.widget_color_header_text }}
         >
           <PreviewAvatar url={settings.widget_avatar_agent} name={settings.widget_agent_name} />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-semibold">{settings.widget_agent_name || DEFAULT_WIDGET_SETTINGS.widget_agent_name}</p>
-            <p className="text-[11px] opacity-70">онлайн</p>
+            <p className="flex items-center gap-1.5 text-[11px] opacity-70">
+              <span className="size-1.5 rounded-full bg-emerald-400" />
+              онлайн
+            </p>
           </div>
+          <span className="grid size-8 shrink-0 place-items-center rounded-full opacity-70">
+            <X className="size-4" strokeWidth={2} />
+          </span>
         </header>
 
         <div className="grid gap-3 px-4 py-4">
@@ -453,12 +501,14 @@ function WidgetPreview({ settings }: { settings: WidgetSettings }) {
           </div>
         </div>
 
-        <div className="border-t border-zinc-800 px-3 pt-3">
-          <div className="flex items-center gap-2">
+        <div className="border-t border-white/10 px-3 pt-3">
+          <div className="flex items-center gap-1">
             <span className="min-w-0 flex-1 rounded-xl border border-zinc-800 bg-[#171717] px-3.5 py-2.5 text-sm text-zinc-500">
               Напишите сообщение
             </span>
-            <span className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#dd0005] text-xs font-semibold text-white">➤</span>
+            <span className="shrink-0 rounded-full p-2 text-white">
+              <Send className="size-5" strokeWidth={1.75} />
+            </span>
           </div>
           <p className="px-1 pt-2 pb-3 text-center text-[10px] text-neutral-500">
             Разработано на платформе{" "}
@@ -473,11 +523,17 @@ function WidgetPreview({ settings }: { settings: WidgetSettings }) {
           </p>
         </div>
       </div>
-      {settings.widget_auto_open ? (
-        <p className="mt-2 text-xs text-zinc-400">
-          Виджет откроется автоматически через {settings.widget_open_delay} сек после загрузки страницы.
-        </p>
-      ) : null}
+      <div className={`mt-4 flex ${PREVIEW_LAUNCHER_ALIGN[settings.widget_position]}`}>
+        <span className="relative grid size-14 place-items-center rounded-full bg-white text-black shadow-lg shadow-black/40">
+          <span aria-hidden className="animate-widget-glow absolute inset-0 rounded-full" />
+          <MessageCircle className="relative size-6" strokeWidth={2} />
+        </span>
+      </div>
+      <p className="mt-2 text-xs text-zinc-400">
+        {settings.widget_auto_open
+          ? `Свёрнут в кнопку, откроется автоматически через ${settings.widget_open_delay} сек после загрузки страницы.`
+          : "Свёрнут в кнопку до клика посетителя."}
+      </p>
     </div>
   );
 }
