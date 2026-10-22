@@ -118,7 +118,8 @@ export function AgentManager({
         fresh.telegram_bot_token === current.telegram_bot_token &&
         fresh.telegram_phone === current.telegram_phone &&
         fresh.telegram_api_id === current.telegram_api_id &&
-        fresh.telegram_api_hash === current.telegram_api_hash
+        fresh.telegram_api_hash === current.telegram_api_hash &&
+        fresh.telegram_session === current.telegram_session
       ) {
         return current;
       }

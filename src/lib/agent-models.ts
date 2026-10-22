@@ -62,6 +62,8 @@ export type TelegramConfig = {
   telegram_phone: string | null;
   telegram_api_id: string | null;
   telegram_api_hash: string | null;
+  /** StringSession GramJS после успешного MTProto-входа (секрет, равен доступу к аккаунту). */
+  telegram_session: string | null;
 };
 
 export type AgentRecord = {
@@ -89,14 +91,18 @@ export type AgentRecord = {
   telegram_phone: string | null;
   telegram_api_id: string | null;
   telegram_api_hash: string | null;
+  telegram_session: string | null;
   telegram_chat_id: string | null;
   created_at: string;
 };
 
 /** Подпись подключённого Telegram-канала: @username бота или номер личного аккаунта. */
-export function telegramChannelLabel(agent: Pick<AgentRecord, "telegram_type" | "telegram_phone" | "tgBotUsername" | "telegram_bot_token">): string | null {
+export function telegramChannelLabel(
+  agent: Pick<AgentRecord, "telegram_type" | "telegram_phone" | "telegram_session" | "tgBotUsername" | "telegram_bot_token">,
+): string | null {
   if (agent.telegram_type === "userbot") {
-    return agent.telegram_phone ? agent.telegram_phone : null;
+    // Личный аккаунт считается подключённым только после MTProto-входа (есть сессия).
+    return agent.telegram_phone && agent.telegram_session ? agent.telegram_phone : null;
   }
   if (agent.tgBotUsername) {
     const username = agent.tgBotUsername.replace(/^@/, "");
@@ -105,7 +111,9 @@ export function telegramChannelLabel(agent: Pick<AgentRecord, "telegram_type" | 
   return agent.telegram_bot_token ? "Telegram Bot" : null;
 }
 
-export function isTelegramConnected(agent: Pick<AgentRecord, "telegram_type" | "telegram_phone" | "tgBotUsername" | "telegram_bot_token">): boolean {
+export function isTelegramConnected(
+  agent: Pick<AgentRecord, "telegram_type" | "telegram_phone" | "telegram_session" | "tgBotUsername" | "telegram_bot_token">,
+): boolean {
   return telegramChannelLabel(agent) !== null;
 }
 

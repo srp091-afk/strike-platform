@@ -240,6 +240,7 @@ export async function connectTelegramChannel(
           telegram_phone: null,
           telegram_api_id: null,
           telegram_api_hash: null,
+          telegram_session: null,
           // Зеркало для вебхука /api/webhooks/telegram/[token].
           tg_bot_token: token,
           tg_bot_username: profile.username,
@@ -281,6 +282,7 @@ export async function connectTelegramChannel(
         telegram_phone: phone,
         telegram_api_id: apiId,
         telegram_api_hash: apiHash,
+        telegram_session: null,
         tg_bot_token: null,
         tg_bot_username: null,
         tg_is_active: true,
@@ -340,6 +342,7 @@ export async function disconnectTelegram(agentId: string) {
         telegram_phone: null,
         telegram_api_id: null,
         telegram_api_hash: null,
+        telegram_session: null,
       })
       .eq("id", agentId);
     if (error) return { ok: false as const, error: error.message };

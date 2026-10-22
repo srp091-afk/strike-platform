@@ -84,6 +84,7 @@ create table if not exists public.agents (
   telegram_phone text,
   telegram_api_id text,
   telegram_api_hash text,
+  telegram_session text,
   telegram_chat_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
