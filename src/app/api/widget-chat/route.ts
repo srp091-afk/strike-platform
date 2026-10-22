@@ -29,16 +29,21 @@ export async function POST(request: NextRequest) {
 
   const record = asRecord(body);
   const agentId = stringValue(record.agent_id);
+  // Полный диалог, включая стартовое приветствие assistant. text + history —
+  // прежний контракт, где реплика посетителя приходила отдельно.
+  const dialogue = sanitizeHistory(record.messages ?? record.history);
   const text = stringValue(record.text);
-  const history = sanitizeHistory(record.history);
+  const last = dialogue[dialogue.length - 1];
+  const userText = last?.role === "user" ? last.content : text;
+  const messages = last?.role === "user" ? dialogue : [...dialogue, { role: "user" as const, content: text }];
 
   if (!UUID_PATTERN.test(agentId)) {
     return Response.json({ error: "Виджет не найден." }, { status: 404 });
   }
-  if (!text) {
+  if (!userText) {
     return Response.json({ error: "Пустое сообщение." }, { status: 400 });
   }
-  if (text.length > 8000) {
+  if (userText.length > 8000) {
     return Response.json({ error: "Сообщение слишком длинное." }, { status: 400 });
   }
 
@@ -69,8 +74,7 @@ export async function POST(request: NextRequest) {
             agent.split_messages,
           ),
         },
-        ...history,
-        { role: "user", content: text },
+        ...messages,
       ],
     });
 
@@ -89,7 +93,7 @@ export async function POST(request: NextRequest) {
 
 function sanitizeHistory(value: unknown): HistoryMessage[] {
   if (!Array.isArray(value)) return [];
-  return value
+  const clean = value
     .map((item) => {
       const record = asRecord(item);
       const role = record.role === "assistant" ? "assistant" : record.role === "user" ? "user" : null;
@@ -97,8 +101,11 @@ function sanitizeHistory(value: unknown): HistoryMessage[] {
       if (!role || !content) return null;
       return { role, content: content.slice(0, 8000) } satisfies HistoryMessage;
     })
-    .filter((item): item is HistoryMessage => item !== null)
-    .slice(-40);
+    .filter((item): item is HistoryMessage => item !== null);
+  if (clean.length <= 40) return clean;
+  // Первое сообщение — приветствие виджета. Его оставляем даже в длинном диалоге.
+  const [first, ...rest] = clean;
+  return first ? [first, ...rest.slice(-39)] : rest.slice(-40);
 }
 
 function clampTemperature(value: unknown) {

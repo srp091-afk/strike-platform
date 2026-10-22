@@ -98,10 +98,13 @@ export function WidgetChat({ config }: { config: WidgetConfig }) {
     const text = draft.trim();
     if (!text || pending) return;
 
-    const history = messages
-      .filter((message) => message.id !== "greeting")
-      .map((message) => ({ role: message.role, content: message.content }));
     const userMessage: WidgetMessage = { id: crypto.randomUUID(), role: "user", content: text };
+    // Приветствие уже лежит первым сообщением assistant — его нельзя выкидывать,
+    // иначе модель считает диалог пустым и здоровается ещё раз.
+    const transcript = [...messages, userMessage].map((message) => ({
+      role: message.role,
+      content: message.content,
+    }));
     setMessages((current) => [...current, userMessage]);
     setDraft("");
     setPending(true);
@@ -110,7 +113,7 @@ export function WidgetChat({ config }: { config: WidgetConfig }) {
       const response = await fetch("/api/widget-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent_id: config.agentId, text, history }),
+        body: JSON.stringify({ agent_id: config.agentId, messages: transcript }),
       });
       const payload = (await response.json().catch(() => null)) as { reply?: string; error?: string } | null;
       setMessages((current) => [
