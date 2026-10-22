@@ -192,33 +192,60 @@ async function completeWithChat(input: {
   return { text: second.choices[0]?.message?.content?.trim() ?? "", pausedByTool };
 }
 
+/**
+ * Инструмент никогда не должен ронять генерацию ответа клиенту: любая проблема
+ * с уведомлением (нет telegram_chat_id, Telegram API отклонил запрос, сбой БД)
+ * превращается в мягкий успешный результат для модели, чтобы она завершила
+ * сессию финальным текстом, а детали остаются только в серверных логах.
+ */
 async function runNotifyManager(raw: string, chat: NotifyChat) {
   const parsed = parseNotifyArgs(raw);
   if ("error" in parsed) return { ok: false, notified: false, paused: false, error: parsed.error };
 
-  const telegramChatId = await readAgentTelegramChatId(chat);
-  if (!telegramChatId) {
-    console.error("[notify-manager] у агента не заполнен telegram_chat_id");
+  try {
+    const telegramChatId = await readAgentTelegramChatId(chat);
+    if (!telegramChatId) {
+      console.warn("[notify-manager] у агента не заполнен telegram_chat_id, уведомление пропущено");
+      return {
+        success: true,
+        ok: true,
+        notified: false,
+        paused: false,
+        note: "Уведомление пропущено (не настроен канал)",
+      };
+    }
+
+    const sent = await sendTelegramNotification(telegramChatId, formatLead(parsed, chat));
+    if (!sent.ok) {
+      console.error("[notify-manager] уведомление не доставлено:", sent.error);
+      return {
+        success: true,
+        ok: true,
+        notified: false,
+        paused: false,
+        note: "Уведомление пропущено (не настроен канал)",
+      };
+    }
+
+    if (!parsed.recommend_pause) return { success: true, ok: true, notified: true, paused: false };
+
+    try {
+      await pauseBotForHandoff(chat.supabase, chat.conversationId, "forever");
+      return { success: true, ok: true, notified: true, paused: true };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Не удалось поставить чат на паузу.";
+      console.error("[notify-manager] pause", message);
+      return { success: true, ok: true, notified: true, paused: false, error: message };
+    }
+  } catch (error) {
+    console.error("[notify-manager] уведомление пропущено из-за ошибки:", error instanceof Error ? error.message : error);
     return {
+      success: true,
       ok: true,
       notified: false,
       paused: false,
-      reason: "У агента не указан telegram_chat_id, уведомление пропущено.",
+      note: "Уведомление пропущено (не настроен канал)",
     };
-  }
-
-  const sent = await sendTelegramNotification(telegramChatId, formatLead(parsed, chat));
-  if (!sent.ok) return { ok: false, notified: false, paused: false, error: sent.error };
-
-  if (!parsed.recommend_pause) return { ok: true, notified: true, paused: false };
-
-  try {
-    await pauseBotForHandoff(chat.supabase, chat.conversationId, "forever");
-    return { ok: true, notified: true, paused: true };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Не удалось поставить чат на паузу.";
-    console.error("[notify-manager] pause", message);
-    return { ok: true, notified: true, paused: false, error: message };
   }
 }
 
@@ -229,7 +256,7 @@ async function readAgentTelegramChatId(chat: NotifyChat) {
   const { data, error } = await chat.supabase.from("agents").select("telegram_chat_id").eq("id", agentId).maybeSingle();
   if (error) {
     if (error.message.includes("telegram_chat_id")) {
-      console.error("[notify-manager]", error.message);
+      console.warn("[notify-manager] не удалось прочитать telegram_chat_id:", error.message);
       return "";
     }
     throw new Error(error.message);
