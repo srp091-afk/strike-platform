@@ -86,18 +86,27 @@ export async function listChatAgents(): Promise<ChatAgentOption[]> {
   const userId = await getAuthenticatedUserId();
   const primary = await supabase
     .from("agents")
-    .select("id, name, is_active, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_phone, created_at")
+    .select("id, name, is_active, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_phone, widget_agent_name, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
-  // Миграция 20261022 (telegram_type / telegram_phone) ещё не применена.
-  const listed = primary.error?.message.includes("telegram_type") || primary.error?.message.includes("telegram_phone")
+  const withoutWidget = primary.error?.message.includes("widget_agent_name")
     ? await supabase
         .from("agents")
-        .select("id, name, is_active, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
+        .select("id, name, is_active, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_phone, created_at")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
     : primary;
+
+  // Миграция 20261022 (telegram_type / telegram_phone) ещё не применена.
+  const listed =
+    withoutWidget.error?.message.includes("telegram_type") || withoutWidget.error?.message.includes("telegram_phone")
+      ? await supabase
+          .from("agents")
+          .select("id, name, is_active, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+      : withoutWidget;
 
   if (listed.error) {
     throw new Error(listed.error.message);
@@ -116,6 +125,9 @@ export async function listChatAgents(): Promise<ChatAgentOption[]> {
         provider: "telegram",
         label: phone || (username && !username.startsWith("@") ? `@${username}` : username),
       });
+    }
+    if ("widget_agent_name" in row && typeof row.widget_agent_name === "string" && row.widget_agent_name.trim()) {
+      channels.push({ provider: "widget", label: "Web Widget" });
     }
     return { id: String(row.id), name: String(row.name ?? "Агент"), channels };
   });

@@ -1,14 +1,25 @@
+import { Globe } from "lucide-react";
 import type { SVGProps } from "react";
 
 import type { IntegrationProvider } from "@/lib/integration-catalog";
+
+const CHANNEL_ICONS: Record<IntegrationProvider, (props: SVGProps<SVGSVGElement>) => React.JSX.Element> = {
+  telegram: TelegramIcon,
+  whatsapp: WhatsAppIcon,
+  instagram: InstagramIcon,
+  widget: WidgetIcon,
+};
 
 export function ChannelIcon({
   provider,
   ...props
 }: SVGProps<SVGSVGElement> & { provider: IntegrationProvider }) {
-  if (provider === "telegram") return <TelegramIcon {...props} />;
-  if (provider === "whatsapp") return <WhatsAppIcon {...props} />;
-  return <InstagramIcon {...props} />;
+  const Icon = CHANNEL_ICONS[provider];
+  return Icon ? <Icon {...props} /> : null;
+}
+
+function WidgetIcon(props: SVGProps<SVGSVGElement>) {
+  return <Globe strokeWidth={1.75} aria-hidden {...props} />;
 }
 
 function TelegramIcon(props: SVGProps<SVGSVGElement>) {

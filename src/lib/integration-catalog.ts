@@ -1,4 +1,4 @@
-export const integrationProviders = ["telegram", "whatsapp", "instagram"] as const;
+export const integrationProviders = ["telegram", "whatsapp", "instagram", "widget"] as const;
 
 export type IntegrationProvider = (typeof integrationProviders)[number];
 
@@ -37,7 +37,26 @@ export const integrationCatalog: readonly IntegrationDefinition[] = [
       { name: "accessToken", label: "Meta App Token", secret: true },
     ],
   },
+  {
+    provider: "widget",
+    title: "Web Widget",
+    description: "Плавающий чат на сайте клиента",
+    fields: [],
+  },
 ];
+
+/** Подписи каналов для списков и шапок. Новый канал — новая строка здесь. */
+export const channelLabels = {
+  telegram: "Telegram",
+  whatsapp: "WhatsApp",
+  instagram: "Instagram",
+  widget: "Web Widget",
+  unknown: "Канал",
+} as const satisfies Record<IntegrationProvider | "unknown", string>;
+
+export function channelLabel(provider: string) {
+  return provider in channelLabels ? channelLabels[provider as keyof typeof channelLabels] : channelLabels.unknown;
+}
 
 export type IntegrationView = {
   id: string;

@@ -17,19 +17,24 @@ export async function listConversations(agentId?: string | null): Promise<ChatTh
     rows.map((row) => row.id as string),
   );
 
+  const speakers = await loadWidgetOperators(supabase, rows);
+
   return rows.map((row) => {
     const handle = displayHandle(stringValue(row.external_chat_id), stringValue(row.contact_handle));
     const name = stringValue(row.contact_name);
     const id = row.id as string;
+    const provider = readProvider(row.integrations);
+    const agentId = typeof row.agent_id === "string" ? row.agent_id : null;
     return {
       id,
-      agentId: typeof row.agent_id === "string" ? row.agent_id : null,
+      agentId,
       title: name || handle || "Без имени",
       handle,
-      provider: readProvider(row.integrations),
+      provider,
       preview: stringValue(row.last_message_preview),
       lastMessageAt: typeof row.last_message_at === "string" ? row.last_message_at : null,
       botActive: flags.get(id) ?? true,
+      operatorName: provider === "widget" && agentId ? speakers.get(agentId) ?? null : null,
     } satisfies ChatThread;
   });
 }
@@ -195,8 +200,37 @@ function readProvider(value: unknown): ChatProvider {
 
 function displayHandle(externalChatId: string, contactHandle: string) {
   const source = contactHandle || externalChatId;
-  const phone = source.replace(/@.*/, "").replace(/[^\d+]/g, "");
-  return phone || source;
+  if (!source) return "";
+  const local = source.replace(/@.*/, "");
+  const digits = local.replace(/\D/g, "");
+  const letters = local.replace(/[^a-z]/gi, "");
+  if (letters.length === 0 && digits.length >= 7) return digits;
+  return local;
+}
+
+/** Имя оператора виджета по агенту. Колонки widget_* могут ещё не быть в базе. */
+async function loadWidgetOperators(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  rows: ConversationRow[],
+) {
+  const names = new Map<string, string>();
+  const agentIds = [...new Set(rows.map((row) => row.agent_id).filter((id): id is string => typeof id === "string" && isUuid(id)))];
+  if (agentIds.length === 0) return names;
+
+  const { data, error } = await supabase
+    .from("agents")
+    .select("id, widget_operator_name, widget_agent_name")
+    .in("id", agentIds);
+  if (error) {
+    if (error.message.includes("widget_")) return names;
+    throw new Error(error.message);
+  }
+
+  for (const row of data ?? []) {
+    const operator = stringValue(row.widget_operator_name) || stringValue(row.widget_agent_name);
+    if (typeof row.id === "string" && operator) names.set(row.id, operator);
+  }
+  return names;
 }
 
 function stringValue(value: unknown) {

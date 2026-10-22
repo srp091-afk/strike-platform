@@ -11,11 +11,29 @@ export function isBotMarker(content: string) {
   return content === MARKER_ON || content === MARKER_OFF;
 }
 
+const ID_CHUNK = 80;
+
+/** .in() со всеми id уходит в URL и упирается в лимит заголовков Supabase. */
+async function selectInChunks<T>(
+  ids: string[],
+  query: (chunk: string[]) => PromiseLike<{ data: T[] | null; error: { message: string } | null }>,
+) {
+  const data: T[] = [];
+  for (let index = 0; index < ids.length; index += ID_CHUNK) {
+    const result = await query(ids.slice(index, index + ID_CHUNK));
+    if (result.error) return { data: null, error: result.error };
+    data.push(...(result.data ?? []));
+  }
+  return { data, error: null as { message: string } | null };
+}
+
 export async function readBotFlags(supabase: SupabaseClient, conversationIds: string[]) {
   const flags = new Map<string, boolean>();
   if (conversationIds.length === 0) return flags;
 
-  const paused = await supabase.from("conversations").select("id, bot_paused_until").in("id", conversationIds);
+  const paused = await selectInChunks<{ id: string; bot_paused_until: string | null }>(conversationIds, (chunk) =>
+    supabase.from("conversations").select("id, bot_paused_until").in("id", chunk),
+  );
   if (!paused.error) {
     for (const row of paused.data ?? []) {
       flags.set(row.id as string, !isBotPauseActive(row.bot_paused_until));
@@ -27,7 +45,9 @@ export async function readBotFlags(supabase: SupabaseClient, conversationIds: st
     throw new Error(paused.error.message);
   }
 
-  const column = await supabase.from("conversations").select("id, is_bot_active").in("id", conversationIds);
+  const column = await selectInChunks<{ id: string; is_bot_active: boolean | null }>(conversationIds, (chunk) =>
+    supabase.from("conversations").select("id, is_bot_active").in("id", chunk),
+  );
   if (!column.error) {
     for (const row of column.data ?? []) {
       flags.set(row.id as string, row.is_bot_active !== false);
@@ -39,13 +59,17 @@ export async function readBotFlags(supabase: SupabaseClient, conversationIds: st
     throw new Error(column.error.message);
   }
 
-  const marks = await supabase
-    .from("messages")
-    .select("conversation_id, content, created_at")
-    .in("conversation_id", conversationIds)
-    .eq("role", "system")
-    .in("content", [MARKER_ON, MARKER_OFF])
-    .order("created_at", { ascending: false });
+  const marks = await selectInChunks<{ conversation_id: string; content: string; created_at: string }>(
+    conversationIds,
+    (chunk) =>
+      supabase
+        .from("messages")
+        .select("conversation_id, content, created_at")
+        .in("conversation_id", chunk)
+        .eq("role", "system")
+        .in("content", [MARKER_ON, MARKER_OFF])
+        .order("created_at", { ascending: false }),
+  );
 
   if (marks.error) throw new Error(marks.error.message);
 

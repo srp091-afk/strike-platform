@@ -21,21 +21,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import type { ChatAgentOption, ChatMessage, ChatProvider, ChatThread } from "@/lib/chat-types";
-import type { IntegrationProvider } from "@/lib/integration-catalog";
+import { channelLabel } from "@/lib/integration-catalog";
 import { cn } from "@/lib/utils";
-
-const iconTone: Record<IntegrationProvider, string> = {
-  telegram: "border border-zinc-700 bg-zinc-900 text-white",
-  whatsapp: "border border-zinc-700 bg-zinc-900 text-white",
-  instagram: "border border-zinc-700 bg-zinc-900 text-white",
-};
-
-const providerLabel: Record<ChatProvider, string> = {
-  whatsapp: "WhatsApp",
-  telegram: "Telegram",
-  instagram: "Instagram",
-  unknown: "Канал",
-};
 
 export function ChatInbox({
   agents,
@@ -294,7 +281,7 @@ export function ChatInbox({
                           <span className="truncate font-heading text-sm font-semibold text-white">{thread.title}</span>
                           <span className="shrink-0 text-[10px] text-zinc-400">{formatStamp(thread.lastMessageAt)}</span>
                         </span>
-                        <span className="mt-0.5 block text-[11px] text-zinc-400">{providerLabel[thread.provider]}</span>
+                        <span className="mt-0.5 block text-[11px] text-zinc-400">{channelLabel(thread.provider)}</span>
                         <span className="mt-1 block truncate text-sm text-zinc-400">
                           {thread.preview || "Нет сообщений"}
                         </span>
@@ -316,7 +303,8 @@ export function ChatInbox({
                   <div className="min-w-0">
                     <h2 className="truncate text-lg font-semibold">{selected.title}</h2>
                     <p className="truncate text-xs text-zinc-400">
-                      {providerLabel[selected.provider]}
+                      {channelLabel(selected.provider)}
+                      {selected.provider === "widget" && selected.operatorName ? ` · Оператор: ${selected.operatorName}` : ""}
                       {selected.handle && selected.handle !== selected.title ? ` · ${selected.handle}` : ""}
                     </p>
                   </div>
@@ -385,6 +373,11 @@ export function ChatInbox({
                             : "mr-auto rounded-bl-md bg-zinc-800 text-zinc-100",
                         )}
                       >
+                        {selected.provider === "widget" ? (
+                          <p className={cn("mb-1 text-[10px] font-semibold uppercase tracking-widest", outbound ? "text-zinc-500" : "text-zinc-400")}>
+                            {outbound ? selected.operatorName || "Оператор" : selected.title}
+                          </p>
+                        ) : null}
                         <p className="whitespace-pre-wrap">{message.content}</p>
                         <p className={cn("mt-1 text-[10px]", outbound ? "text-zinc-500" : "text-zinc-400")}>
                           {formatStamp(message.createdAt)}
@@ -582,7 +575,7 @@ function ProviderMark({ provider }: { provider: ChatProvider }) {
   }
 
   return (
-    <span className={cn("grid size-10 shrink-0 place-items-center rounded-xl", iconTone[provider])}>
+    <span className="grid size-10 shrink-0 place-items-center rounded-xl border border-zinc-700 bg-zinc-900 text-white">
       <ChannelIcon provider={provider} className="size-5" />
     </span>
   );

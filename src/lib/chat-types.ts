@@ -3,7 +3,7 @@ import type { IntegrationProvider } from "@/lib/integration-catalog";
 export type ChatProvider = IntegrationProvider | "unknown";
 
 export type ChatAgentChannel = {
-  provider: "whatsapp" | "telegram" | "instagram";
+  provider: IntegrationProvider;
   label: string;
 };
 
@@ -22,6 +22,8 @@ export type ChatThread = {
   preview: string;
   lastMessageAt: string | null;
   botActive: boolean;
+  /** Имя оператора виджета. У остальных каналов пусто. */
+  operatorName: string | null;
 };
 
 export type ChatMessage = {

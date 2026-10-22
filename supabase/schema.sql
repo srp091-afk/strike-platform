@@ -148,7 +148,7 @@ create table if not exists public.integrations (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint integrations_provider_check
-    check (provider in ('whatsapp', 'instagram', 'telegram')),
+    check (provider in ('whatsapp', 'instagram', 'telegram', 'widget')),
   constraint integrations_status_check
     check (status in ('connected', 'disconnected', 'error'))
 );

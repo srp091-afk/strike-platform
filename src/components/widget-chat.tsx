@@ -105,6 +105,7 @@ export function WidgetChat({ config }: { config: WidgetConfig }) {
       role: message.role,
       content: message.content,
     }));
+    const visitorId = readVisitorId(config.agentId);
     setMessages((current) => [...current, userMessage]);
     setDraft("");
     setPending(true);
@@ -113,9 +114,10 @@ export function WidgetChat({ config }: { config: WidgetConfig }) {
       const response = await fetch("/api/widget-chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent_id: config.agentId, messages: transcript }),
+        body: JSON.stringify({ agent_id: config.agentId, visitor_id: visitorId, messages: transcript }),
       });
-      const payload = (await response.json().catch(() => null)) as { reply?: string; error?: string } | null;
+      const payload = (await response.json().catch(() => null)) as { reply?: string; error?: string; visitor_id?: string } | null;
+      if (payload?.visitor_id) rememberVisitorId(config.agentId, payload.visitor_id);
       setMessages((current) => [
         ...current,
         {
@@ -251,6 +253,35 @@ export function WidgetChat({ config }: { config: WidgetConfig }) {
       </button>
     </div>
   );
+}
+
+const VISITOR_KEY = "strike-widget-visitor";
+const VISITOR_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function visitorStorageKey(agentId: string) {
+  return `${VISITOR_KEY}:${agentId}`;
+}
+
+/** Один гость — один диалог в кабинете, пока живёт localStorage браузера. */
+function readVisitorId(agentId: string) {
+  try {
+    const stored = window.localStorage.getItem(visitorStorageKey(agentId));
+    if (stored && VISITOR_ID.test(stored)) return stored;
+    const created = crypto.randomUUID();
+    window.localStorage.setItem(visitorStorageKey(agentId), created);
+    return created;
+  } catch {
+    return crypto.randomUUID();
+  }
+}
+
+function rememberVisitorId(agentId: string, visitorId: string) {
+  if (!VISITOR_ID.test(visitorId)) return;
+  try {
+    window.localStorage.setItem(visitorStorageKey(agentId), visitorId);
+  } catch {
+    // Приватный режим может запретить storage: следующий запрос получит новый id.
+  }
 }
 
 function WidgetAvatar({ url, name, small = false }: { url: string | null; name: string; small?: boolean }) {

@@ -4,6 +4,7 @@ import { normalizeAgentModel } from "@/lib/agent-models";
 import { getOpenAI } from "@/lib/openai";
 import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { appendWidgetReply, openWidgetThread, readVisitorId, type WidgetThread } from "@/lib/widget-inbox";
 
 export const maxDuration = 60;
 
@@ -48,17 +49,41 @@ export async function POST(request: NextRequest) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const { data: agent, error } = await supabase
+  const withWidget = await supabase
     .from("agents")
-    .select("id, system_prompt, model, temperature, is_active, split_messages")
+    .select("id, user_id, system_prompt, model, temperature, is_active, split_messages, widget_greeting, widget_operator_name")
     .eq("id", agentId)
     .maybeSingle();
+  const loaded = withWidget.error?.message.includes("widget_")
+    ? await supabase
+        .from("agents")
+        .select("id, user_id, system_prompt, model, temperature, is_active, split_messages")
+        .eq("id", agentId)
+        .maybeSingle()
+    : withWidget;
+  const agent = loaded.data;
+  const error = loaded.error;
 
   if (error) {
     return Response.json({ error: "Не удалось загрузить агента." }, { status: 500 });
   }
-  if (!agent || agent.is_active !== true) {
+  if (!agent || agent.is_active !== true || typeof agent.user_id !== "string") {
     return Response.json({ error: "Виджет не найден." }, { status: 404 });
+  }
+
+  const visitorId = readVisitorId(record.visitor_id);
+  let thread: WidgetThread | null = null;
+  try {
+    thread = await openWidgetThread(supabase, { agent, visitorId, userText });
+  } catch (failure) {
+    console.warn("[widget-chat] dialogue", failure instanceof Error ? failure.message : failure);
+  }
+
+  if (thread && !thread.botActive) {
+    return Response.json({
+      reply: "Сообщение получено. Оператор ответит вам в этом чате.",
+      visitor_id: visitorId,
+    });
   }
 
   try {
@@ -82,7 +107,14 @@ export async function POST(request: NextRequest) {
     if (!reply) {
       return Response.json({ error: "Модель вернула пустой ответ." }, { status: 502 });
     }
-    return Response.json({ reply });
+    if (thread) {
+      try {
+        await appendWidgetReply(supabase, thread.conversationId, reply);
+      } catch (failure) {
+        console.warn("[widget-chat] reply", failure instanceof Error ? failure.message : failure);
+      }
+    }
+    return Response.json({ reply, visitor_id: visitorId });
   } catch (failure) {
     return Response.json(
       { error: failure instanceof Error ? failure.message : "Не удалось получить ответ." },

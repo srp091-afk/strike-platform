@@ -741,6 +741,7 @@ const channelTone: Record<IntegrationProvider, string> = {
   telegram: "border border-zinc-700 bg-zinc-900 text-white",
   whatsapp: "border border-zinc-700 bg-zinc-900 text-white",
   instagram: "border border-zinc-700 bg-zinc-900 text-white",
+  widget: "border border-zinc-700 bg-zinc-900 text-white",
 };
 
 function ChannelSettings({

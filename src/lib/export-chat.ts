@@ -1,17 +1,11 @@
-import type { ChatAgentOption, ChatMessage, ChatProvider, ChatThread } from "@/lib/chat-types";
+import type { ChatAgentOption, ChatMessage, ChatThread } from "@/lib/chat-types";
+import { channelLabel } from "@/lib/integration-catalog";
 
 /**
  * Экспорт истории диалога в автономный HTML-файл с фирменным стилем STRIKE:
  * тёмная тема (#0a0a0a / #171717), акцент #dd0005 у сообщений агента.
  * Файл самодостаточен (весь CSS инлайн), открывается в любом браузере.
  */
-
-const CHANNEL_LABEL: Record<ChatProvider, string> = {
-  telegram: "Telegram",
-  whatsapp: "WhatsApp",
-  instagram: "Instagram",
-  unknown: "Канал",
-};
 
 export function generateChatHtml(
   dialog: ChatThread,
@@ -24,7 +18,7 @@ export function generateChatHtml(
 
   const meta: Array<[string, string]> = [
     ["ID диалога", dialog.id],
-    ["Канал", CHANNEL_LABEL[dialog.provider] ?? dialog.provider],
+    ["Канал", channelLabel(dialog.provider)],
     ["Имя агента", agent?.name || "—"],
     ["Количество сообщений", String(visible.length)],
     ["Длительность", formatDuration(firstAt, lastAt)],
