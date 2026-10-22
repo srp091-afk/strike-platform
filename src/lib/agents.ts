@@ -10,6 +10,7 @@ import {
   readResponseDelay,
   readSplitMessages,
   readTelegramType,
+  readWidgetSettings,
   type AgentRecord,
 } from "@/lib/agent-models";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
@@ -125,7 +126,7 @@ export async function listAgents(): Promise<AgentRecord[]> {
   const userId = await getAuthenticatedUserId();
   const withDelay = await supabase
     .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, created_at")
+    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -137,6 +138,7 @@ export async function listAgents(): Promise<AgentRecord[]> {
     withDelay.error?.message.includes("telegram_api_id") ||
     withDelay.error?.message.includes("telegram_api_hash") ||
     withDelay.error?.message.includes("telegram_session") ||
+    withDelay.error?.message.includes("widget_") ||
     withDelay.error?.message.includes("limit_agent_messages") ||
     withDelay.error?.message.includes("human_handoff_duration") ||
     withDelay.error?.message.includes("split_messages")
@@ -189,6 +191,7 @@ export async function listAgents(): Promise<AgentRecord[]> {
     telegram_api_hash: "telegram_api_hash" in row && row.telegram_api_hash ? String(row.telegram_api_hash) : null,
     telegram_session: "telegram_session" in row && row.telegram_session ? String(row.telegram_session) : null,
     telegram_chat_id: "telegram_chat_id" in row && row.telegram_chat_id ? String(row.telegram_chat_id) : null,
+    ...readWidgetSettings(row as Record<string, unknown>),
   }));
 }
 

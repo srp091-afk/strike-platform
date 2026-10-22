@@ -44,7 +44,11 @@ export async function middleware(request: NextRequest) {
   const isPublic =
     pathname === "/login" ||
     pathname === "/api/webhooks" ||
-    pathname.startsWith("/api/webhooks/");
+    pathname.startsWith("/api/webhooks/") ||
+    // Публичный веб-виджет: страница в iframe на чужих сайтах и её чат-API.
+    pathname === "/widget" ||
+    pathname.startsWith("/widget/") ||
+    pathname === "/api/widget-chat";
 
   // Локальный dev-сервер открывает страницы без Google. На production редирект остаётся.
   if (!user && !isPublic && process.env.NODE_ENV !== "development") {

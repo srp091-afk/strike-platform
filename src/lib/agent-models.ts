@@ -71,6 +71,67 @@ export type TelegramConfig = {
   telegram_session: string | null;
 };
 
+/** Настройки веб-виджета чата на сайте клиента. */
+export type WidgetSettings = {
+  widget_agent_name: string;
+  widget_operator_name: string;
+  widget_auto_open: boolean;
+  widget_open_delay: number;
+  widget_color_header_bg: string;
+  widget_color_header_text: string;
+  widget_greeting: string;
+  widget_avatar_agent: string | null;
+  widget_avatar_operator: string | null;
+};
+
+export const DEFAULT_WIDGET_SETTINGS: WidgetSettings = {
+  widget_agent_name: "AI-Ассистент",
+  widget_operator_name: "Менеджер",
+  widget_auto_open: false,
+  widget_open_delay: 5,
+  widget_color_header_bg: "#171717",
+  widget_color_header_text: "#f5f5f5",
+  widget_greeting: "Здравствуйте! Я — AI-ассистент. Готов ответить на ваши вопросы.",
+  widget_avatar_agent: null,
+  widget_avatar_operator: null,
+};
+
+export function readWidgetText(value: unknown, fallback: string, maxLength = 120): string {
+  if (typeof value !== "string") return fallback;
+  const trimmed = value.trim().slice(0, maxLength);
+  return trimmed || fallback;
+}
+
+export function readWidgetDelay(value: unknown): number {
+  const delay = Number(value);
+  if (!Number.isFinite(delay)) return DEFAULT_WIDGET_SETTINGS.widget_open_delay;
+  return Math.min(60, Math.max(1, Math.round(delay)));
+}
+
+export function readWidgetColor(value: unknown, fallback: string): string {
+  return typeof value === "string" && /^#[0-9a-fA-F]{6}$/.test(value.trim()) ? value.trim() : fallback;
+}
+
+export function readWidgetAvatar(value: unknown): string | null {
+  return typeof value === "string" && value.trim() ? value.trim() : null;
+}
+
+/** Собрать WidgetSettings из плоских колонок widget_* строки агента. */
+export function readWidgetSettings(source: Record<string, unknown> | null | undefined): WidgetSettings {
+  const row = source ?? {};
+  return {
+    widget_agent_name: readWidgetText(row.widget_agent_name, DEFAULT_WIDGET_SETTINGS.widget_agent_name),
+    widget_operator_name: readWidgetText(row.widget_operator_name, DEFAULT_WIDGET_SETTINGS.widget_operator_name),
+    widget_auto_open: row.widget_auto_open === true,
+    widget_open_delay: readWidgetDelay(row.widget_open_delay),
+    widget_color_header_bg: readWidgetColor(row.widget_color_header_bg, DEFAULT_WIDGET_SETTINGS.widget_color_header_bg),
+    widget_color_header_text: readWidgetColor(row.widget_color_header_text, DEFAULT_WIDGET_SETTINGS.widget_color_header_text),
+    widget_greeting: readWidgetText(row.widget_greeting, DEFAULT_WIDGET_SETTINGS.widget_greeting, 1000),
+    widget_avatar_agent: readWidgetAvatar(row.widget_avatar_agent),
+    widget_avatar_operator: readWidgetAvatar(row.widget_avatar_operator),
+  };
+}
+
 export type AgentRecord = {
   id: string;
   name: string;
@@ -98,6 +159,15 @@ export type AgentRecord = {
   telegram_api_hash: string | null;
   telegram_session: string | null;
   telegram_chat_id: string | null;
+  widget_agent_name: string;
+  widget_operator_name: string;
+  widget_auto_open: boolean;
+  widget_open_delay: number;
+  widget_color_header_bg: string;
+  widget_color_header_text: string;
+  widget_greeting: string;
+  widget_avatar_agent: string | null;
+  widget_avatar_operator: string | null;
   created_at: string;
 };
 

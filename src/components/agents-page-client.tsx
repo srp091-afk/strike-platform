@@ -34,7 +34,7 @@ export function AgentsPageClient({
   initialConnectChannel,
 }: {
   initialAgentId?: string;
-  initialConnectChannel?: "whatsapp" | "telegram";
+  initialConnectChannel?: "whatsapp" | "telegram" | "widget";
 } = {}) {
   const { data, error, isLoading, mutate } = useSWR<AgentsResponse>("/api/agents", jsonFetcher, {
     revalidateOnFocus: false,

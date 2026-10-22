@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 
 export function SiteFooter() {
   const pathname = usePathname();
-  if (pathname === "/login" || pathname.startsWith("/l/") || pathname.startsWith("/funnels/builder")) return null;
+  if (pathname === "/login" || pathname.startsWith("/l/") || pathname.startsWith("/widget/") || pathname.startsWith("/funnels/builder")) return null;
 
   return (
     <footer className="mt-auto border-t border-zinc-800 bg-black">

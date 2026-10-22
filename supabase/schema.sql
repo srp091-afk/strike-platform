@@ -86,6 +86,15 @@ create table if not exists public.agents (
   telegram_api_hash text,
   telegram_session text,
   telegram_chat_id text,
+  widget_agent_name text not null default 'AI-Ассистент',
+  widget_operator_name text not null default 'Менеджер',
+  widget_auto_open boolean not null default false,
+  widget_open_delay integer not null default 5,
+  widget_color_header_bg text not null default '#171717',
+  widget_color_header_text text not null default '#f5f5f5',
+  widget_greeting text not null default 'Здравствуйте! Я — AI-ассистент. Готов ответить на ваши вопросы.',
+  widget_avatar_agent text,
+  widget_avatar_operator text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint agents_temperature_range check (temperature >= 0 and temperature <= 2),
@@ -98,7 +107,9 @@ create table if not exists public.agents (
   constraint agents_human_handoff_duration_check
     check (human_handoff_duration in ('1_hour', '3_hours', '24_hours', 'forever')),
   constraint agents_telegram_type_check
-    check (telegram_type in ('bot', 'userbot'))
+    check (telegram_type in ('bot', 'userbot')),
+  constraint agents_widget_open_delay_range
+    check (widget_open_delay >= 1 and widget_open_delay <= 60)
 );
 
 create index if not exists agents_user_id_idx on public.agents (user_id);

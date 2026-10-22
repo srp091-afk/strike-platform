@@ -1,6 +1,6 @@
 "use client";
 
-import { Maximize, Play, Trash } from "lucide-react";
+import { Globe, Maximize, Play, Trash } from "lucide-react";
 import { startTransition, useActionState, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -9,6 +9,7 @@ import { PlaygroundChat } from "@/components/playground-chat";
 import { deleteAgent, saveAgent, saveAgentDirect, type SaveState } from "@/app/agents/actions";
 import { disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
 import { TelegramConnectModal } from "@/components/TelegramConnectModal";
+import { WidgetConnectModal } from "@/components/WidgetConnectModal";
 import { ChannelIcon } from "@/components/channel-icons";
 import { Button } from "@/components/ui/button";
 import { DialogContent } from "@/components/ui/dialog";
@@ -33,6 +34,7 @@ import {
   HANDOFF_DURATIONS,
   isTelegramConnected,
   normalizeAgentModel,
+  readWidgetSettings,
   telegramChannelLabel,
   type ActiveChannels,
   type AgentRecord,
@@ -72,7 +74,7 @@ export function AgentManager({
   /** Агент из URL /agents/<id>: открыть его правку после загрузки списка. */
   initialEditingId?: string;
   /** Канал из ?connect=: сразу открыть его модалку в правке initialEditingId. */
-  initialConnectChannel?: "whatsapp" | "telegram";
+  initialConnectChannel?: "whatsapp" | "telegram" | "widget";
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState<AgentRecord | null>(null);
@@ -125,7 +127,16 @@ export function AgentManager({
         fresh.telegram_phone === current.telegram_phone &&
         fresh.telegram_api_id === current.telegram_api_id &&
         fresh.telegram_api_hash === current.telegram_api_hash &&
-        fresh.telegram_session === current.telegram_session
+        fresh.telegram_session === current.telegram_session &&
+        fresh.widget_agent_name === current.widget_agent_name &&
+        fresh.widget_operator_name === current.widget_operator_name &&
+        fresh.widget_auto_open === current.widget_auto_open &&
+        fresh.widget_open_delay === current.widget_open_delay &&
+        fresh.widget_color_header_bg === current.widget_color_header_bg &&
+        fresh.widget_color_header_text === current.widget_color_header_text &&
+        fresh.widget_greeting === current.widget_greeting &&
+        fresh.widget_avatar_agent === current.widget_avatar_agent &&
+        fresh.widget_avatar_operator === current.widget_avatar_operator
       ) {
         return current;
       }
@@ -316,7 +327,7 @@ function AgentDialog({
 }: {
   editing: AgentRecord | null;
   agents: AgentRecord[];
-  initialConnectChannel?: "whatsapp" | "telegram";
+  initialConnectChannel?: "whatsapp" | "telegram" | "widget";
   action: (payload: FormData) => void;
   pending: boolean;
   error: string | null;
@@ -419,7 +430,7 @@ function AgentDialog({
    * на /agents/<id>?connect=<channel> (форма — режим редактирования), и только
    * потом открывается модалка. Существующий агент — сразу модалка.
    */
-  async function handleChannelConnect(channel: "whatsapp" | "telegram"): Promise<boolean> {
+  async function handleChannelConnect(channel: "whatsapp" | "telegram" | "widget"): Promise<boolean> {
     const wasNew = !persistedId;
     const agentId = await ensureAgentSaved();
     if (!agentId) return false;
@@ -748,10 +759,10 @@ function ChannelSettings({
 }: {
   agent: AgentRecord | null;
   agentId: string;
-  initialOpenChannel?: "whatsapp" | "telegram";
+  initialOpenChannel?: "whatsapp" | "telegram" | "widget";
   connectError: string | null;
   /** Автосейв нового агента перед модалкой; false — сейв не удался, модалку не открываем. */
-  onConnectChannel: (channel: "whatsapp" | "telegram") => Promise<boolean>;
+  onConnectChannel: (channel: "whatsapp" | "telegram" | "widget") => Promise<boolean>;
   credentials: GreenDefaults;
   phone: string;
   greenDefaults: GreenDefaults;
@@ -763,21 +774,23 @@ function ChannelSettings({
 }) {
   const [whatsappOpen, setWhatsappOpen] = useState(initialOpenChannel === "whatsapp");
   const [telegramOpen, setTelegramOpen] = useState(initialOpenChannel === "telegram");
-  const [connectingChannel, setConnectingChannel] = useState<"whatsapp" | "telegram" | null>(null);
+  const [widgetOpen, setWidgetOpen] = useState(initialOpenChannel === "widget");
+  const [connectingChannel, setConnectingChannel] = useState<"whatsapp" | "telegram" | "widget" | null>(null);
 
   // Физическое подключение: есть инстанс/номер WhatsApp или токен/сессия Telegram.
   // Пока канала нет, его тумблер заблокирован и принудительно выключен.
   const whatsappConnected = Boolean(credentials.instanceId || phone || agent?.waIsActive);
   const telegramConnected = agent ? isTelegramConnected(agent) : false;
 
-  async function handleConnect(channel: "whatsapp" | "telegram") {
+  async function handleConnect(channel: "whatsapp" | "telegram" | "widget") {
     if (connectingChannel) return;
     setConnectingChannel(channel);
     try {
       const ready = await onConnectChannel(channel);
       if (!ready) return;
       if (channel === "whatsapp") setWhatsappOpen(true);
-      else setTelegramOpen(true);
+      else if (channel === "telegram") setTelegramOpen(true);
+      else setWidgetOpen(true);
     } finally {
       setConnectingChannel(null);
     }
@@ -854,6 +867,22 @@ function ChannelSettings({
             aria-label="Instagram"
           />
         </label>
+        <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+          <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
+            <span className="grid size-9 place-items-center rounded-xl border border-zinc-700 bg-zinc-900 text-white">
+              <Globe className="size-4" strokeWidth={2} />
+            </span>
+            Web Widget
+          </span>
+          <button
+            type="button"
+            className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+            disabled={connectingChannel === "widget"}
+            onClick={() => void handleConnect("widget")}
+          >
+            {connectingChannel === "widget" ? "Сохранение агента" : "Настроить виджет"}
+          </button>
+        </div>
       </div>
       {whatsappOpen ? (
         <WhatsAppConnectDialog
@@ -873,6 +902,13 @@ function ChannelSettings({
           initialPhone={agent?.telegram_phone ?? ""}
           initialApiId={agent?.telegram_api_id ?? ""}
           onClose={() => setTelegramOpen(false)}
+        />
+      ) : null}
+      {widgetOpen && agentId ? (
+        <WidgetConnectModal
+          agentId={agentId}
+          initialSettings={readWidgetSettings(agent ? { ...agent } : undefined)}
+          onClose={() => setWidgetOpen(false)}
         />
       ) : null}
     </section>
@@ -1031,7 +1067,7 @@ function DisconnectButton({
   onDisconnected,
 }: {
   agentId: string;
-  kind: "whatsapp" | "telegram";
+  kind: "whatsapp" | "telegram" | "widget";
   label: string;
   onDisconnected?: () => void;
 }) {

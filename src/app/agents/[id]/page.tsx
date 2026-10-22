@@ -20,7 +20,8 @@ export default async function AgentByIdPage({
 }) {
   const { id } = await params;
   const query = await searchParams;
-  const connect = query.connect === "whatsapp" || query.connect === "telegram" ? query.connect : undefined;
+  const connect =
+    query.connect === "whatsapp" || query.connect === "telegram" || query.connect === "widget" ? query.connect : undefined;
 
   return <AgentsPageClient initialAgentId={id} initialConnectChannel={connect} />;
 }
