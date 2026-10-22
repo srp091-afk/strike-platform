@@ -17,7 +17,9 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export const WIDGET_AVATARS_BUCKET = "widget_avatars";
+// Не экспортируется: в "use server"-файле допустимы только async-функции и типы,
+// экспорт константы роняет сборку Turbopack ("The module has no exports at all").
+const WIDGET_AVATARS_BUCKET = "widget_avatars";
 
 export type WidgetAvatarRole = "agent" | "operator";
 
