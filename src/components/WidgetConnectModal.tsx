@@ -146,9 +146,10 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
             <TabsTrigger value="install">Установка на сайт</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="builder" className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
-            <div className="grid min-h-0 gap-6 lg:h-full lg:grid-cols-2">
-              <div className="grid min-h-0 min-w-0 content-start gap-4 overflow-visible pr-0 lg:overflow-y-auto lg:pr-2">
+          <TabsContent value="builder" className="scrollbar-strike min-h-0 flex-1 overflow-y-auto">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+              {/* Высота привязана к max-h-[90vh] модалки минус шапка, вкладки и футер (~240px). */}
+              <div className="scrollbar-strike grid min-w-0 grid-cols-1 content-start gap-4 lg:max-h-[calc(90vh-250px)] lg:overflow-y-auto lg:pr-2">
                 <section className={cardClass}>
                   <h3 className="text-sm font-semibold text-white">Имена в чате</h3>
                   <label className="grid gap-2">
@@ -361,7 +362,7 @@ function AvatarField({
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex min-w-0 items-center gap-3">
       {url ? (
         <img src={url} alt="" className="size-11 shrink-0 rounded-full object-cover" />
       ) : (
@@ -410,7 +411,7 @@ function AvatarField({
 /** Мок виджета, мгновенно отражающий настройки из левой колонки. */
 function WidgetPreview({ settings }: { settings: WidgetSettings }) {
   return (
-    <div className="min-w-0">
+    <div className="scrollbar-strike min-w-0 lg:sticky lg:top-0 lg:max-h-[calc(90vh-250px)] lg:overflow-y-auto">
       <p className={labelClass}>Live-превью</p>
       <div className="mt-2 overflow-hidden rounded-[24px] border border-zinc-800 bg-[#0a0a0a]">
         <header
