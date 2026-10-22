@@ -135,7 +135,19 @@ function readChannels(value: FormDataEntryValue | null): ActiveChannels {
   }
 }
 
+/**
+ * Программное сохранение агента из клиентского кода (автосейв перед открытием
+ * модалок каналов у нового агента). Тот же путь записи, что и у submit формы.
+ */
+export async function saveAgentDirect(formData: FormData): Promise<SaveState> {
+  return persistAgent(formData);
+}
+
 export async function saveAgent(_prev: SaveState, formData: FormData): Promise<SaveState> {
+  return persistAgent(formData);
+}
+
+async function persistAgent(formData: FormData): Promise<SaveState> {
   const fields = readAgentFields(formData);
   if (!fields.ok) {
     return failedSave(fields.error);

@@ -20,8 +20,13 @@ export type ActiveChannels = {
   instagram: boolean;
 };
 
+/**
+ * Новый агент: ни один канал ещё физически не подключён, поэтому все тумблеры
+ * строго выключены (wa_is_active в БД при создании тоже остаётся false —
+ * saveAgent ставит его только вместе с реальными кредами WhatsApp).
+ */
 export const DEFAULT_ACTIVE_CHANNELS: ActiveChannels = {
-  whatsapp: true,
+  whatsapp: false,
   telegram: false,
   instagram: false,
 };
@@ -33,7 +38,7 @@ export function readActiveChannels(value: unknown): ActiveChannels {
 
   const record = value as Record<string, unknown>;
   return {
-    whatsapp: record.whatsapp !== false,
+    whatsapp: record.whatsapp === true,
     telegram: record.telegram === true,
     instagram: record.instagram === true,
   };

@@ -29,7 +29,13 @@ function ManagerSkeleton() {
   );
 }
 
-export function AgentsPageClient() {
+export function AgentsPageClient({
+  initialAgentId,
+  initialConnectChannel,
+}: {
+  initialAgentId?: string;
+  initialConnectChannel?: "whatsapp" | "telegram";
+} = {}) {
   const { data, error, isLoading, mutate } = useSWR<AgentsResponse>("/api/agents", jsonFetcher, {
     revalidateOnFocus: false,
     keepPreviousData: true,
@@ -46,6 +52,8 @@ export function AgentsPageClient() {
       ) : (
         <AgentManager
           agents={data?.agents ?? []}
+          initialEditingId={initialAgentId}
+          initialConnectChannel={initialConnectChannel}
           greenDefaults={data?.greenDefaults ?? { instanceId: "", apiToken: "" }}
           loadError={error ? error.message : null}
           onSaved={() => {

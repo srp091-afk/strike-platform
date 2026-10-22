@@ -65,7 +65,7 @@ create table if not exists public.agents (
   model text not null default 'gpt-4o-mini',
   temperature numeric(3, 2) not null default 0.70,
   is_active boolean not null default true,
-  active_channels jsonb not null default '{"whatsapp": true, "telegram": false, "instagram": false}'::jsonb,
+  active_channels jsonb not null default '{"whatsapp": false, "telegram": false, "instagram": false}'::jsonb,
   response_delay integer not null default 0,
   human_handoff_duration text not null default '1_hour',
   limit_agent_messages integer not null default 0,

@@ -6,7 +6,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { mutate as swrMutate } from "swr";
 import { PlaygroundChat } from "@/components/playground-chat";
-import { deleteAgent, saveAgent, type SaveState } from "@/app/agents/actions";
+import { deleteAgent, saveAgent, saveAgentDirect, type SaveState } from "@/app/agents/actions";
 import { disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
 import { TelegramConnectModal } from "@/components/TelegramConnectModal";
 import { ChannelIcon } from "@/components/channel-icons";
@@ -62,11 +62,17 @@ export function AgentManager({
   greenDefaults,
   loadError,
   onSaved,
+  initialEditingId,
+  initialConnectChannel,
 }: {
   agents: AgentRecord[];
   greenDefaults: GreenDefaults;
   loadError: string | null;
   onSaved?: () => void;
+  /** Агент из URL /agents/<id>: открыть его правку после загрузки списка. */
+  initialEditingId?: string;
+  /** Канал из ?connect=: сразу открыть его модалку в правке initialEditingId. */
+  initialConnectChannel?: "whatsapp" | "telegram";
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState<AgentRecord | null>(null);
@@ -127,6 +133,16 @@ export function AgentManager({
     });
   }, [agents]);
 
+  const initialOpened = useRef(false);
+  useEffect(() => {
+    if (!initialEditingId || initialOpened.current) return;
+    const agent = agents.find((item) => item.id === initialEditingId);
+    if (!agent) return;
+    initialOpened.current = true;
+    openEdit(agent);
+    // URL не чистим здесь: переход на /agents перемонтирует страницу и закроет диалог.
+  }, [agents, initialEditingId]);
+
   function openCreate() {
     setEditing(null);
     setSessionKey("new");
@@ -143,6 +159,10 @@ export function AgentManager({
     if (pending) return;
     setDialogOpen(false);
     setEditing(null);
+    // Уход с глубокой ссылки /agents/<id> на список, чтобы ?connect= не переоткрывал модалки при перезагрузке.
+    if (initialEditingId) {
+      router.replace("/agents", { scroll: false });
+    }
   }
 
   return (
@@ -210,6 +230,8 @@ export function AgentManager({
         <AgentDialog
           key={sessionKey}
           editing={editing}
+          agents={agents}
+          initialConnectChannel={initialEditingId && editing?.id === initialEditingId ? initialConnectChannel : undefined}
           action={action}
           pending={pending}
           error={state.error}
@@ -283,6 +305,8 @@ function SimulatorDialog({
 
 function AgentDialog({
   editing,
+  agents,
+  initialConnectChannel,
   action,
   pending,
   error,
@@ -291,6 +315,8 @@ function AgentDialog({
   onClose,
 }: {
   editing: AgentRecord | null;
+  agents: AgentRecord[];
+  initialConnectChannel?: "whatsapp" | "telegram";
   action: (payload: FormData) => void;
   pending: boolean;
   error: string | null;
@@ -298,11 +324,16 @@ function AgentDialog({
   greenDefaults: GreenDefaults;
   onClose: () => void;
 }) {
+  const router = useRouter();
   const [initialDraft] = useState(() => draftFromAgent(editing));
   const [draft, setDraft] = useState(initialDraft);
   const [baseline, setBaseline] = useState(initialDraft);
   const [persistedId, setPersistedId] = useState(editing?.id ?? "");
+  const [connectError, setConnectError] = useState<string | null>(null);
+  const ensuringSave = useRef<Promise<string | null> | null>(null);
   const dirty = !sameDraft(draft, baseline);
+  // После автосейва нового агента его запись подтягивается из списка по persistedId.
+  const channelAgent = editing ?? agents.find((agent) => agent.id === persistedId) ?? null;
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const ignoredSave = useRef(saved?.attemptId ?? null);
@@ -335,6 +366,67 @@ function AgentDialog({
 
   function patchDraft(patch: Partial<AgentDraft>) {
     setDraft((current) => ({ ...current, ...patch }));
+  }
+
+  /** FormData из текущего черновика — зеркало полей формы для программного сейва. */
+  function formDataFromDraft(current: AgentDraft) {
+    const data = new FormData();
+    if (persistedId) data.set("id", persistedId);
+    data.set("name", current.name);
+    data.set("model", current.model);
+    data.set("temperature", current.temperature);
+    data.set("system_prompt", current.system_prompt);
+    data.set("active_channels", JSON.stringify(current.active_channels));
+    data.set("response_delay", current.response_delay);
+    data.set("human_handoff_duration", current.human_handoff_duration);
+    data.set("telegram_chat_id", current.telegram_chat_id);
+    data.set("limit_agent_messages", current.limit_agent_messages);
+    data.set("limit_client_messages", current.limit_client_messages);
+    data.set("limit_total_messages", current.limit_total_messages);
+    data.set("split_messages", current.split_messages ? "true" : "false");
+    data.set("wa_instance_id", current.wa_instance_id);
+    data.set("wa_api_token", current.wa_api_token);
+    data.set("wa_phone_number", current.wa_phone_number);
+    return data;
+  }
+
+  /** Создать запись агента в БД, если его ещё нет. Возвращает реальный agentId. */
+  async function ensureAgentSaved(): Promise<string | null> {
+    if (persistedId) return persistedId;
+    if (ensuringSave.current) return ensuringSave.current;
+    const run = (async () => {
+      setConnectError(null);
+      const result = await saveAgentDirect(formDataFromDraft(draftRef.current));
+      if (!result.ok || !result.agentId) {
+        setConnectError(result.error ?? "Не удалось сохранить агента.");
+        return null;
+      }
+      setPersistedId(result.agentId);
+      setBaseline(draftRef.current);
+      void swrMutate("/api/agents");
+      return result.agentId;
+    })();
+    ensuringSave.current = run;
+    try {
+      return await run;
+    } finally {
+      ensuringSave.current = null;
+    }
+  }
+
+  /**
+   * Клик «Подключить» канала: новый агент сначала автосохраняется, URL уходит
+   * на /agents/<id>?connect=<channel> (форма — режим редактирования), и только
+   * потом открывается модалка. Существующий агент — сразу модалка.
+   */
+  async function handleChannelConnect(channel: "whatsapp" | "telegram"): Promise<boolean> {
+    const wasNew = !persistedId;
+    const agentId = await ensureAgentSaved();
+    if (!agentId) return false;
+    if (wasNew) {
+      router.replace(`/agents/${agentId}?connect=${channel}`, { scroll: false });
+    }
+    return true;
   }
 
   return (
@@ -417,8 +509,11 @@ function AgentDialog({
 
               <div className="grid content-start gap-6">
                 <ChannelSettings
-                  agent={editing}
+                  agent={channelAgent}
                   agentId={persistedId}
+                  initialOpenChannel={initialConnectChannel}
+                  connectError={connectError}
+                  onConnectChannel={handleChannelConnect}
                   credentials={{ instanceId: draft.wa_instance_id, apiToken: draft.wa_api_token }}
                   phone={draft.wa_phone_number}
                   greenDefaults={greenDefaults}
@@ -639,6 +734,9 @@ const channelTone: Record<IntegrationProvider, string> = {
 function ChannelSettings({
   agent,
   agentId,
+  initialOpenChannel,
+  connectError,
+  onConnectChannel,
   credentials,
   phone,
   greenDefaults,
@@ -650,6 +748,10 @@ function ChannelSettings({
 }: {
   agent: AgentRecord | null;
   agentId: string;
+  initialOpenChannel?: "whatsapp" | "telegram";
+  connectError: string | null;
+  /** Автосейв нового агента перед модалкой; false — сейв не удался, модалку не открываем. */
+  onConnectChannel: (channel: "whatsapp" | "telegram") => Promise<boolean>;
   credentials: GreenDefaults;
   phone: string;
   greenDefaults: GreenDefaults;
@@ -659,8 +761,27 @@ function ChannelSettings({
   onWhatsAppPhone: (phone: string) => void;
   onWhatsAppCleared: () => void;
 }) {
-  const [whatsappOpen, setWhatsappOpen] = useState(false);
-  const [telegramOpen, setTelegramOpen] = useState(false);
+  const [whatsappOpen, setWhatsappOpen] = useState(initialOpenChannel === "whatsapp");
+  const [telegramOpen, setTelegramOpen] = useState(initialOpenChannel === "telegram");
+  const [connectingChannel, setConnectingChannel] = useState<"whatsapp" | "telegram" | null>(null);
+
+  // Физическое подключение: есть инстанс/номер WhatsApp или токен/сессия Telegram.
+  // Пока канала нет, его тумблер заблокирован и принудительно выключен.
+  const whatsappConnected = Boolean(credentials.instanceId || phone || agent?.waIsActive);
+  const telegramConnected = agent ? isTelegramConnected(agent) : false;
+
+  async function handleConnect(channel: "whatsapp" | "telegram") {
+    if (connectingChannel) return;
+    setConnectingChannel(channel);
+    try {
+      const ready = await onConnectChannel(channel);
+      if (!ready) return;
+      if (channel === "whatsapp") setWhatsappOpen(true);
+      else setTelegramOpen(true);
+    } finally {
+      setConnectingChannel(null);
+    }
+  }
 
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
@@ -674,6 +795,7 @@ function ChannelSettings({
       <input type="hidden" name="wa_instance_id" value={credentials.instanceId} />
       <input type="hidden" name="wa_api_token" value={credentials.apiToken} />
       <input type="hidden" name="wa_phone_number" value={phone} />
+      {connectError ? <p className="text-sm text-red-400">{connectError}</p> : null}
       <div className="grid gap-3">
         <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
           <label className="flex items-center justify-between gap-3">
@@ -684,16 +806,19 @@ function ChannelSettings({
               WhatsApp
             </span>
             <Switch
-              checked={channels.whatsapp}
+              checked={whatsappConnected && channels.whatsapp}
+              disabled={!whatsappConnected}
               onCheckedChange={(checked) => onChannelsChange({ ...channels, whatsapp: checked })}
               aria-label="WhatsApp"
+              title={whatsappConnected ? undefined : "Сначала подключите номер WhatsApp"}
             />
           </label>
           <WhatsAppChannel
             agentId={agentId}
             instanceId={credentials.instanceId}
             phone={phone}
-            onConnect={() => setWhatsappOpen(true)}
+            connecting={connectingChannel === "whatsapp"}
+            onConnect={() => void handleConnect("whatsapp")}
             onPhoneSaved={onWhatsAppPhone}
             onCleared={onWhatsAppCleared}
           />
@@ -707,12 +832,14 @@ function ChannelSettings({
               Telegram
             </span>
             <Switch
-              checked={channels.telegram}
+              checked={telegramConnected && channels.telegram}
+              disabled={!telegramConnected}
               onCheckedChange={(checked) => onChannelsChange({ ...channels, telegram: checked })}
               aria-label="Telegram"
+              title={telegramConnected ? undefined : "Сначала подключите Telegram"}
             />
           </label>
-          <TelegramChannel agent={agent} onConnect={() => setTelegramOpen(true)} />
+          <TelegramChannel agent={agent} connecting={connectingChannel === "telegram"} onConnect={() => void handleConnect("telegram")} />
         </div>
         <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
           <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
@@ -730,7 +857,7 @@ function ChannelSettings({
       </div>
       {whatsappOpen ? (
         <WhatsAppConnectDialog
-          agentId={agent?.id ?? ""}
+          agentId={agentId || agent?.id || ""}
           defaults={{
             instanceId: credentials.instanceId || greenDefaults.instanceId,
             apiToken: credentials.apiToken || greenDefaults.apiToken,
@@ -739,12 +866,12 @@ function ChannelSettings({
           onClose={() => setWhatsappOpen(false)}
         />
       ) : null}
-      {telegramOpen && agent ? (
+      {telegramOpen && agentId ? (
         <TelegramConnectModal
-          agentId={agent.id}
-          initialType={agent.telegram_type}
-          initialPhone={agent.telegram_phone ?? ""}
-          initialApiId={agent.telegram_api_id ?? ""}
+          agentId={agentId}
+          initialType={agent?.telegram_type ?? "bot"}
+          initialPhone={agent?.telegram_phone ?? ""}
+          initialApiId={agent?.telegram_api_id ?? ""}
           onClose={() => setTelegramOpen(false)}
         />
       ) : null}
@@ -756,6 +883,7 @@ function WhatsAppChannel({
   agentId,
   instanceId,
   phone,
+  connecting,
   onConnect,
   onPhoneSaved,
   onCleared,
@@ -763,6 +891,7 @@ function WhatsAppChannel({
   agentId: string;
   instanceId: string;
   phone: string;
+  connecting: boolean;
   onConnect: () => void;
   onPhoneSaved: (phone: string) => void;
   onCleared: () => void;
@@ -772,10 +901,11 @@ function WhatsAppChannel({
     return (
       <button
         type="button"
-        className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)]"
+        className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+        disabled={connecting}
         onClick={onConnect}
       >
-        + Подключить номер
+        {connecting ? "Сохранение агента" : "+ Подключить номер"}
       </button>
     );
   }
@@ -852,22 +982,29 @@ function WhatsAppPhoneField({ agentId, onSaved }: { agentId: string; onSaved: (p
   );
 }
 
-function TelegramChannel({ agent, onConnect }: { agent: AgentRecord | null; onConnect: () => void }) {
-  if (!agent) {
-    return <p className="text-xs leading-5 text-zinc-400">Сохраните агента, чтобы подключить Telegram.</p>;
-  }
+function TelegramChannel({
+  agent,
+  connecting,
+  onConnect,
+}: {
+  agent: AgentRecord | null;
+  connecting: boolean;
+  onConnect: () => void;
+}) {
+  // Кнопка видна всегда: для нового агента onConnect сначала автосохранит его.
   // Подключён: подпись (@username бота или номер личного аккаунта) + корзина;
   // переключатель вкл/выкл — Switch канала Telegram в заголовке блока выше
   // (как у WhatsApp), он правит active_channels.telegram.
-  const label = telegramChannelLabel(agent);
-  if (!isTelegramConnected(agent) || !label) {
+  const label = agent ? telegramChannelLabel(agent) : null;
+  if (!agent || !isTelegramConnected(agent) || !label) {
     return (
       <button
         type="button"
-        className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)]"
+        className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+        disabled={connecting}
         onClick={onConnect}
       >
-        Подключить
+        {connecting ? "Сохранение агента" : "Подключить"}
       </button>
     );
   }
