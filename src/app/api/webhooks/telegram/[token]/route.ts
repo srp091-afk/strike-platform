@@ -5,6 +5,7 @@ import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { markdownToTelegramHtml } from "@/lib/telegram-format";
 
 export const maxDuration = 120;
 
@@ -112,6 +113,18 @@ async function handleUpdate(token: string, body: unknown) {
       content: item.content as string,
     }));
 
+  // Имя клиента для ИИ: в БД хранится чистый текст, а в контекст модели последнее
+  // сообщение клиента уходит с системной заметкой — так агент знает имя и в
+  // следующих ходах (каждый новый запрос аннотирует своё последнее сообщение).
+  const lastUserIndex = dialogue.map((item) => item.role).lastIndexOf("user");
+  if (lastUserIndex >= 0) {
+    const original = dialogue[lastUserIndex];
+    dialogue[lastUserIndex] = {
+      ...original,
+      content: `[Системная информация: Имя клиента - ${message.firstName}]\nСообщение клиента: ${original.content}`,
+    };
+  }
+
   const model = normalizeAgentModel(agent.model);
   const completion = await completeWithNotifyManager({
     model,
@@ -149,12 +162,22 @@ async function handleUpdate(token: string, body: unknown) {
       if (responseDelay > 0) {
         await new Promise((resolve) => setTimeout(resolve, responseDelay * 1000));
       }
-      const response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+      let response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ chat_id: message.chatId, text: chunk }),
+        // Ответ ИИ — Markdown (**жирный**): конвертируем в HTML под parse_mode.
+        body: JSON.stringify({ chat_id: message.chatId, text: markdownToTelegramHtml(chunk), parse_mode: "HTML" }),
         signal: AbortSignal.timeout(20000),
       });
+      if (!response.ok) {
+        // Telegram строго валидирует HTML: при отклонении разметки повторяем plain text.
+        response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ chat_id: message.chatId, text: chunk }),
+          signal: AbortSignal.timeout(20000),
+        });
+      }
       delivered = response.ok;
     } catch (sendError) {
       console.error("[telegram webhook] send", sendError instanceof Error ? sendError.message : sendError);
@@ -192,7 +215,9 @@ function readMessage(body: unknown) {
   if (!text || !chatId || !messageId) return null;
   const name = [stringValue(from.first_name), stringValue(from.last_name)].filter(Boolean).join(" ");
   const username = stringValue(from.username).replace(/^@/, "");
-  return { chatId, messageId, text, contactName: name || null, username: username || null };
+  // Имя для контекста ИИ: только first_name, без переносов и обрезанное.
+  const firstName = stringValue(from.first_name).replace(/\s+/g, " ").slice(0, 80) || "Клиент";
+  return { chatId, messageId, text, contactName: name || null, username: username || null, firstName };
 }
 
 async function ensureTelegramIntegration(

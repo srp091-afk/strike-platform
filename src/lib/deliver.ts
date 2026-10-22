@@ -1,6 +1,7 @@
 import "server-only";
 
 import { sendGreenMessage } from "@/lib/green-api";
+import { markdownToTelegramHtml } from "@/lib/telegram-format";
 
 type Credentials = Record<string, string>;
 
@@ -39,12 +40,22 @@ async function sendTelegram(botToken: string | undefined, chatId: string, text: 
     return { delivered: false, detail: "missing_bot_token" };
   }
 
-  const response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+  let response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ chat_id: chatId, text }),
+    body: JSON.stringify({ chat_id: chatId, text: markdownToTelegramHtml(text), parse_mode: "HTML" }),
     signal: AbortSignal.timeout(15000),
   });
+
+  if (!response.ok) {
+    // Fallback без разметки, если Telegram отклонил HTML.
+    response = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chat_id: chatId, text }),
+      signal: AbortSignal.timeout(15000),
+    });
+  }
 
   if (!response.ok) {
     return { delivered: false, detail: `telegram_${response.status}` };
