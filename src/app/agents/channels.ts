@@ -178,42 +178,137 @@ export async function disconnectWhatsApp(agentId: string) {
   }
 }
 
-export async function connectTelegram(agentId: string, botToken: string) {
-  if (!UUID_PATTERN.test(agentId)) return { ok: false as const, error: "Сначала сохраните агента." };
-  const token = botToken.trim();
-  if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(token)) {
-    return { ok: false as const, error: "Укажите токен бота из BotFather." };
-  }
+export type TelegramConnectInput =
+  | { telegram_type: "bot"; telegram_bot_token: string }
+  | {
+      telegram_type: "userbot";
+      telegram_phone: string;
+      telegram_api_id: string;
+      telegram_api_hash: string;
+    };
+
+export type TelegramConnectResult = {
+  ok: boolean;
+  error: string | null;
+  telegram_type: "bot" | "userbot" | null;
+  /** @username бота или номер телефона личного аккаунта. */
+  label: string | null;
+};
+
+function telegramFailure(error: string): TelegramConnectResult {
+  return { ok: false, error, telegram_type: null, label: null };
+}
+
+/** Токен ранее подключённого бота (для снятия вебхука при смене типа/токена). */
+async function readExistingBotToken(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  agentId: string,
+): Promise<string> {
+  const { data } = await supabase
+    .from("agents")
+    .select("tg_bot_token, telegram_bot_token")
+    .eq("id", agentId)
+    .maybeSingle();
+  const token = data?.telegram_bot_token ?? data?.tg_bot_token;
+  return typeof token === "string" ? token : "";
+}
+
+export async function connectTelegramChannel(
+  agentId: string,
+  input: TelegramConnectInput,
+): Promise<TelegramConnectResult> {
+  if (!UUID_PATTERN.test(agentId)) return telegramFailure("Сначала сохраните агента.");
 
   try {
-    if (!(await agentInWorkspace(agentId))) return { ok: false as const, error: "Агент не найден." };
-    const profile = await telegramGetMe(token);
-    if (!profile.ok) return { ok: false as const, error: profile.error };
-
+    if (!(await agentInWorkspace(agentId))) return telegramFailure("Агент не найден.");
     const supabase = createSupabaseAdminClient();
+    const previousToken = await readExistingBotToken(supabase, agentId);
+
+    if (input.telegram_type === "bot") {
+      const token = input.telegram_bot_token.trim();
+      if (!/^\d+:[A-Za-z0-9_-]{20,}$/.test(token)) {
+        return telegramFailure("Укажите токен бота из BotFather.");
+      }
+      const profile = await telegramGetMe(token);
+      if (!profile.ok) return telegramFailure(profile.error);
+
+      const { error } = await supabase
+        .from("agents")
+        .update({
+          telegram_type: "bot",
+          telegram_bot_token: token,
+          telegram_phone: null,
+          telegram_api_id: null,
+          telegram_api_hash: null,
+          // Зеркало для вебхука /api/webhooks/telegram/[token].
+          tg_bot_token: token,
+          tg_bot_username: profile.username,
+          tg_is_active: true,
+        })
+        .eq("id", agentId);
+      if (error) {
+        if (error.code === "23505") return telegramFailure("Этот бот уже подключён к другому агенту.");
+        return telegramFailure(hideToken(error.message, token));
+      }
+
+      if (previousToken && previousToken !== token) await telegramSetWebhook(previousToken, false);
+      const hooked = await telegramSetWebhook(token, true);
+      revalidatePath("/agents");
+      if (!hooked.ok) return telegramFailure(hooked.error);
+      return { ok: true, error: null, telegram_type: "bot", label: `@${profile.username}` };
+    }
+
+    // Личный аккаунт (userbot): сохраняем креды MTProto. Сам вход по коду
+    // подтверждения выполняет внешний воркер при первом запуске сессии.
+    const phone = input.telegram_phone.replace(/[\s()-]/g, "");
+    if (!/^\+?\d{10,15}$/.test(phone)) {
+      return telegramFailure("Введите номер телефона в международном формате, например +79991234567.");
+    }
+    const apiId = input.telegram_api_id.trim();
+    if (!/^\d{1,20}$/.test(apiId)) {
+      return telegramFailure("API ID — это число с my.telegram.org.");
+    }
+    const apiHash = input.telegram_api_hash.trim();
+    if (!/^[0-9a-fA-F]{32}$/.test(apiHash)) {
+      return telegramFailure("API Hash — это 32-символьная строка с my.telegram.org.");
+    }
+
     const { error } = await supabase
       .from("agents")
       .update({
-        tg_bot_token: token,
-        tg_bot_username: profile.username,
+        telegram_type: "userbot",
+        telegram_bot_token: null,
+        telegram_phone: phone,
+        telegram_api_id: apiId,
+        telegram_api_hash: apiHash,
+        tg_bot_token: null,
+        tg_bot_username: null,
         tg_is_active: true,
       })
       .eq("id", agentId);
     if (error) {
-      if (error.code === "23505") return { ok: false as const, error: "Этот бот уже подключён к другому агенту." };
-      return { ok: false as const, error: hideToken(error.message, token) };
+      if (error.code === "23505") return telegramFailure("Этот аккаунт уже подключён к другому агенту.");
+      return telegramFailure(error.message);
     }
 
-    const hooked = await telegramSetWebhook(token, true);
+    if (previousToken) await telegramSetWebhook(previousToken, false);
     revalidatePath("/agents");
-    if (!hooked.ok) return { ok: false as const, error: hooked.error };
-    return { ok: true as const, error: null };
+    return { ok: true, error: null, telegram_type: "userbot", label: phone };
   } catch (error) {
-    return {
-      ok: false as const,
-      error: hideToken(error instanceof Error ? error.message : "Не удалось подключить Telegram.", token),
-    };
+    const token = input.telegram_type === "bot" ? input.telegram_bot_token.trim() : "";
+    return telegramFailure(
+      hideToken(error instanceof Error ? error.message : "Не удалось подключить Telegram.", token),
+    );
   }
+}
+
+/** Обратная совместимость: подключение только бота по токену. */
+export async function connectTelegram(agentId: string, botToken: string) {
+  const result = await connectTelegramChannel(agentId, {
+    telegram_type: "bot",
+    telegram_bot_token: botToken,
+  });
+  return result.ok ? { ok: true as const, error: null } : { ok: false as const, error: result.error ?? "Не удалось подключить Telegram." };
 }
 
 export async function disconnectTelegram(agentId: string) {
@@ -223,19 +318,29 @@ export async function disconnectTelegram(agentId: string) {
     const userId = await getAuthenticatedUserId();
     const { data, error: lookupError } = await supabase
       .from("agents")
-      .select("tg_bot_token")
+      .select("tg_bot_token, telegram_bot_token")
       .eq("id", agentId)
       .eq("user_id", userId)
       .maybeSingle();
     if (lookupError) return { ok: false as const, error: lookupError.message };
     if (!data) return { ok: false as const, error: "Агент не найден." };
 
-    const token = typeof data.tg_bot_token === "string" ? data.tg_bot_token : "";
+    const rawToken = data.telegram_bot_token ?? data.tg_bot_token;
+    const token = typeof rawToken === "string" ? rawToken : "";
     if (token) await telegramSetWebhook(token, false);
 
     const { error } = await supabase
       .from("agents")
-      .update({ tg_bot_token: null, tg_bot_username: null, tg_is_active: false })
+      .update({
+        tg_bot_token: null,
+        tg_bot_username: null,
+        tg_is_active: false,
+        telegram_type: "bot",
+        telegram_bot_token: null,
+        telegram_phone: null,
+        telegram_api_id: null,
+        telegram_api_hash: null,
+      })
       .eq("id", agentId);
     if (error) return { ok: false as const, error: error.message };
     revalidatePath("/agents");

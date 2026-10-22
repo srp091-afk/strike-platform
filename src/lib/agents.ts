@@ -9,6 +9,7 @@ import {
   readMessageLimit,
   readResponseDelay,
   readSplitMessages,
+  readTelegramType,
   type AgentRecord,
 } from "@/lib/agent-models";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
@@ -82,11 +83,20 @@ async function createWorkspaceUser(
 export async function listChatAgents(): Promise<ChatAgentOption[]> {
   const supabase = createSupabaseAdminClient();
   const userId = await getAuthenticatedUserId();
-  const listed = await supabase
+  const primary = await supabase
     .from("agents")
-    .select("id, name, is_active, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
+    .select("id, name, is_active, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_phone, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
+
+  // Миграция 20261022 (telegram_type / telegram_phone) ещё не применена.
+  const listed = primary.error?.message.includes("telegram_type") || primary.error?.message.includes("telegram_phone")
+    ? await supabase
+        .from("agents")
+        .select("id, name, is_active, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+    : primary;
 
   if (listed.error) {
     throw new Error(listed.error.message);
@@ -98,10 +108,12 @@ export async function listChatAgents(): Promise<ChatAgentOption[]> {
       channels.push({ provider: "whatsapp", label: row.wa_phone_number ? String(row.wa_phone_number) : "" });
     }
     if (row.tg_is_active === true) {
+      const isUserbot = "telegram_type" in row && readTelegramType(row.telegram_type) === "userbot";
+      const phone = isUserbot && "telegram_phone" in row && row.telegram_phone ? String(row.telegram_phone) : "";
       const username = row.tg_bot_username ? String(row.tg_bot_username) : "";
       channels.push({
         provider: "telegram",
-        label: username && !username.startsWith("@") ? `@${username}` : username,
+        label: phone || (username && !username.startsWith("@") ? `@${username}` : username),
       });
     }
     return { id: String(row.id), name: String(row.name ?? "Агент"), channels };
@@ -113,12 +125,17 @@ export async function listAgents(): Promise<AgentRecord[]> {
   const userId = await getAuthenticatedUserId();
   const withDelay = await supabase
     .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_chat_id, created_at")
+    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_chat_id, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   const rows =
     withDelay.error?.message.includes("telegram_chat_id") ||
+    withDelay.error?.message.includes("telegram_type") ||
+    withDelay.error?.message.includes("telegram_bot_token") ||
+    withDelay.error?.message.includes("telegram_phone") ||
+    withDelay.error?.message.includes("telegram_api_id") ||
+    withDelay.error?.message.includes("telegram_api_hash") ||
     withDelay.error?.message.includes("limit_agent_messages") ||
     withDelay.error?.message.includes("human_handoff_duration") ||
     withDelay.error?.message.includes("split_messages")
@@ -164,6 +181,11 @@ export async function listAgents(): Promise<AgentRecord[]> {
     waIsActive: "wa_is_active" in row ? row.wa_is_active === true : false,
     tgBotUsername: "tg_bot_username" in row && row.tg_bot_username ? String(row.tg_bot_username) : null,
     tgIsActive: "tg_is_active" in row ? row.tg_is_active === true : false,
+    telegram_type: readTelegramType("telegram_type" in row ? row.telegram_type : undefined),
+    telegram_bot_token: "telegram_bot_token" in row && row.telegram_bot_token ? String(row.telegram_bot_token) : null,
+    telegram_phone: "telegram_phone" in row && row.telegram_phone ? String(row.telegram_phone) : null,
+    telegram_api_id: "telegram_api_id" in row && row.telegram_api_id ? String(row.telegram_api_id) : null,
+    telegram_api_hash: "telegram_api_hash" in row && row.telegram_api_hash ? String(row.telegram_api_hash) : null,
     telegram_chat_id: "telegram_chat_id" in row && row.telegram_chat_id ? String(row.telegram_chat_id) : null,
   }));
 }

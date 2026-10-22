@@ -39,6 +39,31 @@ export function readActiveChannels(value: unknown): ActiveChannels {
   };
 }
 
+/** Способ подключения Telegram: обычный бот (@BotFather) или личный аккаунт (MTProto). */
+export type TelegramType = "bot" | "userbot";
+
+export const TELEGRAM_TYPES: { value: TelegramType; label: string }[] = [
+  { value: "bot", label: "Telegram Bot" },
+  { value: "userbot", label: "Личный аккаунт" },
+];
+
+export function readTelegramType(value: unknown): TelegramType {
+  return value === "userbot" ? "userbot" : "bot";
+}
+
+/**
+ * Конфигурация канала Telegram в таблице `agents`.
+ * Для `bot` заполняется только `telegram_bot_token`, для `userbot` —
+ * `telegram_phone` + `telegram_api_id` + `telegram_api_hash`.
+ */
+export type TelegramConfig = {
+  telegram_type: TelegramType;
+  telegram_bot_token: string | null;
+  telegram_phone: string | null;
+  telegram_api_id: string | null;
+  telegram_api_hash: string | null;
+};
+
 export type AgentRecord = {
   id: string;
   name: string;
@@ -59,9 +84,30 @@ export type AgentRecord = {
   waIsActive: boolean;
   tgBotUsername: string | null;
   tgIsActive: boolean;
+  telegram_type: TelegramType;
+  telegram_bot_token: string | null;
+  telegram_phone: string | null;
+  telegram_api_id: string | null;
+  telegram_api_hash: string | null;
   telegram_chat_id: string | null;
   created_at: string;
 };
+
+/** Подпись подключённого Telegram-канала: @username бота или номер личного аккаунта. */
+export function telegramChannelLabel(agent: Pick<AgentRecord, "telegram_type" | "telegram_phone" | "tgBotUsername" | "telegram_bot_token">): string | null {
+  if (agent.telegram_type === "userbot") {
+    return agent.telegram_phone ? agent.telegram_phone : null;
+  }
+  if (agent.tgBotUsername) {
+    const username = agent.tgBotUsername.replace(/^@/, "");
+    return username ? `@${username}` : null;
+  }
+  return agent.telegram_bot_token ? "Telegram Bot" : null;
+}
+
+export function isTelegramConnected(agent: Pick<AgentRecord, "telegram_type" | "telegram_phone" | "tgBotUsername" | "telegram_bot_token">): boolean {
+  return telegramChannelLabel(agent) !== null;
+}
 
 export const HANDOFF_DURATIONS = [
   { value: "1_hour", label: "1 час" },

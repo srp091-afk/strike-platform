@@ -79,6 +79,11 @@ create table if not exists public.agents (
   tg_bot_token text,
   tg_bot_username text,
   tg_is_active boolean not null default false,
+  telegram_type text not null default 'bot',
+  telegram_bot_token text,
+  telegram_phone text,
+  telegram_api_id text,
+  telegram_api_hash text,
   telegram_chat_id text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -90,7 +95,9 @@ create table if not exists public.agents (
     and limit_total_messages >= 0
   ),
   constraint agents_human_handoff_duration_check
-    check (human_handoff_duration in ('1_hour', '3_hours', '24_hours', 'forever'))
+    check (human_handoff_duration in ('1_hour', '3_hours', '24_hours', 'forever')),
+  constraint agents_telegram_type_check
+    check (telegram_type in ('bot', 'userbot'))
 );
 
 create index if not exists agents_user_id_idx on public.agents (user_id);
@@ -100,6 +107,12 @@ create unique index if not exists agents_wa_instance_id_key
 create unique index if not exists agents_tg_bot_token_key
   on public.agents (tg_bot_token)
   where tg_bot_token is not null;
+create unique index if not exists agents_telegram_bot_token_key
+  on public.agents (telegram_bot_token)
+  where telegram_bot_token is not null;
+create unique index if not exists agents_telegram_phone_key
+  on public.agents (telegram_phone)
+  where telegram_phone is not null;
 
 drop trigger if exists agents_set_updated_at on public.agents;
 create trigger agents_set_updated_at

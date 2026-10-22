@@ -7,7 +7,8 @@ import { useRouter } from "next/navigation";
 import { mutate as swrMutate } from "swr";
 import { PlaygroundChat } from "@/components/playground-chat";
 import { deleteAgent, saveAgent, type SaveState } from "@/app/agents/actions";
-import { connectTelegram, disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
+import { disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
+import { TelegramConnectModal } from "@/components/TelegramConnectModal";
 import { ChannelIcon } from "@/components/channel-icons";
 import { Button } from "@/components/ui/button";
 import { DialogContent } from "@/components/ui/dialog";
@@ -30,7 +31,9 @@ import {
   DEFAULT_ACTIVE_CHANNELS,
   DEFAULT_AGENT_MODEL,
   HANDOFF_DURATIONS,
+  isTelegramConnected,
   normalizeAgentModel,
+  telegramChannelLabel,
   type ActiveChannels,
   type AgentRecord,
   type HandoffDuration,
@@ -110,7 +113,12 @@ export function AgentManager({
         fresh.waPhoneNumber === current.waPhoneNumber &&
         fresh.tgBotUsername === current.tgBotUsername &&
         fresh.waIsActive === current.waIsActive &&
-        fresh.tgIsActive === current.tgIsActive
+        fresh.tgIsActive === current.tgIsActive &&
+        fresh.telegram_type === current.telegram_type &&
+        fresh.telegram_bot_token === current.telegram_bot_token &&
+        fresh.telegram_phone === current.telegram_phone &&
+        fresh.telegram_api_id === current.telegram_api_id &&
+        fresh.telegram_api_hash === current.telegram_api_hash
       ) {
         return current;
       }
@@ -658,7 +666,7 @@ function ChannelSettings({
       <div>
         <h3 className="font-heading text-lg font-semibold text-white">Активные каналы</h3>
         <p className="mt-1 text-sm leading-6 text-zinc-400">
-          У агента один номер WhatsApp и один Telegram-бот. Выключенный канал не вызывает модель.
+          У агента один номер WhatsApp и один Telegram-канал (бот или личный аккаунт). Выключенный канал не вызывает модель.
         </p>
       </div>
       <input type="hidden" name="active_channels" value={JSON.stringify(channels)} />
@@ -730,7 +738,15 @@ function ChannelSettings({
           onClose={() => setWhatsappOpen(false)}
         />
       ) : null}
-      {telegramOpen && agent ? <TelegramConnectDialog agentId={agent.id} onClose={() => setTelegramOpen(false)} /> : null}
+      {telegramOpen && agent ? (
+        <TelegramConnectModal
+          agentId={agent.id}
+          initialType={agent.telegram_type}
+          initialPhone={agent.telegram_phone ?? ""}
+          initialApiId={agent.telegram_api_id ?? ""}
+          onClose={() => setTelegramOpen(false)}
+        />
+      ) : null}
     </section>
   );
 }
@@ -837,9 +853,13 @@ function WhatsAppPhoneField({ agentId, onSaved }: { agentId: string; onSaved: (p
 
 function TelegramChannel({ agent, onConnect }: { agent: AgentRecord | null; onConnect: () => void }) {
   if (!agent) {
-    return <p className="text-xs leading-5 text-zinc-400">Сохраните агента, чтобы подключить бота.</p>;
+    return <p className="text-xs leading-5 text-zinc-400">Сохраните агента, чтобы подключить Telegram.</p>;
   }
-  if (!agent.tgBotUsername) {
+  // Подключён: подпись (@username бота или номер личного аккаунта) + корзина;
+  // переключатель вкл/выкл — Switch канала Telegram в заголовке блока выше
+  // (как у WhatsApp), он правит active_channels.telegram.
+  const label = telegramChannelLabel(agent);
+  if (!isTelegramConnected(agent) || !label) {
     return (
       <button
         type="button"
@@ -850,10 +870,18 @@ function TelegramChannel({ agent, onConnect }: { agent: AgentRecord | null; onCo
       </button>
     );
   }
+  const isUserbot = agent.telegram_type === "userbot";
   return (
     <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black px-3 py-2.5">
-      <p className="truncate text-sm font-medium text-white">@{agent.tgBotUsername}</p>
-      <DisconnectButton agentId={agent.id} kind="telegram" label={`Отключить бота @${agent.tgBotUsername}`} />
+      <div className="min-w-0">
+        <p className="truncate text-sm font-medium text-white">{label}</p>
+        <p className="text-xs text-zinc-400">{isUserbot ? "Личный аккаунт" : "Telegram Bot"}</p>
+      </div>
+      <DisconnectButton
+        agentId={agent.id}
+        kind="telegram"
+        label={isUserbot ? `Отключить личный аккаунт ${label}` : `Отключить бота ${label}`}
+      />
     </div>
   );
 }
@@ -902,7 +930,7 @@ function DisconnectButton({
             <AlertDialogDescription>
               {kind === "whatsapp"
                 ? "Номер будет снят с этого агента. История чатов сохранится."
-                : "Токен бота будет снят с этого агента. История чатов сохранится."}
+                : "Подключение Telegram (токен бота или данные личного аккаунта) будет очищено у этого агента. История чатов сохранится."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -913,94 +941,6 @@ function DisconnectButton({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
-    </div>
-  );
-}
-
-function TelegramConnectDialog({ agentId, onClose }: { agentId: string; onClose: () => void }) {
-  const router = useRouter();
-  const [token, setToken] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-
-  useEffect(() => {
-    const previous = document.body.style.overflow;
-    document.body.style.overflow = "hidden";
-    function onKey(event: KeyboardEvent) {
-      if (event.key === "Escape") onClose();
-    }
-    window.addEventListener("keydown", onKey);
-    return () => {
-      document.body.style.overflow = previous;
-      window.removeEventListener("keydown", onKey);
-    };
-  }, [onClose]);
-
-  function onSubmit() {
-    setError(null);
-    startTransition(async () => {
-      const result = await connectTelegram(agentId, token);
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      onClose();
-      void swrMutate("/api/agents");
-      router.refresh();
-    });
-  }
-
-  return (
-    <div
-      data-channel-dialog=""
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
-      onKeyDown={(event) => {
-        if (event.key === "Enter") event.preventDefault();
-      }}
-      onMouseDown={(event) => {
-        if (event.target === event.currentTarget) onClose();
-      }}
-    >
-      <div
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="telegram-connect-title"
-        className="w-full max-w-md rounded-2xl border border-zinc-800/50 bg-zinc-950 p-6"
-      >
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Telegram</p>
-        <h2 id="telegram-connect-title" className="mt-1 text-2xl font-semibold">
-          Подключить бота
-        </h2>
-        <label className="mt-5 grid gap-2">
-          <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Bot Token</span>
-          <input
-            className={fieldClass}
-            type="password"
-            value={token}
-            autoComplete="off"
-            placeholder="123456:ABC..."
-            onChange={(event) => setToken(event.target.value)}
-          />
-        </label>
-        {error ? <p className="mt-3 text-sm text-red-400">{error}</p> : null}
-        <div className="mt-5 flex justify-end gap-2">
-          <button
-            type="button"
-            className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white"
-            onClick={onClose}
-          >
-            Закрыть
-          </button>
-          <button
-            type="button"
-            className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black disabled:opacity-50"
-            disabled={pending || token.trim().length < 20}
-            onClick={onSubmit}
-          >
-            {pending ? "Подключение" : "Подключить"}
-          </button>
-        </div>
-      </div>
     </div>
   );
 }
