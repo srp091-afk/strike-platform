@@ -1,7 +1,8 @@
 "use client";
 
-import { Check, Copy, Loader2, Trash, Upload } from "lucide-react";
+import { Check, Copy, Loader2, Trash, Upload, X } from "lucide-react";
 import { useEffect, useRef, useState, useTransition, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { mutate as swrMutate } from "swr";
 
@@ -102,10 +103,13 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
     }
   }
 
-  return (
+  // Портал в body обязателен: модалка открывается из карточки с backdrop-blur,
+  // а backdrop-filter делает предка containing block для fixed-потомков — без
+  // портала окно позиционировалось бы внутри узкой колонки, а не вьюпорта.
+  return createPortal(
     <div
       data-channel-dialog=""
-      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/70 p-4"
+      className="fixed inset-0 z-[80] flex items-center justify-center bg-black/80 p-4"
       onKeyDown={(event) => {
         if (event.key === "Enter" && (event.target as HTMLElement).tagName !== "TEXTAREA") event.preventDefault();
       }}
@@ -117,22 +121,34 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
         role="dialog"
         aria-modal="true"
         aria-labelledby="widget-connect-title"
-        className="max-h-[90vh] w-full max-w-5xl overflow-y-auto rounded-2xl border border-zinc-800/50 bg-zinc-950 p-6"
+        className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-zinc-800/50 bg-zinc-950"
       >
-        <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Web Widget</p>
-        <h2 id="widget-connect-title" className="mt-1 text-2xl font-semibold text-white">
-          Настройка виджета
-        </h2>
+        <div className="flex items-start justify-between gap-3 px-6 pt-6">
+          <div>
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Web Widget</p>
+            <h2 id="widget-connect-title" className="mt-1 text-2xl font-semibold text-white">
+              Настройка виджета
+            </h2>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Закрыть настройку виджета"
+            className="grid size-9 shrink-0 place-items-center rounded-xl border border-zinc-800 bg-zinc-900 text-zinc-300 transition-colors hover:bg-zinc-800 hover:text-white"
+          >
+            <X className="size-4" strokeWidth={2} />
+          </button>
+        </div>
 
-        <Tabs defaultValue="builder" className="mt-5">
-          <TabsList className="grid h-auto max-w-md grid-cols-2">
+        <Tabs defaultValue="builder" className="flex min-h-0 flex-1 flex-col px-6 pt-5">
+          <TabsList className="grid h-auto max-w-md shrink-0 grid-cols-2">
             <TabsTrigger value="builder">Конструктор виджета</TabsTrigger>
             <TabsTrigger value="install">Установка на сайт</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="builder">
-            <div className="grid gap-6 lg:grid-cols-2">
-              <div className="grid content-start gap-4">
+          <TabsContent value="builder" className="min-h-0 flex-1 overflow-y-auto lg:overflow-hidden">
+            <div className="grid min-h-0 gap-6 lg:h-full lg:grid-cols-2">
+              <div className="grid min-h-0 min-w-0 content-start gap-4 overflow-visible pr-0 lg:overflow-y-auto lg:pr-2">
                 <section className={cardClass}>
                   <h3 className="text-sm font-semibold text-white">Имена в чате</h3>
                   <label className="grid gap-2">
@@ -230,8 +246,8 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
             </div>
           </TabsContent>
 
-          <TabsContent value="install">
-            <div className="grid gap-4">
+          <TabsContent value="install" className="min-h-0 flex-1 overflow-y-auto">
+            <div className="grid gap-4 pb-1">
               <section className={cardClass}>
                 <div className="flex items-center justify-between gap-3">
                   <h3 className="text-sm font-semibold text-white">Код виджета</h3>
@@ -270,10 +286,10 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
           </TabsContent>
         </Tabs>
 
-        {error ? <p className="mt-4 text-sm text-red-400">{error}</p> : null}
-        {notice ? <p className="mt-4 text-sm text-zinc-300">{notice}</p> : null}
+        {error ? <p className="shrink-0 px-6 pt-4 text-sm text-red-400">{error}</p> : null}
+        {notice ? <p className="shrink-0 px-6 pt-4 text-sm text-zinc-300">{notice}</p> : null}
 
-        <div className="mt-5 flex justify-end gap-2">
+        <div className="flex shrink-0 justify-end gap-2 px-6 py-5">
           <button
             type="button"
             className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800"
@@ -291,7 +307,8 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -393,7 +410,7 @@ function AvatarField({
 /** Мок виджета, мгновенно отражающий настройки из левой колонки. */
 function WidgetPreview({ settings }: { settings: WidgetSettings }) {
   return (
-    <div className="lg:sticky lg:top-0">
+    <div className="min-w-0">
       <p className={labelClass}>Live-превью</p>
       <div className="mt-2 overflow-hidden rounded-[24px] border border-zinc-800 bg-[#0a0a0a]">
         <header
@@ -408,9 +425,9 @@ function WidgetPreview({ settings }: { settings: WidgetSettings }) {
         </header>
 
         <div className="grid gap-3 px-4 py-4">
-          <div className="flex max-w-[88%] items-end gap-2">
+          <div className="flex max-w-[88%] min-w-0 items-end gap-2">
             <PreviewAvatar url={settings.widget_avatar_agent} name={settings.widget_agent_name} small />
-            <article className="rounded-2xl rounded-bl-md bg-[#262626] px-3.5 py-2.5">
+            <article className="min-w-0 rounded-2xl rounded-bl-md bg-[#262626] px-3.5 py-2.5">
               <p className="mb-0.5 text-[10px] font-semibold tracking-wide text-zinc-400">
                 {settings.widget_agent_name || DEFAULT_WIDGET_SETTINGS.widget_agent_name}
               </p>
@@ -424,9 +441,9 @@ function WidgetPreview({ settings }: { settings: WidgetSettings }) {
             <p className="text-sm leading-6">Здравствуйте! Сколько стоит подключение?</p>
           </article>
 
-          <div className="flex max-w-[88%] items-end gap-2">
+          <div className="flex max-w-[88%] min-w-0 items-end gap-2">
             <PreviewAvatar url={settings.widget_avatar_operator} name={settings.widget_operator_name} small />
-            <article className="rounded-2xl rounded-bl-md bg-[#262626] px-3.5 py-2.5">
+            <article className="min-w-0 rounded-2xl rounded-bl-md bg-[#262626] px-3.5 py-2.5">
               <p className="mb-0.5 text-[10px] font-semibold tracking-wide text-zinc-400">
                 {settings.widget_operator_name || DEFAULT_WIDGET_SETTINGS.widget_operator_name}
               </p>
