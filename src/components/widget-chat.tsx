@@ -3,6 +3,7 @@
 import { MessageCircle, Send, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { WidgetMarkdown } from "@/components/widget-markdown";
 import type { WidgetPosition } from "@/lib/agent-models";
 import type { WidgetConfig } from "@/lib/widget";
 
@@ -174,7 +175,7 @@ export function WidgetChat({ config }: { config: WidgetConfig }) {
                 <WidgetAvatar url={config.widget_avatar_agent} name={config.widget_agent_name} small />
                 <article className="rounded-2xl rounded-bl-md bg-[#262626] px-3.5 py-2.5">
                   <p className="mb-0.5 text-[10px] font-semibold tracking-wide opacity-60">{config.widget_agent_name}</p>
-                  <p className="text-sm leading-6 whitespace-pre-wrap">{message.content}</p>
+                  <WidgetMarkdown text={message.content} />
                 </article>
               </div>
             ) : (
