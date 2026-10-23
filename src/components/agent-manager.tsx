@@ -632,6 +632,7 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.active_channels.whatsapp === right.active_channels.whatsapp &&
     left.active_channels.telegram === right.active_channels.telegram &&
     left.active_channels.instagram === right.active_channels.instagram &&
+    left.active_channels.widget === right.active_channels.widget &&
     left.wa_instance_id === right.wa_instance_id &&
     left.wa_api_token === right.wa_api_token &&
     left.wa_phone_number === right.wa_phone_number
@@ -870,19 +871,26 @@ function ChannelSettings({
           />
         </label>
         <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
-          <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
-            <span className="grid size-9 place-items-center rounded-xl border border-zinc-700 bg-zinc-900 text-white">
-              <Globe className="size-4" strokeWidth={2} />
+          <label className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
+              <span className="grid size-9 place-items-center rounded-xl border border-zinc-700 bg-zinc-900 text-white">
+                <Globe className="size-4" strokeWidth={2} />
+              </span>
+              Web Widget
             </span>
-            Web Widget
-          </span>
+            <Switch
+              checked={channels.widget}
+              onCheckedChange={(checked) => onChannelsChange({ ...channels, widget: checked })}
+              aria-label="Web Widget"
+            />
+          </label>
           <button
             type="button"
             className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
             disabled={connectingChannel === "widget"}
             onClick={() => void handleConnect("widget")}
           >
-            {connectingChannel === "widget" ? "Сохранение агента" : "Настроить виджет"}
+            {connectingChannel === "widget" ? "Сохранение агента" : channels.widget ? "Настроить виджет" : "Подключить"}
           </button>
         </div>
       </div>
@@ -911,6 +919,10 @@ function ChannelSettings({
           agentId={agentId}
           initialSettings={readWidgetSettings(agent ? { ...agent } : undefined)}
           onClose={() => setWidgetOpen(false)}
+          // Сохранённые настройки = виджет инициализирован: включаем тумблер.
+          onSaved={() => {
+            if (!channels.widget) onChannelsChange({ ...channels, widget: true });
+          }}
         />
       ) : null}
     </section>

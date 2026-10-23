@@ -129,6 +129,7 @@ function readChannels(value: FormDataEntryValue | null): ActiveChannels {
       whatsapp: parsed.whatsapp === true,
       telegram: parsed.telegram === true,
       instagram: parsed.instagram === true,
+      widget: parsed.widget === true,
     };
   } catch {
     return { ...DEFAULT_ACTIVE_CHANNELS };

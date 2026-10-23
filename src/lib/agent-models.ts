@@ -18,6 +18,8 @@ export type ActiveChannels = {
   whatsapp: boolean;
   telegram: boolean;
   instagram: boolean;
+  /** Веб-виджет подключён (инициализирован) для агента. */
+  widget: boolean;
 };
 
 /**
@@ -29,6 +31,7 @@ export const DEFAULT_ACTIVE_CHANNELS: ActiveChannels = {
   whatsapp: false,
   telegram: false,
   instagram: false,
+  widget: false,
 };
 
 export function readActiveChannels(value: unknown): ActiveChannels {
@@ -41,6 +44,7 @@ export function readActiveChannels(value: unknown): ActiveChannels {
     whatsapp: record.whatsapp === true,
     telegram: record.telegram === true,
     instagram: record.instagram === true,
+    widget: record.widget === true,
   };
 }
 

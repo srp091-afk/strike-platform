@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 
-import { normalizeAgentModel } from "@/lib/agent-models";
+import { normalizeAgentModel, readActiveChannels } from "@/lib/agent-models";
 import { getOpenAI } from "@/lib/openai";
 import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -51,13 +51,13 @@ export async function POST(request: NextRequest) {
   const supabase = createSupabaseAdminClient();
   const withWidget = await supabase
     .from("agents")
-    .select("id, user_id, system_prompt, model, temperature, is_active, split_messages, widget_greeting, widget_operator_name")
+    .select("id, user_id, system_prompt, model, temperature, is_active, active_channels, split_messages, widget_greeting, widget_operator_name")
     .eq("id", agentId)
     .maybeSingle();
   const loaded = withWidget.error?.message.includes("widget_")
     ? await supabase
         .from("agents")
-        .select("id, user_id, system_prompt, model, temperature, is_active, split_messages")
+        .select("id, user_id, system_prompt, model, temperature, is_active, active_channels, split_messages")
         .eq("id", agentId)
         .maybeSingle()
     : withWidget;
@@ -69,6 +69,9 @@ export async function POST(request: NextRequest) {
   }
   if (!agent || agent.is_active !== true || typeof agent.user_id !== "string") {
     return Response.json({ error: "Виджет не найден." }, { status: 404 });
+  }
+  if (!readActiveChannels(agent.active_channels).widget) {
+    return Response.json({ error: "Виджет отключён." }, { status: 404 });
   }
 
   const visitorId = readVisitorId(record.visitor_id);

@@ -1,6 +1,6 @@
 import "server-only";
 
-import { readWidgetSettings, type WidgetSettings } from "@/lib/agent-models";
+import { readActiveChannels, readWidgetSettings, type WidgetSettings } from "@/lib/agent-models";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const UUID_PATTERN =
@@ -50,6 +50,10 @@ export async function getWidgetConfig(agentId: string): Promise<WidgetConfig | n
     : withSettings.data;
 
   if (!row || row.is_active !== true) return null;
+
+  // Выключенный тумблер Web Widget в настройках агента скрывает виджет на сайтах.
+  const channels = await supabase.from("agents").select("active_channels").eq("id", agentId).maybeSingle();
+  if (!channels.error && !readActiveChannels(channels.data?.active_channels).widget) return null;
 
   return {
     agentId: String(row.id),
