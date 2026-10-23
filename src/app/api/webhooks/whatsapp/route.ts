@@ -30,6 +30,10 @@ type IncomingJob = {
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
+    // Реакция (эмодзи на сообщение) — не реплика: ни в историю, ни в LLM, ни на паузу бота.
+    if (isReactionEvent(body)) {
+      return Response.json({ ok: true, success: true, status: "ok" }, { status: 200 });
+    }
     const type = stringValue(asRecord(body).typeWebhook);
     if (type === "incomingMessageReceived") {
       // Ack GREEN-API immediately; heavy OpenAI/media work runs in after().
@@ -570,6 +574,16 @@ async function insertMessage(
     console.error("[whatsapp webhook] messages insert", error);
     throw error instanceof Error ? error : new Error("Не удалось записать сообщение.");
   }
+}
+
+/**
+ * GREEN-API шлёт реакцию как обычное входящее/исходящее событие с
+ * messageData.typeMessage = "reactionMessage", а сам эмодзи кладёт в
+ * extendedTextMessageData.text — поэтому по тексту её не отличить от сообщения.
+ */
+function isReactionEvent(body: unknown) {
+  const message = asRecord(asRecord(body).messageData);
+  return stringValue(message.typeMessage).toLowerCase().includes("reaction");
 }
 
 function readIncoming(body: unknown): ChatText | null {
