@@ -9,59 +9,170 @@ import { cn } from "@/lib/utils";
 
 const ANNUAL_DISCOUNT = 0.2;
 
-type Plan = {
-  id: "starter" | "pro" | "agency";
-  name: string;
-  monthly: number;
-  blurb: string;
-  features: string[];
-  popular?: boolean;
+type Lang = "en" | "ru";
+
+type PlanId = "starter" | "pro" | "agency";
+
+const PLAN_PRICES: Record<PlanId, number> = { starter: 49, pro: 99, agency: 499 };
+const PLAN_ORDER: PlanId[] = ["starter", "pro", "agency"];
+
+type Dict = {
+  signIn: string;
+  badge: string;
+  title: string;
+  subtitle: string;
+  billingLabel: string;
+  monthly: string;
+  annually: string;
+  save: string;
+  mostPopular: string;
+  perMonth: string;
+  billedAnnually: string;
+  billedMonthly: string;
+  get: (name: string) => string;
+  checkoutSoon: (name: string) => string;
+  plans: Record<PlanId, { name: string; blurb: string; features: string[] }>;
+  flex: {
+    badge: string;
+    descBefore: string;
+    descAfter: string;
+    watermark: string;
+    cta: string;
+  };
+  note: string;
+  rights: string;
+  langLabel: string;
 };
 
-const PLANS: Plan[] = [
-  {
-    id: "starter",
-    name: "Starter",
-    monthly: 49,
-    blurb: "For founders launching their first AI-powered sales funnel.",
-    features: ["150 AI campaigns", "3 AI agents", "2,500 messages / month", "3 AI websites", "All channels included"],
+const DICT: Record<Lang, Dict> = {
+  en: {
+    signIn: "Sign in",
+    badge: "Pricing",
+    title: "Simple, transparent pricing",
+    subtitle:
+      "Start with pay-as-you-go, then scale to thousands of AI conversations across every channel. No hidden fees, no contracts. Upgrade the moment your pipeline demands it.",
+    billingLabel: "Billing period",
+    monthly: "Monthly",
+    annually: "Annually",
+    save: "Save 20%",
+    mostPopular: "Most Popular",
+    perMonth: "/mo",
+    billedAnnually: "billed annually",
+    billedMonthly: "Billed monthly, cancel any time",
+    get: (name) => `Get ${name}`,
+    checkoutSoon: (name) => `${name}: checkout is coming soon. Billing opens shortly.`,
+    plans: {
+      starter: {
+        name: "Starter",
+        blurb: "For founders launching their first AI-powered sales funnel.",
+        features: ["150 AI campaigns", "3 AI agents", "2,500 messages / month", "3 AI websites", "All channels included"],
+      },
+      pro: {
+        name: "Pro",
+        blurb: "For growing teams that want automation to carry the load.",
+        features: [
+          "500 AI campaigns",
+          "10 AI agents",
+          "10,000 messages / month",
+          "10 AI websites",
+          "All channels included",
+          "Team collaboration (up to 3 users)",
+        ],
+      },
+      agency: {
+        name: "Agency",
+        blurb: "For agencies scaling client work across many brands.",
+        features: [
+          "Unlimited AI agents, websites and campaigns",
+          "100,000 messages / month (Fair Use)",
+          "White-label: remove the watermark",
+          "API & Webhooks",
+          "All channels included",
+        ],
+      },
+    },
+    flex: {
+      badge: "Pay-as-you-go",
+      descBefore: "Perfect for getting started. Top up from ",
+      descAfter: " and pay only for what you use. All channels are included: Telegram, Web Widget, social networks and more.",
+      watermark: "Includes the “Powered by STRIKE” watermark.",
+      cta: "Top up from $10",
+    },
+    note: "All prices in USD. Annual billing is charged once per year at a 20% discount. Cancel any time.",
+    rights: "STRIKE. All rights reserved.",
+    langLabel: "Language",
   },
-  {
-    id: "pro",
-    name: "Pro",
-    monthly: 99,
-    blurb: "For growing teams that want automation to carry the load.",
-    popular: true,
-    features: [
-      "500 AI campaigns",
-      "10 AI agents",
-      "10,000 messages / month",
-      "10 AI websites",
-      "All channels included",
-      "Team collaboration (up to 3 users)",
-    ],
+  ru: {
+    signIn: "Войти",
+    badge: "Тарифы",
+    title: "Простые и прозрачные тарифы",
+    subtitle:
+      "Начните с оплаты по факту использования и масштабируйтесь до тысяч ИИ-диалогов во всех каналах. Без скрытых платежей и контрактов. Переходите на следующий тариф, как только этого потребует ваша воронка.",
+    billingLabel: "Период оплаты",
+    monthly: "Ежемесячно",
+    annually: "За год",
+    save: "Скидка 20%",
+    mostPopular: "Популярный",
+    perMonth: "/мес",
+    billedAnnually: "оплата за год",
+    billedMonthly: "Оплата каждый месяц, отмена в любой момент",
+    get: (name) => `Выбрать ${name}`,
+    checkoutSoon: (name) => `${name}: оплата скоро будет доступна. Биллинг откроется в ближайшее время.`,
+    plans: {
+      starter: {
+        name: "Стартовый (Starter)",
+        blurb: "Для основателей, которые запускают первую воронку продаж на базе ИИ.",
+        features: [
+          "150 ИИ-кампаний",
+          "3 ИИ-агента",
+          "2 500 сообщений в месяц",
+          "3 ИИ-сайта",
+          "Все каналы связи включены",
+        ],
+      },
+      pro: {
+        name: "Про (Pro)",
+        blurb: "Для растущих команд, которые хотят переложить рутину на автоматизацию.",
+        features: [
+          "500 ИИ-кампаний",
+          "10 ИИ-агентов",
+          "10 000 сообщений в месяц",
+          "10 ИИ-сайтов",
+          "Все каналы связи включены",
+          "Командная работа (до 3 пользователей)",
+        ],
+      },
+      agency: {
+        name: "Агентство (Agency)",
+        blurb: "Для агентств, которые масштабируют работу с клиентами на множество брендов.",
+        features: [
+          "Безлимит ИИ-агентов, сайтов и кампаний",
+          "100 000 сообщений в месяц (Fair Use)",
+          "White-label: убрать водяной знак",
+          "API и вебхуки",
+          "Все каналы связи включены",
+        ],
+      },
+    },
+    flex: {
+      badge: "Оплата по факту использования",
+      descBefore: "Отлично подходит для старта. Пополнение от ",
+      descAfter: " — платите только за то, что используете. Включены все каналы: Telegram, веб-виджет, соцсети и другие.",
+      watermark: "Включает водяной знак «Powered by STRIKE».",
+      cta: "Пополнить от $10",
+    },
+    note: "Все цены в USD. Годовая оплата списывается раз в год со скидкой 20%. Отмена в любой момент.",
+    rights: "STRIKE. Все права защищены.",
+    langLabel: "Язык",
   },
-  {
-    id: "agency",
-    name: "Agency",
-    monthly: 499,
-    blurb: "For agencies scaling client work across many brands.",
-    features: [
-      "Unlimited AI agents, websites and campaigns",
-      "100,000 messages / month (Fair Use)",
-      "White-label: remove the watermark",
-      "API & Webhooks",
-      "All channels included",
-    ],
-  },
-];
+};
 
-function perMonth(plan: Plan, annual: boolean) {
-  return annual ? Math.round(plan.monthly * (1 - ANNUAL_DISCOUNT)) : plan.monthly;
+function perMonth(plan: PlanId, annual: boolean) {
+  return annual ? Math.round(PLAN_PRICES[plan] * (1 - ANNUAL_DISCOUNT)) : PLAN_PRICES[plan];
 }
 
-function perYear(plan: Plan) {
-  return Math.round(plan.monthly * 12 * (1 - ANNUAL_DISCOUNT));
+function perYear(plan: PlanId) {
+  return Math.round(PLAN_PRICES[plan] * 12 * (1 - ANNUAL_DISCOUNT));
 }
 
 /** Плавное появление блока при попадании во вьюпорт (без внешних библиотек). */
@@ -107,12 +218,11 @@ function trackPointer(event: MouseEvent<HTMLElement>) {
   event.currentTarget.style.setProperty("--my", `${event.clientY - box.top}px`);
 }
 
-function comingSoon(name: string) {
-  toast.success(`${name}: checkout is coming soon. Billing opens shortly.`);
-}
-
 export function PricingView() {
+  // Язык хранится в локальном состоянии; по умолчанию EN.
+  const [lang, setLang] = useState<Lang>("en");
   const [annual, setAnnual] = useState(false);
+  const t = DICT[lang];
 
   return (
     <div className="relative isolate overflow-hidden bg-black text-zinc-400">
@@ -129,72 +239,94 @@ export function PricingView() {
         <Link href="/" className="text-sm font-medium uppercase tracking-[0.18em] text-white">
           STRIKE
         </Link>
-        <Link
-          href="/login"
-          className="rounded-lg border border-white/10 bg-white/5 px-3.5 py-1.5 text-sm font-medium text-zinc-200 backdrop-blur transition-colors hover:border-white/20 hover:bg-white/10 hover:text-white"
-        >
-          Sign in
-        </Link>
+        <div className="flex items-center gap-3">
+          <LangSwitch lang={lang} onChange={setLang} label={t.langLabel} />
+          <Link
+            href="/login"
+            className="rounded-lg border border-white/10 bg-white/5 px-3.5 py-1.5 text-sm font-medium text-zinc-200 backdrop-blur transition-colors hover:border-white/20 hover:bg-white/10 hover:text-white"
+          >
+            {t.signIn}
+          </Link>
+        </div>
       </header>
 
       <section className="mx-auto w-full max-w-6xl px-4 pt-16 pb-24 sm:px-6 sm:pt-24">
         <Reveal className="mx-auto max-w-3xl text-center">
           <p className="mx-auto inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium tracking-wide text-zinc-300 backdrop-blur">
             <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
-            Pricing
+            {t.badge}
           </p>
           <h1 className="mt-6 bg-gradient-to-b from-white to-zinc-500 bg-clip-text pb-2 text-5xl leading-[1.15] font-semibold tracking-tight text-transparent sm:text-6xl">
-            Simple, transparent pricing
+            {t.title}
           </h1>
-          <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg">
-            Start with pay-as-you-go, then scale to thousands of AI conversations across every channel. No hidden fees,
-            no contracts. Upgrade the moment your pipeline demands it.
-          </p>
+          <p className="mx-auto mt-5 max-w-2xl text-base leading-7 text-zinc-400 sm:text-lg">{t.subtitle}</p>
         </Reveal>
 
-        <Reveal delay={120} className="mt-10 flex items-center justify-center gap-3">
-          <BillingToggle annual={annual} onChange={setAnnual} />
+        <Reveal delay={120} className="mt-10 flex flex-wrap items-center justify-center gap-3">
+          <BillingToggle annual={annual} onChange={setAnnual} t={t} />
           <span
             className={cn(
               "rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-300 shadow-[0_0_20px_-6px_rgba(52,211,153,0.7)] transition-opacity",
               annual ? "opacity-100" : "opacity-70",
             )}
           >
-            Save 20%
+            {t.save}
           </span>
         </Reveal>
 
         <div className="mt-14 grid items-stretch gap-5 lg:grid-cols-3">
-          {PLANS.map((plan, index) => (
-            <Reveal key={plan.id} delay={index * 110} className="h-full">
-              <PlanCard plan={plan} annual={annual} />
+          {PLAN_ORDER.map((id, index) => (
+            <Reveal key={id} delay={index * 110} className="h-full">
+              <PlanCard id={id} annual={annual} t={t} />
             </Reveal>
           ))}
         </div>
 
         <Reveal delay={150} className="mt-6">
-          <FlexBanner />
+          <FlexBanner t={t} />
         </Reveal>
 
         <Reveal className="mt-14 text-center">
-          <p className="text-sm text-zinc-500">
-            All prices in USD. Annual billing is charged once per year at a 20% discount. Cancel any time.
-          </p>
+          <p className="text-sm text-zinc-500">{t.note}</p>
         </Reveal>
       </section>
 
-      <footer className="border-t border-white/5 py-8 text-center text-xs text-zinc-600">
-        &copy; STRIKE. All rights reserved.
-      </footer>
+      <footer className="border-t border-white/5 py-8 text-center text-xs text-zinc-600">&copy; {t.rights}</footer>
     </div>
   );
 }
 
-function BillingToggle({ annual, onChange }: { annual: boolean; onChange: (annual: boolean) => void }) {
+/** Минималистичный переключатель «RU | EN». */
+function LangSwitch({ lang, onChange, label }: { lang: Lang; onChange: (lang: Lang) => void; label: string }) {
+  const options: Lang[] = ["ru", "en"];
+  return (
+    <div role="radiogroup" aria-label={label} className="flex items-center text-xs font-medium tracking-wide">
+      {options.map((option, index) => (
+        <span key={option} className="flex items-center">
+          {index > 0 ? <span aria-hidden className="mx-1.5 text-zinc-700">|</span> : null}
+          <button
+            type="button"
+            role="radio"
+            aria-checked={lang === option}
+            onClick={() => onChange(option)}
+            className={cn(
+              "rounded px-1 py-0.5 uppercase transition-colors",
+              lang === option ? "text-white" : "text-zinc-500 hover:text-zinc-300",
+            )}
+          >
+            {option}
+          </button>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function BillingToggle({ annual, onChange, t }: { annual: boolean; onChange: (annual: boolean) => void; t: Dict }) {
   return (
     <div
       role="radiogroup"
-      aria-label="Billing period"
+      aria-label={t.billingLabel}
       className="relative grid grid-cols-2 rounded-full border border-white/10 bg-white/5 p-1 backdrop-blur"
     >
       <span
@@ -205,11 +337,11 @@ function BillingToggle({ annual, onChange }: { annual: boolean; onChange: (annua
         )}
       />
       {[
-        { label: "Monthly", value: false },
-        { label: "Annually", value: true },
+        { label: t.monthly, value: false },
+        { label: t.annually, value: true },
       ].map((option) => (
         <button
-          key={option.label}
+          key={String(option.value)}
           type="button"
           role="radio"
           aria-checked={annual === option.value}
@@ -226,9 +358,10 @@ function BillingToggle({ annual, onChange }: { annual: boolean; onChange: (annua
   );
 }
 
-function PlanCard({ plan, annual }: { plan: Plan; annual: boolean }) {
-  const price = perMonth(plan, annual);
-  const highlighted = plan.popular === true;
+function PlanCard({ id, annual, t }: { id: PlanId; annual: boolean; t: Dict }) {
+  const plan = t.plans[id];
+  const price = perMonth(id, annual);
+  const highlighted = id === "pro";
 
   return (
     <div
@@ -263,11 +396,11 @@ function PlanCard({ plan, annual }: { plan: Plan; annual: boolean }) {
           />
         ) : null}
 
-        <div className="relative flex items-center justify-between">
+        <div className="relative flex items-center justify-between gap-2">
           <h2 className="text-lg font-semibold text-white">{plan.name}</h2>
           {highlighted ? (
-            <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold tracking-wide text-black shadow-[0_0_20px_-2px_rgba(255,255,255,0.6)]">
-              Most Popular
+            <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[11px] font-semibold tracking-wide text-black shadow-[0_0_20px_-2px_rgba(255,255,255,0.6)]">
+              {t.mostPopular}
             </span>
           ) : null}
         </div>
@@ -278,23 +411,23 @@ function PlanCard({ plan, annual }: { plan: Plan; annual: boolean }) {
             <span key={price} className="animate-in text-5xl font-semibold tracking-tight text-white tabular-nums">
               ${price}
             </span>
-            <span className="text-sm text-zinc-500">/mo</span>
+            <span className="text-sm text-zinc-500">{t.perMonth}</span>
           </div>
           <p className="mt-2 min-h-5 text-xs text-zinc-500">
             {annual ? (
               <>
-                <span className="text-zinc-300">${perYear(plan).toLocaleString("en-US")}</span> billed annually
-                <span className="ml-1.5 line-through decoration-zinc-600">${plan.monthly * 12}</span>
+                <span className="text-zinc-300">${perYear(id).toLocaleString("en-US")}</span> {t.billedAnnually}
+                <span className="ml-1.5 line-through decoration-zinc-600">${PLAN_PRICES[id] * 12}</span>
               </>
             ) : (
-              "Billed monthly, cancel any time"
+              t.billedMonthly
             )}
           </p>
         </div>
 
         <button
           type="button"
-          onClick={() => comingSoon(plan.name)}
+          onClick={() => toast.success(t.checkoutSoon(plan.name))}
           className={cn(
             "relative mt-7 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-200 active:scale-[0.98]",
             highlighted
@@ -302,7 +435,7 @@ function PlanCard({ plan, annual }: { plan: Plan; annual: boolean }) {
               : "border border-white/15 bg-white/5 text-white hover:border-white/30 hover:bg-white/10",
           )}
         >
-          Get {plan.name}
+          {t.get(plan.name)}
           <ArrowRight className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" strokeWidth={2} />
         </button>
 
@@ -326,7 +459,7 @@ function PlanCard({ plan, annual }: { plan: Plan; annual: boolean }) {
   );
 }
 
-function FlexBanner() {
+function FlexBanner({ t }: { t: Dict }) {
   return (
     <div
       onMouseMove={trackPointer}
@@ -347,22 +480,23 @@ function FlexBanner() {
             <div className="flex flex-wrap items-center gap-2.5">
               <h2 className="text-lg font-semibold text-white">Flex</h2>
               <span className="rounded-full border border-white/10 bg-white/5 px-2.5 py-0.5 text-xs text-zinc-300">
-                Pay-as-you-go
+                {t.flex.badge}
               </span>
             </div>
             <p className="mt-1.5 max-w-xl text-sm leading-6 text-zinc-400">
-              Perfect for getting started. Top up from <span className="font-semibold text-white">$10</span> and pay only
-              for what you use. All channels are included: Telegram, Web Widget, social networks and more.
+              {t.flex.descBefore}
+              <span className="font-semibold text-white">$10</span>
+              {t.flex.descAfter}
             </p>
-            <p className="mt-2 text-xs text-zinc-500">Includes the &ldquo;Powered by STRIKE&rdquo; watermark.</p>
+            <p className="mt-2 text-xs text-zinc-500">{t.flex.watermark}</p>
           </div>
         </div>
         <button
           type="button"
-          onClick={() => comingSoon("Flex")}
+          onClick={() => toast.success(t.checkoutSoon("Flex"))}
           className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition-all duration-200 hover:border-white/30 hover:bg-white/10 active:scale-[0.98]"
         >
-          Top up from $10
+          {t.flex.cta}
           <ArrowRight className="size-4" strokeWidth={2} />
         </button>
       </div>

@@ -6,7 +6,9 @@ export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url);
   const code = requestUrl.searchParams.get("code");
   const origin = requestUrl.origin;
-  const next = requestUrl.searchParams.get("next") || "/agents";
+  const rawNext = requestUrl.searchParams.get("next");
+  // Только внутренние пути: защита от open redirect.
+  const next = rawNext && rawNext.startsWith("/") && !rawNext.startsWith("//") ? rawNext : "/";
 
   if (!code) {
     return NextResponse.redirect(new URL("/login?error=no_code", origin));

@@ -2,7 +2,7 @@
 
 import { Loader2, Mail } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 
 import { GoogleSignInButton } from "@/app/login/google-sign-in";
 import { Button } from "@/components/ui/button";
@@ -16,7 +16,15 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * /auth/callback, который обменивает code на сессию — тот же маршрут, что и у Google.
  */
 export function LoginPanel() {
-  const callbackError = useSearchParams().get("error");
+  const searchParams = useSearchParams();
+  const callbackError = searchParams.get("error");
+  const authCode = searchParams.get("code");
+
+  // Если Supabase вернул code на /login — передаём его в обработчик, чтобы не зависать на экране входа.
+  useEffect(() => {
+    if (!authCode) return;
+    window.location.replace(`/auth/callback?code=${encodeURIComponent(authCode)}&next=/`);
+  }, [authCode]);
   const [email, setEmail] = useState("");
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -37,7 +45,7 @@ export function LoginPanel() {
       const supabase = createSupabaseBrowserClient();
       const { error: otpError } = await supabase.auth.signInWithOtp({
         email: address,
-        options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
+        options: { emailRedirectTo: `${window.location.origin}/auth/callback?next=/` },
       });
       if (otpError) {
         setError(otpError.message);
