@@ -43,27 +43,17 @@ export async function middleware(request: NextRequest) {
 
   const isPublic =
     pathname === "/login" ||
+    // Публичная маркетинговая страница тарифов.
+    pathname === "/pricing" ||
     pathname === "/api/webhooks" ||
     pathname.startsWith("/api/webhooks/") ||
     // Публичный веб-виджет: страница в iframe на чужих сайтах и её чат-API.
     pathname === "/widget" ||
     pathname.startsWith("/widget/") ||
-    pathname === "/api/widget-chat" ||
-    // TEMP: local QA without Google — remove before relying on prod auth for chats.
-    pathname === "/chats" ||
-    pathname.startsWith("/chats/") ||
-    pathname === "/api/chats" ||
-    pathname.startsWith("/api/chats/") ||
-    pathname === "/api/agents" ||
-    pathname.startsWith("/api/agents/") ||
-    // TEMP: local QA for creative download/ZIP/delete on project dashboard.
-    pathname === "/ads" ||
-    pathname.startsWith("/ads/") ||
-    pathname === "/api/ads" ||
-    pathname.startsWith("/api/ads/");
+    pathname === "/api/widget-chat";
 
   // Локальный dev-сервер открывает страницы без Google. На production редирект остаётся
-  // (кроме явных public routes выше — сейчас туда временно добавлены /chats для теста).
+  // для всего, кроме явных public routes выше.
   if (!user && !isPublic && process.env.NODE_ENV !== "development") {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
