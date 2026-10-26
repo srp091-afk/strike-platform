@@ -1,6 +1,6 @@
 "use client";
 
-import { LogOut, Settings } from "lucide-react";
+import { CreditCard, LogOut, Settings } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
@@ -82,6 +82,15 @@ export function AccountMenu({ account }: { account: AccountProfile }) {
           className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-60 rounded-xl border border-zinc-800 bg-zinc-950 p-1.5"
         >
           <p className="truncate px-2.5 py-2 text-xs text-zinc-500 sm:hidden">{account.email}</p>
+          <Link
+            role="menuitem"
+            href="/dashboard/billing"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-900 hover:text-white"
+          >
+            <CreditCard className="size-4" strokeWidth={2} />
+            Биллинг
+          </Link>
           <Link
             role="menuitem"
             href="/settings"
