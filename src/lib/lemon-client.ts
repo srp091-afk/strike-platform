@@ -37,6 +37,27 @@ export function openLemonOverlay(url: string): void {
   window.location.assign(plain.toString());
 }
 
+/** Открывает Customer Portal в новой вкладке (вкладка создаётся синхронно, чтобы не сработал блокировщик). */
+export async function openCustomerPortal(): Promise<void> {
+  const tab = window.open("", "_blank");
+  try {
+    const response = await fetch("/api/billing/portal", { cache: "no-store" });
+    const body = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
+    if (!response.ok || !body?.url) {
+      throw new Error(body?.error ?? "Не удалось открыть портал управления.");
+    }
+    if (tab) {
+      tab.opener = null;
+      tab.location.href = body.url;
+    } else {
+      window.location.assign(body.url);
+    }
+  } catch (error) {
+    tab?.close();
+    throw error;
+  }
+}
+
 /** Вызывает callback после успешной оплаты в оверлее (событие Checkout.Success). */
 export function watchCheckoutSuccess(onSuccess: () => void): void {
   window.createLemonSqueezy?.();

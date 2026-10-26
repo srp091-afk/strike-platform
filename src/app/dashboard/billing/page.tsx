@@ -33,8 +33,10 @@ async function LiveBilling() {
     usage: [
       { key: "messages", used: overview.usage.messages, limit: limits.messages },
       { key: "agents", used: overview.usage.agents, limit: limits.agents },
+      { key: "sites", used: overview.usage.sites, limit: limits.sites },
       { key: "campaigns", used: overview.usage.campaigns, limit: limits.campaigns },
     ],
+    hasSubscription: overview.hasSubscription,
     transactions: overview.transactions,
   };
 

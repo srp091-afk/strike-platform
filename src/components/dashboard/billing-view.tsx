@@ -6,7 +6,8 @@ import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from
 import { useRouter } from "next/navigation";
 
 import { toast } from "@/components/ui/toaster";
-import { openTopUpCheckout, watchCheckoutSuccess } from "@/lib/lemon-client";
+import { BillingPlans } from "@/components/dashboard/billing-plans";
+import { openCustomerPortal, openTopUpCheckout, watchCheckoutSuccess } from "@/lib/lemon-client";
 import { cn } from "@/lib/utils";
 
 const MIN_TOPUP = 10;
@@ -21,11 +22,12 @@ export type BillingData = {
   status: string | null;
   renewsAt: string | null;
   balanceUsd: number;
-  usage: { key: "messages" | "agents" | "campaigns"; used: number; limit: number | null }[];
+  usage: { key: "messages" | "agents" | "campaigns" | "sites"; used: number; limit: number | null }[];
+  hasSubscription: boolean;
   transactions: { id: string; createdAt: string; description: string; method: string; amountUsd: number; status: string }[];
 };
 
-const USAGE_LABELS = { messages: "Сообщения", agents: "AI-агенты", campaigns: "AI-кампании" } as const;
+const USAGE_LABELS = { messages: "Сообщения", agents: "AI-агенты", sites: "AI-сайты", campaigns: "AI-кампании" } as const;
 const PLAN_TITLES = { free: "Flex (Pay-as-you-go)", starter: "Starter Plan", pro: "Pro Plan", agency: "Agency Plan" } as const;
 
 const DATE_FORMAT = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" });
@@ -76,6 +78,7 @@ export function BillingView({ data }: { data: BillingData }) {
   const [amountInput, setAmountInput] = useState(String(DEFAULT_TOPUP));
   const [copied, setCopied] = useState(false);
   const [paying, setPaying] = useState(false);
+  const [managing, setManaging] = useState(false);
   const router = useRouter();
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -107,6 +110,23 @@ export function BillingView({ data }: { data: BillingData }) {
       toast.error(error instanceof Error ? error.message : "Не удалось открыть чекаут.");
     } finally {
       setPaying(false);
+    }
+  }
+
+  /** Есть подписка — портал Lemon Squeezy; нет — прокрутка к выбору тарифа. */
+  async function manageSubscription() {
+    if (!data.hasSubscription) {
+      document.getElementById("plans")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      return;
+    }
+    if (managing) return;
+    setManaging(true);
+    try {
+      await openCustomerPortal();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось открыть портал управления.");
+    } finally {
+      setManaging(false);
     }
   }
 
@@ -147,7 +167,11 @@ export function BillingView({ data }: { data: BillingData }) {
                 <p className="mt-1 text-sm text-zinc-400">
                   {data.plan === "free"
                     ? "Оплата по факту использования с баланса"
-                    : `$${data.priceUsd} / мес${data.renewsAt ? ` · следующее списание ${formatDate(data.renewsAt)}` : ""}`}
+                    : `$${data.priceUsd} / мес${
+                        data.renewsAt
+                          ? ` · ${data.status === "cancelled" ? "доступ до" : "следующее списание"} ${formatDate(data.renewsAt)}`
+                          : ""
+                      }`}
                 </p>
               </div>
               <span
@@ -164,9 +188,10 @@ export function BillingView({ data }: { data: BillingData }) {
 
             <button
               type="button"
-              onClick={() => toast.success("Управление подпиской скоро будет доступно.")}
+              onClick={() => void manageSubscription()}
               className="mt-6 inline-flex w-full items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition-all duration-200 hover:border-white/30 hover:bg-white/10 active:scale-[0.98] sm:w-auto"
             >
+              {managing ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
               Управлять подпиской
             </button>
 
@@ -336,6 +361,8 @@ export function BillingView({ data }: { data: BillingData }) {
             </div>
           </Card>
         </div>
+
+        <BillingPlans currentPlan={data.plan} subscriptionActive={data.plan !== "free" && data.status === "active"} />
 
         {/* История транзакций */}
         <section className="mt-5">

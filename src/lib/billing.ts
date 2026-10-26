@@ -5,11 +5,11 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 export type PlanId = "free" | "starter" | "pro" | "agency";
 
 /** Лимиты тарифов (null — без лимита). Совпадают с карточками на /pricing. */
-export const PLAN_LIMITS: Record<PlanId, { messages: number | null; agents: number | null; campaigns: number | null }> = {
-  free: { messages: null, agents: null, campaigns: null },
-  starter: { messages: 2500, agents: 3, campaigns: 150 },
-  pro: { messages: 10000, agents: 10, campaigns: 500 },
-  agency: { messages: 100000, agents: null, campaigns: null },
+export const PLAN_LIMITS: Record<PlanId, { messages: number | null; agents: number | null; campaigns: number | null; sites: number | null }> = {
+  free: { messages: null, agents: null, campaigns: null, sites: null },
+  starter: { messages: 2500, agents: 3, campaigns: 150, sites: 3 },
+  pro: { messages: 10000, agents: 10, campaigns: 500, sites: 10 },
+  agency: { messages: 100000, agents: null, campaigns: null, sites: null },
 };
 
 export const PLAN_PRICE_USD: Record<PlanId, number> = { free: 0, starter: 49, pro: 99, agency: 499 };
@@ -28,7 +28,9 @@ export type BillingOverview = {
   subscriptionStatus: string | null;
   renewsAt: string | null;
   balanceUsd: number;
-  usage: { messages: number; agents: number; campaigns: number };
+  usage: { messages: number; agents: number; campaigns: number; sites: number };
+  /** Есть ли привязанная подписка Lemon Squeezy (для портала управления). */
+  hasSubscription: boolean;
   transactions: BillingTransaction[];
 };
 
@@ -44,10 +46,10 @@ function startOfMonthIso() {
 export async function getBillingOverview(userId: string): Promise<BillingOverview> {
   const admin = createSupabaseAdminClient();
 
-  const [profile, messages, agents, campaigns, transactions] = await Promise.all([
+  const [profile, messages, agents, campaigns, sites, transactions] = await Promise.all([
     admin
       .from("profiles")
-      .select("plan, subscription_status, plan_renews_at, balance_usd")
+      .select("plan, subscription_status, plan_renews_at, balance_usd, lemon_subscription_id")
       .eq("id", userId)
       .maybeSingle(),
     admin
@@ -57,6 +59,7 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
       .gte("created_at", startOfMonthIso()),
     admin.from("agents").select("id", { count: "exact", head: true }).eq("user_id", userId),
     admin.from("ad_projects").select("id", { count: "exact", head: true }).eq("user_id", userId),
+    admin.from("landings").select("id", { count: "exact", head: true }).eq("user_id", userId),
     admin
       .from("billing_transactions")
       .select("id, created_at, description, method, amount_usd, status")
@@ -77,7 +80,9 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
       messages: messages.count ?? 0,
       agents: agents.count ?? 0,
       campaigns: campaigns.count ?? 0,
+      sites: sites.count ?? 0,
     },
+    hasSubscription: Boolean(profile.data?.lemon_subscription_id),
     transactions: (transactions.data ?? []).map((row) => ({
       id: String(row.id),
       createdAt: String(row.created_at),

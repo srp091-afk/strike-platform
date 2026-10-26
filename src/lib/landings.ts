@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
   LANDING_SECTION_TYPES,
@@ -169,9 +170,10 @@ export async function saveLanding(input: {
   }
 
   const slug = await uniqueSlug(input.title);
+  const userId = await getAuthenticatedUserId();
   const { data, error } = await supabase
     .from("landings")
-    .insert({ ...row, slug })
+    .insert({ ...row, slug, user_id: userId })
     .select("id, slug, title, subtitle, image_url, agent_id, capture_mode, welcome_message, success_message, bullets, created_at, agents(name)")
     .single();
   if (error || !data) throw new Error(error?.message ?? "Не удалось создать воронку.");
