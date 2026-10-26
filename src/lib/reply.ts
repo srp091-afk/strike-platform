@@ -5,17 +5,29 @@ const SPLIT_TAG = "[SPLIT]";
 const SPLIT_RULE =
   "Если нужно отправить несколько сообщений подряд, разделяй их тегом [SPLIT]. Списки, абзацы и обычные переносы строк оставляй внутри одного сообщения. Тег [SPLIT] ставь только между отдельными сообщениями.";
 
+const PLAIN_TEXT_RULE =
+  "Никогда не используй markdown-форматирование (звездочки * или ** для жирного шрифта, решетки). Пиши только простым текстом, как обычный человек в мессенджере.";
+
 export function systemPromptWithSplit(prompt: string, splitMessages: unknown) {
-  const base = prompt.trim();
+  const base = `${prompt.trim()}\n\n${PLAIN_TEXT_RULE}`;
   if (!readSplitMessages(splitMessages)) return base;
   return `${base}\n\n${SPLIT_RULE}`;
+}
+
+/** Страховка на случай, если модель проигнорировала промпт: вырезает * и ** и решетки заголовков. */
+export function stripMarkdown(text: string) {
+  return text
+    .replace(/^[ \t]*\*[ \t]+/gm, "- ")
+    .replace(/\*+/g, "")
+    .replace(/^[ \t]*#{1,6}[ \t]+/gm, "");
 }
 
 /**
  * Части ответа для всех каналов. Флаг выключен — одно сообщение с целым текстом. Включён — сначала теги [SPLIT],
  * а если модель их не поставила, режем по абзацам: иначе настройка «Дробить текст» ничего бы не меняла.
  */
-export function replyChunks(text: string, splitMessages: unknown) {
+export function replyChunks(rawText: string, splitMessages: unknown) {
+  const text = stripMarkdown(rawText);
   if (!readSplitMessages(splitMessages)) {
     const whole = stripSplitTag(text).trim();
     return whole ? [whole] : [];
