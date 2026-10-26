@@ -117,16 +117,23 @@ export function WidgetChat({ config }: { config: WidgetConfig }) {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ agent_id: config.agentId, visitor_id: visitorId, messages: transcript }),
       });
-      const payload = (await response.json().catch(() => null)) as { reply?: string; error?: string; visitor_id?: string } | null;
+      const payload = (await response.json().catch(() => null)) as {
+        reply?: string;
+        replies?: string[];
+        error?: string;
+        visitor_id?: string;
+      } | null;
       if (payload?.visitor_id) rememberVisitorId(config.agentId, payload.visitor_id);
-      setMessages((current) => [
-        ...current,
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: payload?.reply || payload?.error || "Не удалось ответить. Попробуйте позже.",
-        },
-      ]);
+
+      const parts =
+        Array.isArray(payload?.replies) && payload.replies.length > 0
+          ? payload.replies
+          : [payload?.reply || payload?.error || "Не удалось ответить. Попробуйте позже."];
+      for (const [index, content] of parts.entries()) {
+        // Пауза «на печать» между частями одного ответа (2–4 с); индикатор набора остаётся включённым.
+        if (index > 0) await new Promise((resolve) => setTimeout(resolve, 2000 + Math.random() * 2000));
+        setMessages((current) => [...current, { id: crypto.randomUUID(), role: "assistant", content }]);
+      }
     } catch {
       setMessages((current) => [
         ...current,

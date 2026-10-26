@@ -2,10 +2,10 @@ import type { NextRequest } from "next/server";
 
 import { normalizeAgentModel } from "@/lib/agent-models";
 import { getOpenAI } from "@/lib/openai";
-import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
+import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 type HistoryMessage = {
   role: "user" | "assistant";
@@ -80,9 +80,11 @@ export async function POST(request: NextRequest) {
           return;
         }
 
-        chunks.forEach((content, index) => {
+        for (const [index, content] of chunks.entries()) {
+          // Та же пауза «на печать», что и в боевых каналах.
+          if (index > 0) await sleep(splitPauseMs());
           send({ type: "chunk", index, content });
-        });
+        }
         send({ type: "done" });
       } catch (failure) {
         send({

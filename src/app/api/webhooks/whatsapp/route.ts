@@ -5,7 +5,7 @@ import { normalizeAgentModel, readHandoffDuration, readMessageLimit } from "@/li
 import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
-import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
+import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { readGreenMedia, resolveWhatsAppMedia, visionModel, type VisionImage, type WhatsAppMedia } from "@/lib/whatsapp-media";
 
 type AdminClient = SupabaseClient;
@@ -301,10 +301,12 @@ async function processIncomingAi(job: IncomingJob) {
     if (chunks.length === 0) throw new Error("Модель вернула пустой ответ.");
 
     let preview = chunks[0]!;
-    for (const chunk of chunks) {
+    for (const [index, chunk] of chunks.entries()) {
       let delivered = false;
       let outboundId: string | null = null;
       try {
+        // Каждое следующее сообщение — после паузы «на печать» (2–4 с), чтобы не слать пачкой и не ловить бан.
+        if (index > 0) await sleep(splitPauseMs());
         if (responseDelay > 0) {
           await new Promise((resolve) => setTimeout(resolve, responseDelay * 1000));
         }

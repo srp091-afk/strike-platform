@@ -106,18 +106,22 @@ export async function POST(request: NextRequest) {
       ],
     });
 
-    const reply = replyChunks(completion.choices[0]?.message?.content?.trim() ?? "", agent.split_messages).join("\n\n");
-    if (!reply) {
+    const replies = replyChunks(completion.choices[0]?.message?.content?.trim() ?? "", agent.split_messages);
+    if (replies.length === 0) {
       return Response.json({ error: "Модель вернула пустой ответ." }, { status: 502 });
     }
     if (thread) {
       try {
-        await appendWidgetReply(supabase, thread.conversationId, reply);
+        // Каждая часть — отдельное сообщение в инбоксе, как и в остальных каналах.
+        for (const part of replies) {
+          await appendWidgetReply(supabase, thread.conversationId, part);
+        }
       } catch (failure) {
         console.warn("[widget-chat] reply", failure instanceof Error ? failure.message : failure);
       }
     }
-    return Response.json({ reply, visitor_id: visitorId });
+    // `reply` — целиком (для старых встроек), `replies` — части: паузу «на печать» между ними держит виджет.
+    return Response.json({ reply: replies.join("\n\n"), replies, visitor_id: visitorId });
   } catch (failure) {
     return Response.json(
       { error: failure instanceof Error ? failure.message : "Не удалось получить ответ." },

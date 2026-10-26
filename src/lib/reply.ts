@@ -11,13 +11,39 @@ export function systemPromptWithSplit(prompt: string, splitMessages: unknown) {
   return `${base}\n\n${SPLIT_RULE}`;
 }
 
+/**
+ * Части ответа для всех каналов. Флаг выключен — одно сообщение с целым текстом. Включён — сначала теги [SPLIT],
+ * а если модель их не поставила, режем по абзацам: иначе настройка «Дробить текст» ничего бы не меняла.
+ */
 export function replyChunks(text: string, splitMessages: unknown) {
   if (!readSplitMessages(splitMessages)) {
     const whole = stripSplitTag(text).trim();
     return whole ? [whole] : [];
   }
 
-  return splitReply(text);
+  const chunks = splitReply(text);
+  return chunks.length === 1 ? paragraphChunks(chunks[0]!) : chunks;
+}
+
+/** Пауза «на печать» между отдельными сообщениями: 2–4 с, чтобы не выглядеть как бот и не ловить бан (WhatsApp). */
+export const SPLIT_PAUSE_MIN_MS = 2000;
+export const SPLIT_PAUSE_MAX_MS = 4000;
+const MAX_PARAGRAPH_CHUNKS = 8;
+
+export function splitPauseMs() {
+  return SPLIT_PAUSE_MIN_MS + Math.floor(Math.random() * (SPLIT_PAUSE_MAX_MS - SPLIT_PAUSE_MIN_MS + 1));
+}
+
+/** Абзацы (пустая строка между ними). Лишние абзацы сверх лимита склеиваются в последнее сообщение. */
+export function paragraphChunks(text: string) {
+  const chunks = stripSplitTag(text)
+    .split(/\r?\n[ \t]*\r?\n/)
+    .map((chunk) => chunk.trim())
+    .filter((chunk) => chunk.length > 0);
+
+  if (chunks.length <= MAX_PARAGRAPH_CHUNKS) return chunks;
+  const head = chunks.slice(0, MAX_PARAGRAPH_CHUNKS - 1);
+  return [...head, chunks.slice(MAX_PARAGRAPH_CHUNKS - 1).join("\n\n")];
 }
 
 export function splitReply(text: string) {

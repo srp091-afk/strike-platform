@@ -3,11 +3,11 @@ import type { NextRequest } from "next/server";
 import { normalizeAgentModel, readMessageLimit } from "@/lib/agent-models";
 import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
-import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
+import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { markdownToTelegramHtml } from "@/lib/telegram-format";
 
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest, context: { params: Promise<{ token: string }> }) {
   try {
@@ -156,9 +156,11 @@ async function handleUpdate(token: string, body: unknown) {
   const chunks = replyChunks(reply, agent.split_messages);
   let preview = chunks[0] ?? reply;
 
-  for (const chunk of chunks) {
+  for (const [index, chunk] of chunks.entries()) {
     let delivered = false;
     try {
+      // Пауза «на печать» между сообщениями одного ответа (2–4 с).
+      if (index > 0) await sleep(splitPauseMs());
       if (responseDelay > 0) {
         await new Promise((resolve) => setTimeout(resolve, responseDelay * 1000));
       }

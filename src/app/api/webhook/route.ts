@@ -4,10 +4,10 @@ import { normalizeAgentModel } from "@/lib/agent-models";
 import { readBotFlags } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
-import { replyChunks, sleep, systemPromptWithSplit } from "@/lib/reply";
+import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -181,7 +181,7 @@ export async function POST(request: NextRequest) {
 
   for (let index = 0; index < chunks.length; index += 1) {
     if (index > 0) {
-      await sleep(2000);
+      await sleep(splitPauseMs());
     }
 
     const content = chunks[index];
