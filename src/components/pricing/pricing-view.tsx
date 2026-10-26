@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { ArrowRight, Check, Zap } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
 import { toast } from "@/components/ui/toaster";
+import { openCheckout, type CheckoutTarget } from "@/lib/lemon-client";
 import { cn } from "@/lib/utils";
 
 const ANNUAL_DISCOUNT = 0.2;
@@ -223,6 +225,18 @@ export function PricingView() {
   const [lang, setLang] = useState<Lang>("ru");
   const [annual, setAnnual] = useState(false);
   const t = DICT[lang];
+  const router = useRouter();
+
+  /** Оверлей Lemon Squeezy; без сессии платёж не к чему привязать, поэтому сначала вход. */
+  async function buy(target: CheckoutTarget) {
+    try {
+      const result = await openCheckout(target);
+      if (result === "login") router.push("/login");
+      else if (result === "missing") toast.error(t.checkoutSoon(target));
+    } catch {
+      toast.error(t.checkoutSoon(target));
+    }
+  }
 
   return (
     <div className="relative isolate overflow-hidden bg-black text-zinc-400">
@@ -277,13 +291,13 @@ export function PricingView() {
         <div className="mt-14 grid items-stretch gap-5 lg:grid-cols-3">
           {PLAN_ORDER.map((id, index) => (
             <Reveal key={id} delay={index * 110} className="h-full">
-              <PlanCard id={id} annual={annual} t={t} />
+              <PlanCard id={id} annual={annual} t={t} onBuy={() => void buy(id)} />
             </Reveal>
           ))}
         </div>
 
         <Reveal delay={150} className="mt-6">
-          <FlexBanner t={t} />
+          <FlexBanner t={t} onBuy={() => void buy("flex")} />
         </Reveal>
 
         <Reveal className="mt-14 text-center">
@@ -358,7 +372,7 @@ function BillingToggle({ annual, onChange, t }: { annual: boolean; onChange: (an
   );
 }
 
-function PlanCard({ id, annual, t }: { id: PlanId; annual: boolean; t: Dict }) {
+function PlanCard({ id, annual, t, onBuy }: { id: PlanId; annual: boolean; t: Dict; onBuy: () => void }) {
   const plan = t.plans[id];
   const price = perMonth(id, annual);
   const highlighted = id === "pro";
@@ -427,7 +441,7 @@ function PlanCard({ id, annual, t }: { id: PlanId; annual: boolean; t: Dict }) {
 
         <button
           type="button"
-          onClick={() => toast.success(t.checkoutSoon(plan.name))}
+          onClick={onBuy}
           className={cn(
             "relative mt-7 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-200 active:scale-[0.98]",
             highlighted
@@ -459,7 +473,7 @@ function PlanCard({ id, annual, t }: { id: PlanId; annual: boolean; t: Dict }) {
   );
 }
 
-function FlexBanner({ t }: { t: Dict }) {
+function FlexBanner({ t, onBuy }: { t: Dict; onBuy: () => void }) {
   return (
     <div
       onMouseMove={trackPointer}
@@ -493,7 +507,7 @@ function FlexBanner({ t }: { t: Dict }) {
         </div>
         <button
           type="button"
-          onClick={() => toast.success(t.checkoutSoon("Flex"))}
+          onClick={onBuy}
           className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition-all duration-200 hover:border-white/30 hover:bg-white/10 active:scale-[0.98]"
         >
           {t.flex.cta}

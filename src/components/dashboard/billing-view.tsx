@@ -3,7 +3,10 @@
 import { Bitcoin, Check, CreditCard, Loader2, Copy, QrCode, Zap } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 
+import { useRouter } from "next/navigation";
+
 import { toast } from "@/components/ui/toaster";
+import { openTopUpCheckout } from "@/lib/lemon-client";
 import { cn } from "@/lib/utils";
 
 const MIN_TOPUP = 10;
@@ -65,6 +68,8 @@ export function BillingView() {
   const [method, setMethod] = useState<Method>("card");
   const [amountInput, setAmountInput] = useState(String(DEFAULT_TOPUP));
   const [copied, setCopied] = useState(false);
+  const [paying, setPaying] = useState(false);
+  const router = useRouter();
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -76,6 +81,21 @@ export function BillingView() {
   const parsed = Number(amountInput);
   const amountValid = Number.isFinite(parsed) && parsed >= MIN_TOPUP;
   const amountLabel = amountValid ? parsed : DEFAULT_TOPUP;
+
+  /** Оверлей Lemon Squeezy с точной суммой из поля; user_id уходит в custom data вебхука. */
+  async function payByCard() {
+    if (!amountValid || paying) return;
+    setPaying(true);
+    try {
+      const result = await openTopUpCheckout(parsed);
+      if (result === "login") router.push("/login");
+      else if (result === "missing") toast.error("Чекаут пополнения пока не настроен.");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Не удалось открыть чекаут.");
+    } finally {
+      setPaying(false);
+    }
+  }
 
   async function copyAddress() {
     try {
@@ -225,10 +245,11 @@ export function BillingView() {
             {method === "card" ? (
               <button
                 type="button"
-                disabled={!amountValid}
-                onClick={() => console.log("Open LemonSqueezy/Paddle modal")}
+                disabled={!amountValid || paying}
+                onClick={() => void payByCard()}
                 className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-4 py-3 text-sm font-semibold text-black shadow-[0_0_30px_-6px_rgba(52,211,153,0.7)] transition-all duration-200 hover:bg-emerald-300 hover:shadow-[0_0_40px_-4px_rgba(52,211,153,0.8)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               >
+                {paying ? <Loader2 className="size-4 animate-spin" /> : null}
                 Оплатить картой
               </button>
             ) : null}
