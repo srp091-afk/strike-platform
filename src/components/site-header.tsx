@@ -10,13 +10,13 @@ import { cn } from "@/lib/utils";
 
 export function SiteHeader({ account }: { account: AccountProfile | null }) {
   const pathname = usePathname();
-  if (pathname.startsWith("/l/") || pathname.startsWith("/widget/") || pathname === "/login" || pathname === "/pricing") return null;
+  if (pathname === "/" || pathname.startsWith("/l/") || pathname.startsWith("/widget/") || pathname === "/login" || pathname === "/pricing") return null;
 
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-800/80 bg-black/80 backdrop-blur-md">
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-8 px-4 sm:px-6">
         <Link
-          href="/"
+          href="/dashboard"
           className="shrink-0 font-sans text-sm font-medium uppercase tracking-[0.18em] text-white"
         >
           STRIKE

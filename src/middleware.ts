@@ -43,6 +43,8 @@ export async function middleware(request: NextRequest) {
 
   const isPublic =
     pathname === "/login" ||
+    // Публичный лендинг.
+    pathname === "/" ||
     // Публичная маркетинговая страница тарифов.
     pathname === "/pricing" ||
     pathname === "/api/webhooks" ||
@@ -64,6 +66,13 @@ export async function middleware(request: NextRequest) {
   if (user && pathname === "/login") {
     const url = request.nextUrl.clone();
     url.pathname = "/agents";
+    return NextResponse.redirect(url);
+  }
+
+  // Залогиненный пользователь с лендинга уходит сразу в дашборд.
+  if (user && pathname === "/") {
+    const url = request.nextUrl.clone();
+    url.pathname = "/dashboard";
     return NextResponse.redirect(url);
   }
 

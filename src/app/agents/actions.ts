@@ -208,7 +208,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
       agentId = String(data.id);
     }
 
-    revalidatePath("/");
+    revalidatePath("/dashboard");
     revalidatePath("/agents");
     return {
       ok: true,
@@ -252,6 +252,6 @@ export async function deleteAgent(formData: FormData) {
     throw new Error(error.message);
   }
 
-  revalidatePath("/");
+  revalidatePath("/dashboard");
   revalidatePath("/agents");
 }
