@@ -219,8 +219,8 @@ function trackPointer(event: MouseEvent<HTMLElement>) {
 }
 
 export function PricingView() {
-  // Язык хранится в локальном состоянии; по умолчанию EN.
-  const [lang, setLang] = useState<Lang>("en");
+  // Язык хранится в локальном состоянии; по умолчанию RU.
+  const [lang, setLang] = useState<Lang>("ru");
   const [annual, setAnnual] = useState(false);
   const t = DICT[lang];
 
