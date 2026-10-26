@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { AccountMenu } from "@/components/account-menu";
 import { isNavActive, navItems } from "@/lib/navigation";
 import type { AccountProfile } from "@/lib/auth-user";
@@ -23,9 +24,10 @@ export function SiteHeader({ account }: { account: AccountProfile | null }) {
       <div className="mx-auto flex h-16 w-full max-w-7xl items-center gap-8 px-4 sm:px-6">
         <Link
           href="/dashboard"
-          className="shrink-0 font-sans text-sm font-medium uppercase tracking-[0.18em] text-white"
+          aria-label="STRIKE"
+          className="flex shrink-0 items-center"
         >
-          STRIKE
+          <BrandLogo />
         </Link>
         <nav className="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {navItems.map((item) => {

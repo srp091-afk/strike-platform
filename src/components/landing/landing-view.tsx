@@ -4,6 +4,7 @@ import { ArrowRight, Check, ClipboardList, Layers, SlidersHorizontal, Zap } from
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { LegalLinks } from "@/components/legal-links";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -200,9 +201,10 @@ export function LandingView() {
           <button
             type="button"
             onClick={() => router.push("/")}
-            className="text-sm font-medium uppercase tracking-[0.18em] text-white"
+            aria-label="STRIKE"
+            className="flex items-center"
           >
-            STRIKE
+            <BrandLogo />
           </button>
 
           <nav className="hidden items-center gap-1 md:flex">

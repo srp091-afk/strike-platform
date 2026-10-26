@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Check, Zap } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
+import { BrandLogo } from "@/components/brand-logo";
 import { LegalLinks } from "@/components/legal-links";
 import { toast } from "@/components/ui/toaster";
 import { openCheckout, type CheckoutTarget } from "@/lib/lemon-client";
@@ -251,8 +252,8 @@ export function PricingView() {
       />
 
       <header className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
-        <Link href="/" className="text-sm font-medium uppercase tracking-[0.18em] text-white">
-          STRIKE
+        <Link href="/" aria-label="STRIKE" className="flex items-center">
+          <BrandLogo />
         </Link>
         <div className="flex items-center gap-3">
           <LangSwitch lang={lang} onChange={setLang} label={t.langLabel} />
