@@ -5,7 +5,10 @@ import { createSupabaseBrowserClient } from "@/lib/supabase";
 declare global {
   interface Window {
     createLemonSqueezy?: () => void;
-    LemonSqueezy?: { Url: { Open: (url: string) => void } };
+    LemonSqueezy?: {
+      Url: { Open: (url: string) => void };
+      Setup?: (options: { eventHandler: (event: { event: string }) => void }) => void;
+    };
   }
 }
 
@@ -32,6 +35,16 @@ export function openLemonOverlay(url: string): void {
   const plain = new URL(url);
   plain.searchParams.delete("embed");
   window.location.assign(plain.toString());
+}
+
+/** Вызывает callback после успешной оплаты в оверлее (событие Checkout.Success). */
+export function watchCheckoutSuccess(onSuccess: () => void): void {
+  window.createLemonSqueezy?.();
+  window.LemonSqueezy?.Setup?.({
+    eventHandler: (event) => {
+      if (event.event === "Checkout.Success") onSuccess();
+    },
+  });
 }
 
 export async function currentUser() {

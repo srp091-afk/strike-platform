@@ -6,7 +6,7 @@ import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from
 import { useRouter } from "next/navigation";
 
 import { toast } from "@/components/ui/toaster";
-import { openTopUpCheckout } from "@/lib/lemon-client";
+import { openTopUpCheckout, watchCheckoutSuccess } from "@/lib/lemon-client";
 import { cn } from "@/lib/utils";
 
 const MIN_TOPUP = 10;
@@ -15,29 +15,36 @@ const WALLET_ADDRESS = "TКошелекЗаглушка123456789";
 
 type Method = "card" | "crypto";
 
-const USAGE = [
-  { label: "Сообщения", used: 4500, limit: 10000 },
-  { label: "AI-агенты", used: 2, limit: 10 },
-  { label: "AI-сайты", used: 4, limit: 10 },
-  { label: "AI-кампании", used: 120, limit: 500 },
-];
-
-type Transaction = {
-  id: string;
-  date: string;
-  description: string;
-  method: "Card" | "Crypto";
-  amount: string;
-  status: "Paid" | "Pending";
+export type BillingData = {
+  plan: "free" | "starter" | "pro" | "agency";
+  priceUsd: number;
+  status: string | null;
+  renewsAt: string | null;
+  balanceUsd: number;
+  usage: { key: "messages" | "agents" | "campaigns"; used: number; limit: number | null }[];
+  transactions: { id: string; createdAt: string; description: string; method: string; amountUsd: number; status: string }[];
 };
 
-const TRANSACTIONS: Transaction[] = [
-  { id: "t4", date: "24 окт 2026", description: "Top-up", method: "Crypto", amount: "$50.00", status: "Pending" },
-  { id: "t3", date: "21 окт 2026", description: "Pro Plan", method: "Card", amount: "$99.00", status: "Paid" },
-  { id: "t2", date: "12 окт 2026", description: "Top-up", method: "Card", amount: "$25.00", status: "Paid" },
-  { id: "t1", date: "21 сен 2026", description: "Pro Plan", method: "Card", amount: "$99.00", status: "Paid" },
-];
+const USAGE_LABELS = { messages: "Сообщения", agents: "AI-агенты", campaigns: "AI-кампании" } as const;
+const PLAN_TITLES = { free: "Flex (Pay-as-you-go)", starter: "Starter Plan", pro: "Pro Plan", agency: "Agency Plan" } as const;
 
+const DATE_FORMAT = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" });
+
+function formatDate(iso: string) {
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? "—" : DATE_FORMAT.format(date);
+}
+
+function formatUsd(value: number) {
+  return `$${value.toFixed(2)}`;
+}
+
+function statusBadge(status: string | null, plan: BillingData["plan"]) {
+  if (plan === "free" || !status) return { label: "Без подписки", tone: "muted" as const };
+  if (status === "active" || status === "on_trial") return { label: "Активен", tone: "ok" as const };
+  if (status === "past_due" || status === "unpaid") return { label: "Просрочен", tone: "warn" as const };
+  return { label: "Отменён", tone: "muted" as const };
+}
 /** Подсветка границы и фона следом за курсором (как в pricing). */
 function trackPointer(event: MouseEvent<HTMLElement>) {
   const box = event.currentTarget.getBoundingClientRect();
@@ -64,7 +71,7 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
   );
 }
 
-export function BillingView() {
+export function BillingView({ data }: { data: BillingData }) {
   const [method, setMethod] = useState<Method>("card");
   const [amountInput, setAmountInput] = useState(String(DEFAULT_TOPUP));
   const [copied, setCopied] = useState(false);
@@ -78,6 +85,7 @@ export function BillingView() {
     };
   }, []);
 
+  const badge = statusBadge(data.status, data.plan);
   const parsed = Number(amountInput);
   const amountValid = Number.isFinite(parsed) && parsed >= MIN_TOPUP;
   const amountLabel = amountValid ? parsed : DEFAULT_TOPUP;
@@ -87,6 +95,11 @@ export function BillingView() {
     if (!amountValid || paying) return;
     setPaying(true);
     try {
+      // После оплаты вебхук обновляет баланс с небольшой задержкой — перечитываем данные страницы.
+      watchCheckoutSuccess(() => {
+        setTimeout(() => router.refresh(), 3000);
+        setTimeout(() => router.refresh(), 8000);
+      });
       const result = await openTopUpCheckout(parsed);
       if (result === "login") router.push("/login");
       else if (result === "missing") toast.error("Чекаут пополнения пока не настроен.");
@@ -130,11 +143,22 @@ export function BillingView() {
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Текущий тариф</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">Pro Plan</h2>
-                <p className="mt-1 text-sm text-zinc-400">$99 / мес · следующее списание 21 ноя 2026</p>
+                <h2 className="mt-2 text-2xl font-semibold text-white">{PLAN_TITLES[data.plan]}</h2>
+                <p className="mt-1 text-sm text-zinc-400">
+                  {data.plan === "free"
+                    ? "Оплата по факту использования с баланса"
+                    : `$${data.priceUsd} / мес${data.renewsAt ? ` · следующее списание ${formatDate(data.renewsAt)}` : ""}`}
+                </p>
               </div>
-              <span className="shrink-0 rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-xs font-semibold text-emerald-300">
-                Активен
+              <span
+                className={cn(
+                  "shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold",
+                  badge.tone === "ok" && "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+                  badge.tone === "warn" && "border-amber-400/30 bg-amber-400/10 text-amber-300",
+                  badge.tone === "muted" && "border-white/15 bg-white/5 text-zinc-300",
+                )}
+              >
+                {badge.label}
               </span>
             </div>
 
@@ -149,30 +173,38 @@ export function BillingView() {
             <div className="mt-8 border-t border-white/10 pt-6">
               <h3 className="text-sm font-semibold text-white">Использование в этом месяце</h3>
               <ul className="mt-5 grid gap-5">
-                {USAGE.map((item) => {
-                  const percent = Math.min(100, Math.round((item.used / item.limit) * 100));
+                {data.usage.map((item) => {
+                  const label = USAGE_LABELS[item.key];
+                  const percent = item.limit ? Math.min(100, Math.round((item.used / item.limit) * 100)) : 0;
                   return (
-                    <li key={item.label}>
+                    <li key={item.key}>
                       <div className="flex items-baseline justify-between gap-3 text-sm">
-                        <span className="text-zinc-300">{item.label}</span>
+                        <span className="text-zinc-300">{label}</span>
                         <span className="tabular-nums text-zinc-400">
-                          <span className="text-white">{item.used.toLocaleString("en-US")}</span> /{" "}
-                          {item.limit.toLocaleString("en-US")}
+                          <span className="text-white">{item.used.toLocaleString("en-US")}</span>
+                          {item.limit ? ` / ${item.limit.toLocaleString("en-US")}` : " · без лимита"}
                         </span>
                       </div>
-                      <div
-                        role="progressbar"
-                        aria-label={item.label}
-                        aria-valuemin={0}
-                        aria-valuemax={item.limit}
-                        aria-valuenow={item.used}
-                        className="mt-2 h-1 overflow-hidden rounded-full bg-white/10"
-                      >
+                      {item.limit ? (
                         <div
-                          className="h-full rounded-full bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.7)] transition-[width] duration-500"
-                          style={{ width: `${percent}%` }}
-                        />
-                      </div>
+                          role="progressbar"
+                          aria-label={label}
+                          aria-valuemin={0}
+                          aria-valuemax={item.limit}
+                          aria-valuenow={item.used}
+                          className="mt-2 h-1 overflow-hidden rounded-full bg-white/10"
+                        >
+                          <div
+                            className={cn(
+                              "h-full rounded-full transition-[width] duration-500",
+                              percent >= 90
+                                ? "bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.7)]"
+                                : "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.7)]",
+                            )}
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                      ) : null}
                     </li>
                   );
                 })}
@@ -191,6 +223,10 @@ export function BillingView() {
                 <p className="text-sm text-zinc-400">Pay-as-you-go: платите только за использование.</p>
               </div>
             </div>
+            <p className="mt-5 text-sm text-zinc-400">
+              Текущий баланс:{" "}
+              <span className="text-lg font-semibold text-emerald-300 tabular-nums">{formatUsd(data.balanceUsd)}</span>
+            </p>
 
             <label htmlFor="topup-amount" className="mt-6 block text-sm font-medium text-zinc-300">
               Сумма пополнения
@@ -317,26 +353,36 @@ export function BillingView() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-white/5">
-                  {TRANSACTIONS.map((tx) => (
-                    <tr key={tx.id}>
-                      <td className="py-3.5 text-zinc-400">{tx.date}</td>
-                      <td className="py-3.5 font-medium text-white">{tx.description}</td>
-                      <td className="py-3.5 text-zinc-400">{tx.method}</td>
-                      <td className="py-3.5 text-right tabular-nums text-white">{tx.amount}</td>
-                      <td className="py-3.5 text-right">
-                        <span
-                          className={cn(
-                            "inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold",
-                            tx.status === "Paid"
-                              ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
-                              : "border-amber-400/30 bg-amber-400/10 text-amber-300",
-                          )}
-                        >
-                          {tx.status}
-                        </span>
+                  {data.transactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-8 text-center text-zinc-500">
+                        Транзакций пока нет.
                       </td>
                     </tr>
-                  ))}
+                  ) : null}
+                  {data.transactions.map((tx) => {
+                    const paid = tx.status === "paid";
+                    return (
+                      <tr key={tx.id}>
+                        <td className="py-3.5 text-zinc-400">{formatDate(tx.createdAt)}</td>
+                        <td className="py-3.5 font-medium text-white">{tx.description}</td>
+                        <td className="py-3.5 text-zinc-400">{tx.method === "crypto" ? "Crypto" : "Card"}</td>
+                        <td className="py-3.5 text-right tabular-nums text-white">{formatUsd(tx.amountUsd)}</td>
+                        <td className="py-3.5 text-right">
+                          <span
+                            className={cn(
+                              "inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold",
+                              paid
+                                ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                                : "border-amber-400/30 bg-amber-400/10 text-amber-300",
+                            )}
+                          >
+                            {paid ? "Paid" : "Pending"}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
