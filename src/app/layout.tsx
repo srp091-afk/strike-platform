@@ -3,6 +3,7 @@ import { Anton, Bebas_Neue, Inter, Montserrat, Plus_Jakarta_Sans } from "next/fo
 import Script from "next/script";
 import { Suspense } from "react";
 
+import { CookieConsent } from "@/components/CookieConsent";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeaderData } from "@/components/site-header-data";
 import { Toaster } from "@/components/ui/toaster";
@@ -49,6 +50,15 @@ export const metadata: Metadata = {
     template: "%s — STRIKE",
   },
   description: "Платформа для создания и управления ИИ-агентами.",
+  // Логотип лежит в public/icons: чтобы заменить, подмените файлы с теми же именами.
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [
+      { url: "/icons/icon.svg", type: "image/svg+xml" },
+      { url: "/icons/icon-32.png", sizes: "32x32", type: "image/png" },
+    ],
+    apple: [{ url: "/icons/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
 };
 
 export const viewport: Viewport = {
@@ -70,6 +80,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <SiteFooter />
         </Suspense>
         <Toaster />
+        <Suspense fallback={null}>
+          <CookieConsent />
+        </Suspense>
         <Script src="https://assets.lemonsqueezy.com/lemon.js" strategy="afterInteractive" />
       </body>
     </html>

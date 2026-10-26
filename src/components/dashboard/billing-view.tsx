@@ -6,6 +6,7 @@ import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from
 import { useRouter } from "next/navigation";
 
 import { toast } from "@/components/ui/toaster";
+import { ConsentCheckbox } from "@/components/consent-checkbox";
 import { BillingPlans } from "@/components/dashboard/billing-plans";
 import { openCustomerPortal, openTopUpCheckout, watchCheckoutSuccess } from "@/lib/lemon-client";
 import { cn } from "@/lib/utils";
@@ -64,7 +65,7 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
       <span
         aria-hidden
         className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-        style={{ background: "radial-gradient(320px circle at var(--mx) var(--my), rgba(52,211,153,0.35), transparent 70%)" }}
+        style={{ background: "radial-gradient(320px circle at var(--mx) var(--my), rgba(207,2,52,0.35), transparent 70%)" }}
       />
       <div className="relative h-full overflow-hidden rounded-[15px] border border-gray-800/60 bg-[#0a0a0a]/90 p-6 backdrop-blur-xl sm:p-7">
         {children}
@@ -79,6 +80,8 @@ export function BillingView({ data }: { data: BillingData }) {
   const [copied, setCopied] = useState(false);
   const [paying, setPaying] = useState(false);
   const [managing, setManaging] = useState(false);
+  const [agreed, setAgreed] = useState(false);
+  const [consentMissing, setConsentMissing] = useState(false);
   const router = useRouter();
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -96,6 +99,10 @@ export function BillingView({ data }: { data: BillingData }) {
   /** Оверлей Lemon Squeezy с точной суммой из поля; user_id уходит в custom data вебхука. */
   async function payByCard() {
     if (!amountValid || paying) return;
+    if (!agreed) {
+      setConsentMissing(true);
+      return;
+    }
     setPaying(true);
     try {
       // После оплаты вебхук обновляет баланс с небольшой задержкой — перечитываем данные страницы.
@@ -145,7 +152,7 @@ export function BillingView({ data }: { data: BillingData }) {
     <div className="relative isolate overflow-hidden bg-black text-zinc-400">
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[520px] bg-[radial-gradient(60%_50%_at_50%_0%,rgba(52,211,153,0.10),transparent_70%)]"
+        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[520px] bg-[radial-gradient(60%_50%_at_50%_0%,rgba(207,2,52,0.10),transparent_70%)]"
       />
 
       <div className="mx-auto w-full max-w-6xl px-4 py-10 sm:px-6">
@@ -177,7 +184,7 @@ export function BillingView({ data }: { data: BillingData }) {
               <span
                 className={cn(
                   "shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold",
-                  badge.tone === "ok" && "border-emerald-400/30 bg-emerald-400/10 text-emerald-300",
+                  badge.tone === "ok" && "border-strike/30 bg-strike/10 text-strike-soft",
                   badge.tone === "warn" && "border-amber-400/30 bg-amber-400/10 text-amber-300",
                   badge.tone === "muted" && "border-white/15 bg-white/5 text-zinc-300",
                 )}
@@ -224,7 +231,7 @@ export function BillingView({ data }: { data: BillingData }) {
                               "h-full rounded-full transition-[width] duration-500",
                               percent >= 90
                                 ? "bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.7)]"
-                                : "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.7)]",
+                                : "bg-strike shadow-[0_0_10px_rgba(207,2,52,0.7)]",
                             )}
                             style={{ width: `${percent}%` }}
                           />
@@ -240,7 +247,7 @@ export function BillingView({ data }: { data: BillingData }) {
           {/* Пополнение баланса */}
           <Card>
             <div className="flex items-center gap-3">
-              <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-emerald-400/25 bg-emerald-400/10 text-emerald-300 shadow-[0_0_24px_-6px_rgba(52,211,153,0.7)]">
+              <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-strike/25 bg-strike/10 text-strike-soft shadow-[0_0_24px_-6px_rgba(207,2,52,0.7)]">
                 <Zap className="size-5" strokeWidth={2} />
               </span>
               <div>
@@ -250,7 +257,7 @@ export function BillingView({ data }: { data: BillingData }) {
             </div>
             <p className="mt-5 text-sm text-zinc-400">
               Текущий баланс:{" "}
-              <span className="text-lg font-semibold text-emerald-300 tabular-nums">{formatUsd(data.balanceUsd)}</span>
+              <span className="text-lg font-semibold text-strike-soft tabular-nums">{formatUsd(data.balanceUsd)}</span>
             </p>
 
             <label htmlFor="topup-amount" className="mt-6 block text-sm font-medium text-zinc-300">
@@ -267,7 +274,7 @@ export function BillingView({ data }: { data: BillingData }) {
                 value={amountInput}
                 onChange={(event) => setAmountInput(event.target.value)}
                 className={cn(
-                  "h-12 w-full rounded-xl border bg-white/5 pr-4 pl-8 text-base text-white tabular-nums outline-none transition-colors focus:border-emerald-400/50",
+                  "h-12 w-full rounded-xl border bg-white/5 pr-4 pl-8 text-base text-white tabular-nums outline-none transition-colors focus:border-strike/50",
                   amountValid ? "border-gray-800" : "border-red-500/50",
                 )}
               />
@@ -304,11 +311,23 @@ export function BillingView({ data }: { data: BillingData }) {
             </div>
 
             {method === "card" ? (
+              <ConsentCheckbox
+                className="mt-6"
+                checked={agreed}
+                invalid={consentMissing}
+                onChange={(value) => {
+                  setAgreed(value);
+                  if (value) setConsentMissing(false);
+                }}
+              />
+            ) : null}
+
+            {method === "card" ? (
               <button
                 type="button"
                 disabled={!amountValid || paying}
                 onClick={() => void payByCard()}
-                className="mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-400 px-4 py-3 text-sm font-semibold text-black shadow-[0_0_30px_-6px_rgba(52,211,153,0.7)] transition-all duration-200 hover:bg-emerald-300 hover:shadow-[0_0_40px_-4px_rgba(52,211,153,0.8)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
+                className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-strike px-4 py-3 text-sm font-semibold text-white shadow-[0_0_30px_-6px_rgba(207,2,52,0.7)] transition-all duration-200 hover:brightness-110 hover:shadow-[0_0_40px_-4px_rgba(207,2,52,0.8)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               >
                 {paying ? <Loader2 className="size-4 animate-spin" /> : null}
                 Оплатить картой
@@ -346,7 +365,7 @@ export function BillingView({ data }: { data: BillingData }) {
                           onClick={() => void copyAddress()}
                           className="inline-flex shrink-0 items-center gap-1.5 rounded-md border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:border-white/30 hover:bg-white/10"
                         >
-                          {copied ? <Check className="size-3.5 text-emerald-300" strokeWidth={2.5} /> : <Copy className="size-3.5" />}
+                          {copied ? <Check className="size-3.5 text-strike-soft" strokeWidth={2.5} /> : <Copy className="size-3.5" />}
                           {copied ? "Скопировано" : "Скопировать"}
                         </button>
                       </div>
@@ -400,7 +419,7 @@ export function BillingView({ data }: { data: BillingData }) {
                             className={cn(
                               "inline-block rounded-full border px-2.5 py-0.5 text-xs font-semibold",
                               paid
-                                ? "border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                                ? "border-strike/30 bg-strike/10 text-strike-soft"
                                 : "border-amber-400/30 bg-amber-400/10 text-amber-300",
                             )}
                           >
@@ -442,11 +461,11 @@ function MethodButton({
       className={cn(
         "flex flex-col items-start gap-3 rounded-xl border p-4 text-left transition-all duration-200",
         active
-          ? "border-emerald-400/50 bg-emerald-400/10 text-white shadow-[0_0_30px_-10px_rgba(52,211,153,0.7)]"
+          ? "border-strike/50 bg-strike/10 text-white shadow-[0_0_30px_-10px_rgba(207,2,52,0.7)]"
           : "border-gray-800 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:bg-white/5",
       )}
     >
-      <span className={cn("flex items-center gap-2.5 text-sm font-semibold", active && "text-emerald-300")}>
+      <span className={cn("flex items-center gap-2.5 text-sm font-semibold", active && "text-strike-soft")}>
         {icon}
         <span className={active ? "text-white" : undefined}>{title}</span>
       </span>

@@ -216,7 +216,7 @@ export function WhatsAppConnectDialog({
             <TabsContent value="qr" className="grid gap-4">
               <button
                 type="button"
-                className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+                className="rounded-xl bg-strike px-4 py-3 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
                 disabled={qrPending}
                 onClick={() => void showQr()}
               >
@@ -243,7 +243,7 @@ export function WhatsAppConnectDialog({
               </label>
               <button
                 type="button"
-                className="rounded-xl bg-white px-4 py-3 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+                className="rounded-xl bg-strike px-4 py-3 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
                 disabled={codePending}
                 onClick={() => void showCode()}
               >
@@ -309,7 +309,7 @@ export function WhatsAppConnectDialog({
             </button>
             <button
               type="button"
-              className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow hover:shadow-[0_0_15px_rgba(255,255,255,0.2)]"
+              className="rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow hover:shadow-[0_0_15px_rgba(207,2,52,0.45)]"
               onClick={applyKeys}
             >
               Применить ключи

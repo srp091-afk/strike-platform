@@ -43,8 +43,12 @@ export async function middleware(request: NextRequest) {
 
   const isPublic =
     pathname === "/login" ||
-    // Публичный лендинг.
+    // Публичный лендинг, юридические страницы и манифест PWA.
     pathname === "/" ||
+    pathname === "/privacy" ||
+    pathname === "/terms" ||
+    pathname === "/refund" ||
+    pathname === "/manifest.webmanifest" ||
     // Публичная маркетинговая страница тарифов.
     pathname === "/pricing" ||
     pathname === "/api/webhooks" ||

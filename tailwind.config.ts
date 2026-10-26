@@ -5,8 +5,9 @@ const config: Config = {
     extend: {
       colors: {
         strike: {
-          DEFAULT: "#E11D48",
-          dark: "#BE123C",
+          DEFAULT: "#cf0234",
+          dark: "#a30128",
+          soft: "#ff5c80",
         },
         ink: "#A1A1AA",
       },

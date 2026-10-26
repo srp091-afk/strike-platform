@@ -342,7 +342,7 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
           </button>
           <button
             type="button"
-            className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-colors hover:bg-neutral-200 disabled:opacity-50"
+            className="rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:brightness-110 disabled:opacity-50"
             disabled={pending || uploadingRole !== null}
             onClick={onSave}
           >

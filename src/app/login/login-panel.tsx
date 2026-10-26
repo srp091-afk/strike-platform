@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 
 import { GoogleSignInButton } from "@/app/login/google-sign-in";
+import { ConsentCheckbox } from "@/components/consent-checkbox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
@@ -29,10 +30,16 @@ export function LoginPanel() {
   const [sentTo, setSentTo] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
+  const [agreed, setAgreed] = useState(false);
+  const [consentMissing, setConsentMissing] = useState(false);
 
   async function sendMagicLink(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending) return;
+    if (!agreed) {
+      setConsentMissing(true);
+      return;
+    }
     const address = email.trim();
     if (!EMAIL_PATTERN.test(address)) {
       setError("Введите корректный email.");
@@ -91,7 +98,16 @@ export function LoginPanel() {
         </p>
       ) : null}
 
-      <GoogleSignInButton />
+      <ConsentCheckbox
+        checked={agreed}
+        invalid={consentMissing}
+        onChange={(value) => {
+          setAgreed(value);
+          if (value) setConsentMissing(false);
+        }}
+      />
+
+      <GoogleSignInButton canProceed={agreed} onBlocked={() => setConsentMissing(true)} />
 
       <div className="flex items-center gap-3" role="separator" aria-label="или">
         <span className="h-px flex-1 bg-zinc-800" />

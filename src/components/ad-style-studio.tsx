@@ -190,7 +190,7 @@ export function AdStyleStudio({
           <Button
             type="submit"
             disabled={!packComplete || busy || strategyPending}
-            className="rounded-xl bg-white px-6 py-2.5 font-bold text-black shadow-lg hover:bg-zinc-200 disabled:opacity-40"
+            className="rounded-xl bg-strike px-6 py-2.5 font-bold text-white shadow-lg hover:brightness-110 disabled:opacity-40"
           >
             {strategyPending
               ? "Собираем стратегию"

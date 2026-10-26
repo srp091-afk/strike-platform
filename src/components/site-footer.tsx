@@ -2,15 +2,21 @@
 
 import { usePathname } from "next/navigation";
 
+import { LegalLinks } from "@/components/legal-links";
+
+const HIDDEN_PREFIXES = ["/l/", "/widget/", "/funnels/builder"];
+// Эти страницы рисуют собственный подвал с юридическими ссылками.
+const HIDDEN_EXACT = ["/", "/login", "/pricing", "/privacy", "/terms", "/refund"];
+
 export function SiteFooter() {
   const pathname = usePathname();
-  if (pathname === "/" || pathname === "/login" || pathname === "/pricing" || pathname.startsWith("/l/") || pathname.startsWith("/widget/") || pathname.startsWith("/funnels/builder")) return null;
+  if (HIDDEN_EXACT.includes(pathname) || HIDDEN_PREFIXES.some((prefix) => pathname.startsWith(prefix))) return null;
 
   return (
     <footer className="mt-auto border-t border-zinc-800 bg-black">
-      <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-6 py-4">
+      <div className="mx-auto flex w-full max-w-7xl flex-col items-center justify-between gap-3 px-6 py-4 sm:flex-row">
         <p className="font-sans text-xs font-medium uppercase tracking-[0.18em] text-white">STRIKE</p>
-        <p className="text-xs tracking-wide text-zinc-500">Агенты · Каналы · Чаты</p>
+        <LegalLinks />
       </div>
     </footer>
   );

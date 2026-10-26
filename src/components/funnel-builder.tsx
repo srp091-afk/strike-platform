@@ -246,7 +246,7 @@ export function FunnelBuilder({
               </Button>
               {publicLink ? (
                 <div className="mt-4 rounded-xl bg-zinc-50 px-4 py-3">
-                  <p className="flex items-center gap-1.5 text-xs font-semibold text-emerald-700">
+                  <p className="flex items-center gap-1.5 text-xs font-semibold text-strike-dark">
                     <Check className="size-3.5" strokeWidth={2.5} />
                     {copied ? "Ссылка скопирована" : "Публичная ссылка"}
                   </p>
@@ -312,7 +312,7 @@ function Toggle({
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
-        className="size-4 accent-red-600"
+        className="size-4 accent-[#cf0234]"
       />
     </label>
   );

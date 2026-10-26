@@ -378,7 +378,7 @@ export function TelegramConnectModal({
           {telegramType === "bot" ? (
             <button
               type="button"
-              className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+              className="rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
               disabled={pending}
               onClick={onBotSubmit}
             >
@@ -387,7 +387,7 @@ export function TelegramConnectModal({
           ) : userbotStep === 1 ? (
             <button
               type="button"
-              className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+              className="rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
               disabled={codePending}
               onClick={() => void onSendCode()}
             >
@@ -396,7 +396,7 @@ export function TelegramConnectModal({
           ) : (
             <button
               type="button"
-              className="rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+              className="rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
               disabled={signInPending}
               onClick={() => void onSignIn()}
             >

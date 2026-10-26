@@ -300,7 +300,7 @@ export function CampaignDashboard({
           <Button
             type="button"
             disabled={refreshing || !strategy}
-            className="bg-white font-bold text-black shadow-[0_0_15px_rgba(255,255,255,0.1)] transition-all hover:bg-neutral-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.1)]"
+            className="bg-strike font-bold text-white shadow-[0_0_15px_rgba(207,2,52,0.45)] transition-all hover:brightness-110 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)]"
             onClick={() => setRefreshOpen(true)}
           >
             {refreshing ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
@@ -718,7 +718,7 @@ function EditableText({
           />
         )}
         {saved ? (
-          <span className="animate-in absolute right-2 bottom-2 grid size-7 place-items-center rounded-md bg-emerald-500/15 text-emerald-400">
+          <span className="animate-in absolute right-2 bottom-2 grid size-7 place-items-center rounded-md bg-strike/15 text-strike-soft">
             <Check className="size-4" strokeWidth={3} />
           </span>
         ) : isDirty ? (
@@ -867,7 +867,7 @@ function EditableRow({
         )}
       </div>
       {saved ? (
-        <span className="animate-in grid size-8 shrink-0 place-items-center rounded-md bg-emerald-500/15 text-emerald-400">
+        <span className="animate-in grid size-8 shrink-0 place-items-center rounded-md bg-strike/15 text-strike-soft">
           <Check className="size-4" strokeWidth={3} />
         </span>
       ) : isDirty ? (
@@ -1125,7 +1125,7 @@ function CreativesGrid({
                 {!readOnly ? (
                   <Button
                     type="button"
-                    className="bg-white text-black hover:bg-zinc-200 hover:shadow-none"
+                    className="bg-strike text-white hover:brightness-110 hover:shadow-none"
                     onClick={() => toast.success("Перегенерация в разработке")}
                   >
                     <RefreshCw className="size-4" />
@@ -1238,7 +1238,7 @@ function ProjectStatusBadge({ status }: { status: ProjectStatus }) {
     );
   }
   return (
-    <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-2.5 py-1 text-xs font-medium text-emerald-400">
+    <span className="rounded-full border border-strike/30 bg-strike/10 px-2.5 py-1 text-xs font-medium text-strike-soft">
       Готово
     </span>
   );

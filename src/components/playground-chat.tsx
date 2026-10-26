@@ -296,7 +296,7 @@ export function PlaygroundChat({
         />
         <button
           type="submit"
-          className="shrink-0 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black transition-shadow hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] active:scale-95 disabled:opacity-50"
+          className="shrink-0 rounded-xl bg-strike px-6 py-3 text-sm font-semibold text-white transition-shadow hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] active:scale-95 disabled:opacity-50"
           disabled={!agentId || typing || !draft.trim()}
         >
           Отправить

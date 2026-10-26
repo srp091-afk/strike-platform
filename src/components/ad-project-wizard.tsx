@@ -495,7 +495,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
                           type="submit"
                           aria-label="Отправить"
                           disabled={sending || !draft.trim()}
-                          className="inline-flex h-8 items-center justify-center rounded-md bg-white px-3 text-black transition-colors hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-40"
+                          className="inline-flex h-8 items-center justify-center rounded-md bg-strike px-3 text-white transition-colors hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40"
                         >
                           <ArrowUp className="size-4" />
                         </button>

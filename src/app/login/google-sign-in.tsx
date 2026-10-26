@@ -5,11 +5,16 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 
-export function GoogleSignInButton() {
+export function GoogleSignInButton({ canProceed = true, onBlocked }: { canProceed?: boolean; onBlocked?: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState(false);
 
   async function signIn() {
+    // Без согласия с условиями вход не начинаем.
+    if (!canProceed) {
+      onBlocked?.();
+      return;
+    }
     setError(null);
     setPending(true);
     try {
@@ -32,7 +37,13 @@ export function GoogleSignInButton() {
 
   return (
     <div className="space-y-3">
-      <Button type="button" size="lg" className="w-full" disabled={pending} onClick={signIn}>
+      <Button
+        type="button"
+        size="lg"
+        className="w-full bg-white text-black hover:bg-zinc-100 hover:shadow-none hover:brightness-100"
+        disabled={pending}
+        onClick={signIn}
+      >
         <GoogleIcon className="size-5 shrink-0" />
         Войти через Google
       </Button>

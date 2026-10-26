@@ -4,6 +4,7 @@ import { ArrowRight, Check, ClipboardList, Layers, SlidersHorizontal, Zap } from
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
+import { LegalLinks } from "@/components/legal-links";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 
@@ -246,7 +247,7 @@ export function LandingView() {
         <section className="mx-auto w-full max-w-6xl px-4 pt-16 pb-24 sm:px-6 sm:pt-24">
           <Reveal className="mx-auto max-w-4xl text-center">
             <p className="mx-auto inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium tracking-wide text-zinc-300 backdrop-blur">
-              <span className="size-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.9)]" />
+              <span className="size-1.5 rounded-full bg-strike shadow-[0_0_8px_rgba(207,2,52,0.9)]" />
               {t.hero.badge}
             </p>
             <h1 className="mt-6 bg-gradient-to-b from-white to-zinc-500 bg-clip-text pb-2 text-4xl leading-[1.15] font-semibold tracking-tight text-balance text-transparent sm:text-6xl">
@@ -257,7 +258,7 @@ export function LandingView() {
               <button
                 type="button"
                 onClick={() => router.push("/login")}
-                className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-white px-6 py-3 text-sm font-semibold text-black shadow-[0_0_30px_-6px_rgba(255,255,255,0.6)] transition-all duration-200 hover:bg-zinc-200 hover:shadow-[0_0_40px_-4px_rgba(255,255,255,0.7)] active:scale-[0.98] sm:w-auto"
+                className="group inline-flex w-full items-center justify-center gap-2 rounded-xl bg-strike px-6 py-3 text-sm font-semibold text-white shadow-[0_0_30px_-6px_rgba(207,2,52,0.45)] transition-all duration-200 hover:brightness-110 hover:shadow-[0_0_40px_-4px_rgba(207,2,52,0.45)] active:scale-[0.98] sm:w-auto"
               >
                 {t.hero.btnPrimary}
                 <ArrowRight className="size-4 transition-transform duration-200 group-hover:translate-x-0.5" strokeWidth={2} />
@@ -315,7 +316,10 @@ export function LandingView() {
         </section>
       </main>
 
-      <footer className="border-t border-white/5 py-8 text-center text-xs text-zinc-600">{t.footer.rights}</footer>
+      <footer className="border-t border-white/5 py-8 text-center text-xs text-zinc-600">
+        <LegalLinks lang={lang === "RU" ? "ru" : "en"} />
+        <p className="mt-4">{t.footer.rights}</p>
+      </footer>
     </div>
   );
 }
@@ -397,11 +401,11 @@ function CtaCard({
       <span
         aria-hidden
         className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100"
-        style={{ background: "radial-gradient(500px circle at var(--mx) var(--my), rgba(52,211,153,0.10), transparent 65%)" }}
+        style={{ background: "radial-gradient(500px circle at var(--mx) var(--my), rgba(207,2,52,0.10), transparent 65%)" }}
       />
       <div className="relative flex flex-col gap-6 rounded-[15px] px-7 py-8 md:flex-row md:items-center md:justify-between">
         <div className="flex items-start gap-4">
-          <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-emerald-400/25 bg-emerald-400/10 text-emerald-300 shadow-[0_0_24px_-6px_rgba(52,211,153,0.7)]">
+          <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-strike/25 bg-strike/10 text-strike-soft shadow-[0_0_24px_-6px_rgba(207,2,52,0.7)]">
             <Zap className="size-5" strokeWidth={2} />
           </span>
           <div>
@@ -415,7 +419,7 @@ function CtaCard({
         <button
           type="button"
           onClick={onClick}
-          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-white/15 bg-white/5 px-5 py-3 text-sm font-semibold text-white transition-all duration-200 hover:border-white/30 hover:bg-white/10 active:scale-[0.98]"
+          className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl bg-strike px-5 py-3 text-sm font-semibold text-white shadow-[0_0_30px_-6px_rgba(207,2,52,0.7)] transition-all duration-200 hover:brightness-110 hover:shadow-[0_0_40px_-4px_rgba(207,2,52,0.8)] active:scale-[0.98]"
         >
           {button}
           <ArrowRight className="size-4" strokeWidth={2} />

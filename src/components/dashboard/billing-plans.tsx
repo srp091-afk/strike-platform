@@ -158,9 +158,9 @@ export function BillingPlans({
                   className={cn(
                     "relative mt-7 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-200 active:scale-[0.98]",
                     current
-                      ? "cursor-default border border-emerald-400/30 bg-emerald-400/10 text-emerald-300"
+                      ? "cursor-default border border-strike/30 bg-strike/10 text-strike-soft"
                       : highlighted
-                        ? "bg-white text-black shadow-[0_0_30px_-6px_rgba(255,255,255,0.6)] hover:bg-zinc-200 hover:shadow-[0_0_40px_-4px_rgba(255,255,255,0.7)] disabled:opacity-60"
+                        ? "bg-strike text-white shadow-[0_0_30px_-6px_rgba(207,2,52,0.45)] hover:brightness-110 hover:shadow-[0_0_40px_-4px_rgba(207,2,52,0.45)] disabled:opacity-60"
                         : "border border-white/15 bg-white/5 text-white hover:border-white/30 hover:bg-white/10 disabled:opacity-60",
                   )}
                 >

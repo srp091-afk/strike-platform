@@ -10,7 +10,13 @@ import { cn } from "@/lib/utils";
 
 export function SiteHeader({ account }: { account: AccountProfile | null }) {
   const pathname = usePathname();
-  if (pathname === "/" || pathname.startsWith("/l/") || pathname.startsWith("/widget/") || pathname === "/login" || pathname === "/pricing") return null;
+  if (
+    ["/", "/login", "/pricing", "/privacy", "/terms", "/refund"].includes(pathname) ||
+    pathname.startsWith("/l/") ||
+    pathname.startsWith("/widget/")
+  ) {
+    return null;
+  }
 
   return (
     <header className="sticky top-0 z-50 border-b border-zinc-800/80 bg-black/80 backdrop-blur-md">

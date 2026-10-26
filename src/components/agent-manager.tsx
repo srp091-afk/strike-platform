@@ -886,7 +886,7 @@ function ChannelSettings({
           </label>
           <button
             type="button"
-            className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+            className="w-full rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
             disabled={connectingChannel === "widget"}
             onClick={() => void handleConnect("widget")}
           >
@@ -951,7 +951,7 @@ function WhatsAppChannel({
     return (
       <button
         type="button"
-        className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+        className="w-full rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
         disabled={connecting}
         onClick={onConnect}
       >
@@ -1020,7 +1020,7 @@ function WhatsAppPhoneField({ agentId, onSaved }: { agentId: string; onSaved: (p
         />
         <button
           type="button"
-          className="shrink-0 rounded-lg bg-white px-3 py-1.5 text-sm font-semibold text-black transition-shadow hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+          className="shrink-0 rounded-lg bg-strike px-3 py-1.5 text-sm font-semibold text-white transition-shadow hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
           disabled={pending}
           onClick={savePhone}
         >
@@ -1050,7 +1050,7 @@ function TelegramChannel({
     return (
       <button
         type="button"
-        className="w-full rounded-xl bg-white px-4 py-2.5 text-sm font-semibold text-black transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-50"
+        className="w-full rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
         disabled={connecting}
         onClick={onConnect}
       >

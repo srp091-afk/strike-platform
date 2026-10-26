@@ -40,7 +40,7 @@ export function AdsPageClient() {
             Создавайте и запускайте прибыльные рекламные кампании в Meta, Google и TikTok с помощью ИИ-автоматизации.
           </p>
         </div>
-        <Button asChild className="shrink-0 bg-white text-black hover:bg-zinc-200 hover:shadow-none">
+        <Button asChild className="shrink-0 bg-strike text-white hover:brightness-110 hover:shadow-none">
           <Link href="/ads/new">+ Новый проект</Link>
         </Button>
       </header>

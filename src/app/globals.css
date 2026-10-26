@@ -4,7 +4,7 @@
 :root {
   --background: #000000;
   --foreground: #a1a1aa;
-  --strike: #e11d48;
+  --strike: #cf0234;
   --radius: 0.75rem;
   color-scheme: dark;
 }
@@ -12,9 +12,11 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --color-strike: #e11d48;
-  --color-primary: #e11d48;
-  --color-strike-dark: #be123c;
+  /* Фирменный вишнёвый акцент. strike-soft — светлее, для текста на чёрном (контраст). */
+  --color-strike: #cf0234;
+  --color-primary: #cf0234;
+  --color-strike-dark: #a30128;
+  --color-strike-soft: #ff5c80;
   --color-ink: #a1a1aa;
   --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
   --font-heading: var(--font-jakarta), var(--font-inter), ui-sans-serif, sans-serif;
@@ -77,7 +79,7 @@
     border-radius: 999px;
   }
   &::-webkit-scrollbar-thumb:hover {
-    background: #dd0005;
+    background: #cf0234;
   }
   &::-webkit-scrollbar-button {
     display: none;
@@ -165,17 +167,34 @@
   }
 
   ::selection {
-    background: #ffffff;
-    color: #000000;
+    background: #cf0234;
+    color: #ffffff;
   }
 
   input[type="file"]::file-selector-button {
     margin-right: 0.75rem;
     border: 0;
     border-radius: 0.5rem;
-    background: #ffffff;
-    color: #000000;
+    background: #cf0234;
+    color: #ffffff;
     font-weight: 600;
     padding: 0.35rem 0.75rem;
   }
+
+  input[type="checkbox"],
+  input[type="radio"],
+  input[type="range"],
+  progress {
+    accent-color: #cf0234;
+  }
+}
+
+/* Вне @layer: перекрывает утилиты вроде focus:border-white — единый вишнёвый бордер полей в фокусе. */
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):focus,
+input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="file"]):not([type="color"]):focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+[data-slot="input"]:focus-visible {
+  border-color: #cf0234;
 }

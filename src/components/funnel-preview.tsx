@@ -126,7 +126,7 @@ export function FunnelPreview({
           type="button"
           disabled={!link}
           onClick={() => setRevealed(true)}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-white px-3 py-3 text-sm font-semibold text-black transition-shadow hover:shadow-[0_0_15px_rgba(255,255,255,0.2)] disabled:opacity-40"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-strike px-3 py-3 text-sm font-semibold text-white transition-shadow hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-40"
         >
           <MessageCircle className="size-4" strokeWidth={2} />
           Получить черновой расчёт в WhatsApp
