@@ -5,6 +5,8 @@ import { cache } from "react";
 import {
   normalizeAgentModel,
   readActiveChannels,
+  readFollowupInterval,
+  readFollowupMaxCount,
   readHandoffDuration,
   readMessageLimit,
   readResponseDelay,
@@ -126,14 +128,14 @@ export async function listAgents(): Promise<AgentRecord[]> {
   const userId = await getAuthenticatedUserId();
   const withPosition = await supabase
     .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_position, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")
+    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, followup_enabled, followup_interval_hours, followup_max_count, followup_template, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_position, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   const withDelay = withPosition.error?.message.includes("widget_position")
     ? await supabase
         .from("agents")
-        .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")
+        .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, followup_enabled, followup_interval_hours, followup_max_count, followup_template, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
     : withPosition;
@@ -147,6 +149,7 @@ export async function listAgents(): Promise<AgentRecord[]> {
     withDelay.error?.message.includes("telegram_api_hash") ||
     withDelay.error?.message.includes("telegram_session") ||
     withDelay.error?.message.includes("widget_") ||
+    withDelay.error?.message.includes("followup_") ||
     withDelay.error?.message.includes("limit_agent_messages") ||
     withDelay.error?.message.includes("human_handoff_duration") ||
     withDelay.error?.message.includes("split_messages")
@@ -186,6 +189,10 @@ export async function listAgents(): Promise<AgentRecord[]> {
     limit_client_messages: readMessageLimit("limit_client_messages" in row ? row.limit_client_messages : 0),
     limit_total_messages: readMessageLimit("limit_total_messages" in row ? row.limit_total_messages : 0),
     split_messages: readSplitMessages("split_messages" in row ? row.split_messages : false),
+    followup_enabled: "followup_enabled" in row ? row.followup_enabled === true : false,
+    followup_interval_hours: readFollowupInterval("followup_interval_hours" in row ? row.followup_interval_hours : undefined),
+    followup_max_count: readFollowupMaxCount("followup_max_count" in row ? row.followup_max_count : undefined),
+    followup_template: "followup_template" in row && row.followup_template ? String(row.followup_template) : null,
     waInstanceId: "wa_instance_id" in row && row.wa_instance_id ? String(row.wa_instance_id) : null,
     waApiToken: "wa_api_token" in row && row.wa_api_token ? String(row.wa_api_token) : null,
     waPhoneNumber: "wa_phone_number" in row && row.wa_phone_number ? String(row.wa_phone_number) : null,

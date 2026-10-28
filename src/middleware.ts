@@ -53,6 +53,8 @@ export async function middleware(request: NextRequest) {
     pathname === "/pricing" ||
     pathname === "/api/webhooks" ||
     pathname.startsWith("/api/webhooks/") ||
+    // Крон Vercel приходит без сессии, защищён CRON_SECRET внутри роута.
+    pathname.startsWith("/api/cron/") ||
     // Публичный веб-виджет: страница в iframe на чужих сайтах и её чат-API.
     pathname === "/widget" ||
     pathname.startsWith("/widget/") ||

@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { normalizeAgentModel, readMessageLimit } from "@/lib/agent-models";
 import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
+import { markAgentReplied, markClientReplied } from "@/lib/followup";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -68,6 +69,7 @@ async function handleUpdate(token: string, body: unknown) {
     external_message_id: externalId,
   });
   if (inboundError) throw new Error(inboundError.message);
+  await markClientReplied(supabase, conversation.id);
 
   const channelOn =
     !agent.active_channels ||
@@ -155,6 +157,7 @@ async function handleUpdate(token: string, body: unknown) {
   const responseDelay = Number(agent.response_delay);
   const chunks = replyChunks(reply, agent.split_messages);
   let preview = chunks[0] ?? reply;
+  let repliedOk = false;
 
   for (const [index, chunk] of chunks.entries()) {
     let delivered = false;
@@ -193,6 +196,7 @@ async function handleUpdate(token: string, body: unknown) {
     });
     if (storedError) throw new Error(storedError.message);
     preview = chunk;
+    repliedOk = delivered;
     if (!delivered) break;
   }
 
@@ -204,6 +208,9 @@ async function handleUpdate(token: string, body: unknown) {
       agent_id: agent.id,
     })
     .eq("id", conversation.id);
+
+  // Ответ ушёл клиенту — запускаем отсчёт для умного follow-up.
+  if (repliedOk) await markAgentReplied(supabase, conversation.id);
 }
 
 function readMessage(body: unknown) {

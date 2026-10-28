@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { normalizeAgentModel, readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
 import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
+import { markAgentReplied, markClientReplied } from "@/lib/followup";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
@@ -152,6 +153,7 @@ async function enqueueIncoming(request: NextRequest, body: unknown): Promise<Inc
     console.log("[whatsapp webhook] skip duplicate claim", parsed.messageId);
     return null;
   }
+  await markClientReplied(supabase, conversationId);
 
   if (!channel.canReply) {
     console.log("Остановка: ответы WhatsApp выключены");
@@ -301,6 +303,7 @@ async function processIncomingAi(job: IncomingJob) {
     if (chunks.length === 0) throw new Error("Модель вернула пустой ответ.");
 
     let preview = chunks[0]!;
+    let repliedOk = false;
     for (const [index, chunk] of chunks.entries()) {
       let delivered = false;
       let outboundId: string | null = null;
@@ -326,6 +329,7 @@ async function processIncomingAi(job: IncomingJob) {
         createdAt: null,
       });
       preview = chunk;
+      repliedOk = delivered;
       if (!delivered) break;
     }
 
@@ -343,6 +347,8 @@ async function processIncomingAi(job: IncomingJob) {
       console.error("[whatsapp webhook] conversations update", previewError);
       throw new Error(previewError.message);
     }
+    // Ответ ушёл клиенту — запускаем отсчёт для умного follow-up.
+    if (repliedOk) await markAgentReplied(supabase, job.conversationId);
   } finally {
     await releaseProcessingLock(supabase, job.conversationId);
   }

@@ -160,6 +160,10 @@ export type AgentRecord = {
   limit_client_messages: number;
   limit_total_messages: number;
   split_messages: boolean;
+  followup_enabled: boolean;
+  followup_interval_hours: number;
+  followup_max_count: number;
+  followup_template: string | null;
   waInstanceId: string | null;
   waApiToken: string | null;
   waPhoneNumber: string | null;
@@ -253,6 +257,21 @@ export function readResponseDelay(value: unknown) {
 
 export function readSplitMessages(value: unknown) {
   return value === true || value === "true";
+}
+
+export const DEFAULT_FOLLOWUP_INTERVAL_HOURS = 24;
+export const DEFAULT_FOLLOWUP_MAX_COUNT = 2;
+
+export function readFollowupInterval(value: unknown) {
+  const hours = Number(value);
+  if (!Number.isFinite(hours) || hours < 1) return DEFAULT_FOLLOWUP_INTERVAL_HOURS;
+  return Math.min(24 * 30, Math.round(hours));
+}
+
+export function readFollowupMaxCount(value: unknown) {
+  const count = Number(value);
+  if (!Number.isFinite(count) || count < 0) return DEFAULT_FOLLOWUP_MAX_COUNT;
+  return Math.min(20, Math.round(count));
 }
 
 export function isAgentModel(value: string): value is AgentModel {
