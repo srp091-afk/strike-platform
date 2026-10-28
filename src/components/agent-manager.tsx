@@ -396,6 +396,10 @@ function AgentDialog({
     data.set("limit_client_messages", current.limit_client_messages);
     data.set("limit_total_messages", current.limit_total_messages);
     data.set("split_messages", current.split_messages ? "true" : "false");
+    data.set("followup_enabled", current.followup_enabled ? "true" : "false");
+    data.set("followup_interval_hours", current.followup_interval_hours);
+    data.set("followup_max_count", current.followup_max_count);
+    data.set("followup_template", current.followup_template);
     data.set("wa_instance_id", current.wa_instance_id);
     data.set("wa_api_token", current.wa_api_token);
     data.set("wa_phone_number", current.wa_phone_number);
@@ -569,6 +573,13 @@ function AgentDialog({
                   enabled={draft.split_messages}
                   onChange={(split_messages) => patchDraft({ split_messages })}
                 />
+                <FollowupField
+                  enabled={draft.followup_enabled}
+                  intervalHours={draft.followup_interval_hours}
+                  maxCount={draft.followup_max_count}
+                  template={draft.followup_template}
+                  onChange={patchDraft}
+                />
               </div>
             </div>
           </div>
@@ -591,6 +602,10 @@ type AgentDraft = {
   limit_client_messages: string;
   limit_total_messages: string;
   split_messages: boolean;
+  followup_enabled: boolean;
+  followup_interval_hours: string;
+  followup_max_count: string;
+  followup_template: string;
   wa_instance_id: string;
   wa_api_token: string;
   wa_phone_number: string;
@@ -610,6 +625,10 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     limit_client_messages: String(agent?.limit_client_messages ?? 0),
     limit_total_messages: String(agent?.limit_total_messages ?? 0),
     split_messages: agent?.split_messages ?? false,
+    followup_enabled: agent?.followup_enabled ?? false,
+    followup_interval_hours: String(agent?.followup_interval_hours ?? 24),
+    followup_max_count: String(agent?.followup_max_count ?? 2),
+    followup_template: agent?.followup_template ?? "",
     wa_instance_id: agent?.waInstanceId ?? "",
     wa_api_token: agent?.waApiToken ?? "",
     wa_phone_number: agent?.waPhoneNumber ?? "",
@@ -624,6 +643,10 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.human_handoff_duration === right.human_handoff_duration &&
     left.telegram_chat_id.trim() === right.telegram_chat_id.trim() &&
     left.split_messages === right.split_messages &&
+    left.followup_enabled === right.followup_enabled &&
+    left.followup_template.trim() === right.followup_template.trim() &&
+    sameNumber(left.followup_interval_hours, right.followup_interval_hours) &&
+    sameNumber(left.followup_max_count, right.followup_max_count) &&
     sameNumber(left.temperature, right.temperature) &&
     sameNumber(left.response_delay, right.response_delay) &&
     sameNumber(left.limit_agent_messages, right.limit_agent_messages) &&
@@ -1346,6 +1369,96 @@ function SplitMessagesField({ enabled, onChange }: { enabled: boolean; onChange:
       <p className="text-sm leading-6 text-zinc-400">
         Если включено, абзацы будут отправляться отдельными сообщениями (пузырями) с учетом задержки между ними
       </p>
+    </section>
+  );
+}
+
+function FollowupField({
+  enabled,
+  intervalHours,
+  maxCount,
+  template,
+  onChange,
+}: {
+  enabled: boolean;
+  intervalHours: string;
+  maxCount: string;
+  template: string;
+  onChange: (patch: Partial<AgentDraft>) => void;
+}) {
+  return (
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
+      <div className="grid gap-2">
+        <h3 className="font-heading text-lg font-semibold text-white">Умные напоминания (Follow-up)</h3>
+        <p className="text-sm leading-6 text-zinc-400">
+          Если клиент перестал отвечать, ИИ сам решит, уместно ли напомнить о себе. Отказавшимся клиентам и диалогам,
+          где мы ждём действия от себя, напоминания не уходят.
+        </p>
+      </div>
+      <input type="hidden" name="followup_enabled" value={enabled ? "true" : "false"} />
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+        <span className="text-sm font-medium text-zinc-200">Включить напоминания</span>
+        <Switch
+          checked={enabled}
+          onCheckedChange={(followup_enabled) => onChange({ followup_enabled })}
+          aria-label="Включить напоминания"
+        />
+      </label>
+      {enabled ? (
+        <>
+          <label className="grid gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+              Интервал ожидания (в часах)
+            </span>
+            <input
+              className={fieldClass}
+              name="followup_interval_hours"
+              type="number"
+              min={1}
+              step={1}
+              value={intervalHours}
+              onChange={(event) => onChange({ followup_interval_hours: event.target.value })}
+            />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+              Лимит напоминаний
+            </span>
+            <input
+              className={fieldClass}
+              name="followup_max_count"
+              type="number"
+              min={0}
+              step={1}
+              value={maxCount}
+              onChange={(event) => onChange({ followup_max_count: event.target.value })}
+            />
+          </label>
+          <label className="grid gap-2">
+            <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+              Инструкция / Шаблон для пуша
+            </span>
+            <textarea
+              className={`${fieldClass} min-h-28 resize-y`}
+              name="followup_template"
+              maxLength={2000}
+              value={template}
+              placeholder="Например: Спроси, посмотрел ли клиент видео"
+              onChange={(event) => onChange({ followup_template: event.target.value })}
+            />
+            <span className="text-xs leading-5 text-zinc-400">
+              Если заполнено, бот будет опираться на этот текст (например: &apos;Спроси, посмотрел ли клиент видео&apos;).
+              Если оставить пустым, бот придумает текст сам
+            </span>
+          </label>
+        </>
+      ) : (
+        <>
+          <input type="hidden" name="followup_interval_hours" value={intervalHours} />
+          <input type="hidden" name="followup_max_count" value={maxCount} />
+          <input type="hidden" name="followup_template" value={template} />
+        </>
+      )}
     </section>
   );
 }
