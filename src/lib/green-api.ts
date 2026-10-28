@@ -51,15 +51,32 @@ export async function getGreenChatHistory(chatId: string, count = 10, credential
   return Array.isArray(payload) ? payload : [];
 }
 
+/**
+ * Включает вебхуки Green API: входящие, а также исходящие — отправленные с телефона/WhatsApp Web
+ * (`outgoingMessageWebhook`) и через API (`outgoingAPIMessageWebhook`). Без них ответы оператора
+ * с телефона в платформу не попадают. `setSettings` перезапускает инстанс, поэтому сначала читаем
+ * текущие настройки и пишем только при расхождении.
+ */
 export async function ensureGreenIncomingWebhook(credentials: GreenCredentials) {
   const origin = (process.env.NEXT_PUBLIC_APP_URL || "https://strike-platform.vercel.app").replace(/\/$/, "");
+  const desired = {
+    webhookUrl: `${origin}/api/webhooks/whatsapp`,
+    incomingWebhook: "yes",
+    outgoingMessageWebhook: "yes",
+    outgoingAPIMessageWebhook: "yes",
+  };
+
+  const current = await fetch(endpoint("getSettings", credentials), {
+    signal: AbortSignal.timeout(15000),
+  })
+    .then((res) => (res.ok ? (res.json() as Promise<Record<string, unknown>>) : null))
+    .catch(() => null);
+  if (current && Object.entries(desired).every(([key, value]) => current[key] === value)) return;
+
   const response = await fetch(endpoint("setSettings", credentials), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      webhookUrl: `${origin}/api/webhooks/whatsapp`,
-      incomingWebhook: "yes",
-    }),
+    body: JSON.stringify(desired),
     signal: AbortSignal.timeout(15000),
   });
   if (!response.ok) {

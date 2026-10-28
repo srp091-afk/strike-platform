@@ -13,7 +13,7 @@ import {
   type HandoffDuration,
 } from "@/lib/agent-models";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
-import { getGreenPhone } from "@/lib/green-api";
+import { ensureGreenIncomingWebhook, getGreenPhone } from "@/lib/green-api";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export type SaveState = {
@@ -209,6 +209,13 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
           }
         : {}),
     };
+
+    // Уже подключённые номера подтягиваем до актуальных настроек вебхуков (исходящие с телефона).
+    if (fields.waInstanceId && fields.waApiToken) {
+      await ensureGreenIncomingWebhook({ idInstance: fields.waInstanceId, apiToken: fields.waApiToken }).catch(
+        (error) => console.error("[agents] green webhook", error instanceof Error ? error.message : error),
+      );
+    }
 
     let agentId = fields.id;
     if (fields.id) {
