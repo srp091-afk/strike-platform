@@ -6,7 +6,13 @@ import { readBotFlags } from "@/lib/bot-state";
 import { readFollowupInterval, readFollowupMaxCount } from "@/lib/agent-models";
 import { sendGreenMessage } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
-import { stripMarkdown } from "@/lib/reply";
+import { sleep, stripMarkdown } from "@/lib/reply";
+
+/** Случайная пауза перед отправкой пуша: 3–12 с, чтобы пачка уведомлений не уходила в одну миллисекунду. */
+const SEND_JITTER_MIN_MS = 3000;
+const SEND_JITTER_MAX_MS = 12000;
+/** Бюджет одного прогона. Функция живёт до 60 с (maxDuration), оставляем запас; остальное доберёт следующий запуск. */
+const RUN_BUDGET_MS = 45_000;
 
 /** Модель-«контролёр»: json_object поддерживают gpt-4o-семейства, ответ короткий — берём дешёвую. */
 const GATEKEEPER_MODEL = "gpt-4o-mini";
@@ -94,9 +100,10 @@ export async function runFollowups(supabase: AdminClient): Promise<FollowupSumma
     .eq("followup_enabled", true);
   if (error) throw new Error(error.message);
 
+  const deadline = Date.now() + RUN_BUDGET_MS;
   let budget = MAX_CONVERSATIONS_PER_RUN;
   for (const agent of (agents ?? []) as FollowupAgent[]) {
-    if (budget <= 0) break;
+    if (budget <= 0 || Date.now() >= deadline) break;
     if (agent.is_active === false) continue;
 
     const maxCount = readFollowupMaxCount(agent.followup_max_count);
@@ -123,6 +130,8 @@ export async function runFollowups(supabase: AdminClient): Promise<FollowupSumma
     const botFlags = await readBotFlags(supabase, conversations.map((item) => item.id));
 
     for (const conversation of conversations) {
+      // Время вышло — оставшиеся диалоги по-прежнему «просрочены» и уйдут со следующим запуском.
+      if (Date.now() >= deadline) break;
       budget -= 1;
       summary.scanned += 1;
       try {
@@ -130,7 +139,7 @@ export async function runFollowups(supabase: AdminClient): Promise<FollowupSumma
           summary.skipped += 1;
           continue;
         }
-        const outcome = await processConversation(supabase, agent, conversation);
+        const outcome = await processConversation(supabase, agent, conversation, deadline);
         summary[outcome] += 1;
       } catch (failure) {
         summary.failed += 1;
@@ -146,6 +155,7 @@ async function processConversation(
   supabase: AdminClient,
   agent: FollowupAgent,
   conversation: FollowupConversation,
+  deadline: number,
 ): Promise<"pushed" | "stopped" | "skipped" | "failed"> {
   const provider = readProvider(conversation.integration);
   if (!canSend(agent, provider)) {
@@ -169,6 +179,11 @@ async function processConversation(
       await setWaiting(supabase, conversation.id, false);
       return "stopped";
     }
+
+    // Пауза только перед реальной отправкой (stop-решения её не тратят) и не дольше остатка бюджета.
+    const jitter =
+      SEND_JITTER_MIN_MS + Math.floor(Math.random() * (SEND_JITTER_MAX_MS - SEND_JITTER_MIN_MS + 1));
+    await sleep(Math.max(0, Math.min(jitter, deadline - Date.now())));
 
     const delivered = await deliver(agent, provider, conversation.external_chat_id, decision.message);
     const pushCount = (conversation.push_count ?? 0) + 1;

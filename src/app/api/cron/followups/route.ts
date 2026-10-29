@@ -3,7 +3,8 @@ import type { NextRequest } from "next/server";
 import { runFollowups } from "@/lib/followup";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export const maxDuration = 300;
+// 60 с — безопасно и для Hobby; бюджет прогона (45 с) задан в runFollowups.
+export const maxDuration = 60;
 /**
  * Почасовой планировщик умных напоминаний (Vercel Cron, см. vercel.json).
  * Vercel сам шлёт `Authorization: Bearer $CRON_SECRET`; без секрета эндпоинт закрыт.
