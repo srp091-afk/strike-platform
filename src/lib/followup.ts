@@ -26,7 +26,9 @@ const GATEKEEPER_PROMPT = `Ты — AI-контролер качества пр�
 2. Если передан шаблон/инструкция ${TEMPLATE_PLACEHOLDER}, используй его смысл для формирования текста, адаптировав под контекст (без markdown).
 3. Если шаблона нет, сгенерируй короткое, живое и вежливое сообщение-напоминание (максимум 2 предложения). Напомни суть последнего вопроса.
 
-Ответ — строго JSON-объект вида {"action": "stop" | "push", "message": string | null}. Пиши сообщение на языке диалога, простым текстом без markdown.`;
+Ответ — строго JSON-объект вида {"action": "stop" | "push", "message": string | null}. CRITICAL RULE: YOU MUST WRITE THE FOLLOW-UP MESSAGE IN THE EXACT SAME LANGUAGE THAT THE CLIENT USED IN THEIR LAST MESSAGES. IGNORE THE LANGUAGE OF THE SYSTEM PROMPTS OR THE VERY FIRST AUTOMATED GREETINGS. IF THE CLIENT SPEAKS ENGLISH, THE FOLLOW-UP MUST BE IN ENGLISH. IF TURKISH, IN TURKISH. IF RUSSIAN, IN RUSSIAN.
+
+Пиши простым текстом без markdown.`;
 
 type AdminClient = SupabaseClient;
 
