@@ -14,8 +14,8 @@ const SEND_JITTER_MAX_MS = 12000;
 /** Бюджет одного прогона. Функция живёт до 60 с (maxDuration), оставляем запас; остальное доберёт следующий запуск. */
 const RUN_BUDGET_MS = 45_000;
 
-/** Модель-«контролёр»: json_object поддерживают gpt-4o-семейства, ответ короткий — берём дешёвую. */
-const GATEKEEPER_MODEL = "gpt-4o-mini";
+/** Модель-«контролёр»: json_object поддерживают gpt-4o-семейства, ответ короткий, но mini делал грамматические ошибки («не забыла ли вы»), поэтому полноценная gpt-4o. */
+const GATEKEEPER_MODEL = "gpt-4o";
 const HISTORY_LIMIT = 10;
 const MAX_CONVERSATIONS_PER_RUN = 100;
 const TEMPLATE_PLACEHOLDER = "[ВСТАВИТЬ_ШАБЛОН_ЕСЛИ_ЕСТЬ]";
@@ -33,6 +33,8 @@ const GATEKEEPER_PROMPT = `Ты — AI-контролер качества пр�
 3. Если шаблона нет, сгенерируй короткое, живое и вежливое сообщение-напоминание (максимум 2 предложения). Напомни суть последнего вопроса.
 
 Ответ — строго JSON-объект вида {"action": "stop" | "push", "message": string | null}. CRITICAL RULE: YOU MUST WRITE THE FOLLOW-UP MESSAGE IN THE EXACT SAME LANGUAGE THAT THE CLIENT USED IN THEIR LAST MESSAGES. IGNORE THE LANGUAGE OF THE SYSTEM PROMPTS OR THE VERY FIRST AUTOMATED GREETINGS. IF THE CLIENT SPEAKS ENGLISH, THE FOLLOW-UP MUST BE IN ENGLISH. IF TURKISH, IN TURKISH. IF RUSSIAN, IN RUSSIAN.
+
+ГРАММАТИКА (КРИТИЧНО): текст должен быть безупречно грамотным, как у образованного носителя языка. Для русского: при обращении на «вы» глагол ВСЕГДА во множественном числе, даже если клиент — одна женщина или один мужчина. Правильно: «Елена, вы не забыли про мой вопрос?», «не забыли ли вы». НЕПРАВИЛЬНО: «не забыла ли вы», «вы забыла», «вы смог». Избегай конструкций, где нужно угадывать род клиента. Перед ответом перечитай сообщение и исправь любые ошибки согласования, падежей и канцеляризмы.
 
 Пиши простым текстом без markdown.`;
 
@@ -232,27 +234,61 @@ type Decision = { action: "push" | "stop"; message: string | null };
 
 async function decide(history: HistoryMessage[], agent: FollowupAgent): Promise<Decision> {
   const template = agent.followup_template?.trim() ?? "";
-  const templateText = template ? `«${template}»` : "не передан";
+  // Шаблон обычно написан на языке владельца (RU) и тянет модель на свой язык — явно просим его переводить.
+  const templateText = template
+    ? `«${template}» (шаблон может быть на другом языке — передай только смысл и напиши на языке клиента)`
+    : "не передан";
   const system = GATEKEEPER_PROMPT.replace(TEMPLATE_PLACEHOLDER, templateText);
   const transcript = history
-    .map((item) => `${item.role === "assistant" ? "Агент" : "Клиент"}: ${item.content}`)
+    .map((item) => `${item.role === "assistant" ? "Agent" : "Client"}: ${item.content}`)
     .join("\n");
-  const persona = agent.system_prompt?.trim().slice(0, 2000);
+  // Инструкцию агента (на языке владельца) в запрос не кладём: она перетягивала язык ответа.
+  const clientText = history
+    .filter((item) => item.role === "user")
+    .slice(-3)
+    .map((item) => item.content)
+    .join("\n")
+    .trim();
 
-  const completion = await getOpenAI().chat.completions.create({
-    model: GATEKEEPER_MODEL,
-    temperature: 0.3,
-    response_format: { type: "json_object" },
-    messages: [
-      { role: "system", content: system },
-      {
-        role: "user",
-        content: `${persona ? `Инструкция агента (для контекста):\n${persona}\n\n` : ""}История диалога (последние ${HISTORY_LIMIT} сообщений):\n${transcript}`,
-      },
-    ],
-  });
+  const languageNote = clientText
+    ? `\n\nCLIENT'S LAST MESSAGES (write the follow-up in THIS language, whatever language the agent or the template used):\n<<<\n${clientText}\n>>>`
+    : "";
 
-  return parseDecision(completion.choices[0]?.message?.content);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const completion = await getOpenAI().chat.completions.create({
+      model: GATEKEEPER_MODEL,
+      temperature: 0.3,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: system },
+        {
+          role: "user",
+          content: `Dialogue history (last ${HISTORY_LIMIT} messages):\n${transcript}${languageNote}${
+            attempt > 0 ? "\n\nYour previous draft was in the wrong language. Rewrite it in the client's language." : ""
+          }`,
+        },
+      ],
+    });
+
+    const decision = parseDecision(completion.choices[0]?.message?.content);
+    if (decision.action === "stop" || !decision.message || !clientText) return decision;
+    if (sameScript(clientText, decision.message)) return decision;
+  }
+
+  // Дважды промахнулись с языком — лучше не слать вообще, чем написать клиенту на чужом.
+  return { action: "stop", message: null };
+}
+
+/** Грубая проверка алфавита: кириллица против латиницы. Ловит главный провал — русский пуш англоязычному клиенту. */
+function sameScript(clientText: string, message: string) {
+  const cyrillic = (text: string) => {
+    const letters = text.match(/\p{L}/gu) ?? [];
+    if (letters.length === 0) return null;
+    return letters.filter((char) => /\p{Script=Cyrillic}/u.test(char)).length / letters.length > 0.5;
+  };
+  const client = cyrillic(clientText);
+  const reply = cyrillic(message);
+  return client === null || reply === null || client === reply;
 }
 
 /** Ответ модели — недоверенный ввод: любое отклонение от схемы трактуем как «не слать». */
