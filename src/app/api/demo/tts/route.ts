@@ -1,16 +1,24 @@
 import type { NextRequest } from "next/server";
 
 import { clientIp, isRateLimited } from "@/lib/demo-rate-limit";
-import { getOpenAI } from "@/lib/openai";
 
 export const maxDuration = 30;
 
-/** Один запрос — одно предложение; длинный текст не принимаем, чтобы не тратить токены впустую. */
+/** ElevenLabs, голос Antoni. */
+const VOICE_ID = "ErXwobaYiN019PkySvjV";
+const ENDPOINT = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
+
+/** Один запрос — один кусок реплики; длинный текст не принимаем, чтобы не тратить символы впустую. */
 const MAX_TEXT_CHARS = 600;
 // На один ответ агента уходит несколько запросов (по предложению), поэтому лимит выше, чем у чата.
 const RATE_MAX_REQUESTS = 120;
 
 export async function POST(request: NextRequest) {
+  const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
+  if (!apiKey) {
+    return Response.json({ error: "ELEVENLABS_API_KEY is not set" }, { status: 503 });
+  }
+
   if (isRateLimited("demo-tts", clientIp(request), RATE_MAX_REQUESTS)) {
     return Response.json({ error: "Слишком много запросов. Попробуйте чуть позже." }, { status: 429 });
   }
@@ -22,11 +30,27 @@ export async function POST(request: NextRequest) {
   }
 
   try {
-    const speech = await getOpenAI().audio.speech.create(
-      { model: "tts-1", voice: "shimmer", input: text, response_format: "mp3" },
-      { signal: request.signal },
-    );
-    const audio = await speech.arrayBuffer();
+    const upstream = await fetch(ENDPOINT, {
+      method: "POST",
+      headers: {
+        "xi-api-key": apiKey,
+        "Content-Type": "application/json",
+        Accept: "audio/mpeg",
+      },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_multilingual_v2",
+        voice_settings: { stability: 0.5, similarity_boost: 0.8 },
+      }),
+      signal: request.signal,
+    });
+
+    if (!upstream.ok) {
+      console.error("[demo tts] elevenlabs", upstream.status, (await upstream.text().catch(() => "")).slice(0, 300));
+      return Response.json({ error: "Не удалось озвучить текст." }, { status: 502 });
+    }
+
+    const audio = await upstream.arrayBuffer();
     return new Response(audio, {
       headers: { "Content-Type": "audio/mpeg", "Cache-Control": "no-store" },
     });

@@ -1,9 +1,8 @@
 "use client";
 
-import { Globe, Mic, Square } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { ArrowUp, Mic, Square } from "lucide-react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type Ref } from "react";
 
-import { BrandLogo } from "@/components/brand-logo";
 import type {
   SpeechRecognitionConstructor,
   SpeechRecognitionErrorEventLike,
@@ -12,14 +11,16 @@ import type {
 } from "@/components/demo/speech-recognition";
 import { cn } from "@/lib/utils";
 
-type ChatMessage = { id: string; role: "user" | "assistant"; content: string };
-
+type ChatMessage = { role: "user" | "assistant"; content: string };
 type SpeechLang = "ru-RU" | "en-US";
+type SphereState = "idle" | "listening" | "thinking" | "speaking";
 
-const LANG_OPTIONS: { value: SpeechLang; label: string }[] = [
-  { value: "ru-RU", label: "RU" },
-  { value: "en-US", label: "EN" },
-];
+const CHIPS = [
+  "Чем вы можете помочь моему бизнесу?",
+  "Сколько это стоит?",
+  "Как быстро можно запустить?",
+  "Покажи пример диалога с клиентом",
+] as const;
 
 const ERROR_TEXT: Record<string, string> = {
   "not-allowed": "Доступ к микрофону запрещён. Разрешите его в настройках браузера и попробуйте снова.",
@@ -27,6 +28,16 @@ const ERROR_TEXT: Record<string, string> = {
   "audio-capture": "Микрофон не найден. Подключите устройство записи.",
   network: "Не удалось связаться с сервисом распознавания речи. Проверьте интернет.",
 };
+
+/** Пустой WAV: «прогрев» Audio в обработчике клика, иначе Safari/iOS потом блокирует автозапуск озвучки. */
+const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+
+/** Границы озвучки: законченное предложение и мягкая пауза (запятая и т.п.) — только если кусок уже достаточно длинный. */
+const MIN_SENTENCE_CHARS = 12;
+const MIN_CLAUSE_CHARS = 45;
+
+const URL_PATTERN =
+  /(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|io|ru|net|org|ai|co|app|dev|pro|biz|info|me|by|ua|kz|su|eu|ge|tr|de|uk|us|xyz|online|site|shop|store|agency)\b(?:\/\S*)?/i;
 
 function getRecognitionConstructor(): SpeechRecognitionConstructor | null {
   if (typeof window === "undefined") return null;
@@ -37,25 +48,39 @@ function getRecognitionConstructor(): SpeechRecognitionConstructor | null {
   return speech.SpeechRecognition ?? speech.webkitSpeechRecognition ?? null;
 }
 
-/** Пустой WAV: «прогрев» Audio в обработчике клика, иначе Safari/iOS потом блокирует автозапуск озвучки. */
-const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+/** Ищет ссылку на сайт в реплике (набранной или надиктованной). */
+function extractUrl(text: string): { url: string; onlyUrl: boolean } | null {
+  const match = text.match(URL_PATTERN);
+  if (!match) return null;
+  const raw = match[0].replace(/[.,!?)»”"']+$/, "");
+  if (!raw) return null;
+  const url = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  return { url, onlyUrl: text.replace(match[0], "").replace(/[\s.,!?]/g, "") === "" };
+}
 
-/** Слишком короткие обрывки («Да.») склеиваем со следующим предложением — так озвучка звучит ровнее. */
-const MIN_SENTENCE_CHARS = 12;
+function hostOf(url: string) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, "");
+  } catch {
+    return url;
+  }
+}
 
 /**
- * Отрезает законченные предложения (. ! ? … + пробел/перенос) от накопленного текста стрима.
- * Точка без пробела после неё («3.5», «e.g.» на границе чанков) границей не считается.
+ * Отрезает от накопленного текста стрима готовые к озвучке куски: законченные предложения (. ! ? …)
+ * и, чтобы голос стартовал быстрее, длинные фразы по запятой/точке с запятой/двоеточию.
+ * Знак без пробела после него («3.5», «e.g.» на границе чанков) границей не считается.
  */
 function takeSentences(buffer: string): { sentences: string[]; rest: string } {
   const sentences: string[] = [];
   let start = 0;
   let pending = "";
-  for (const match of buffer.matchAll(/[.!?…]+["»”')]*\s/g)) {
+  for (const match of buffer.matchAll(/([.!?…]+["»”')]*|[,;:])\s/g)) {
     const end = match.index + match[0].length;
     pending += buffer.slice(start, end);
     start = end;
-    if (pending.trim().length >= MIN_SENTENCE_CHARS) {
+    const soft = /^[,;:]$/.test(match[1]!);
+    if (pending.trim().length >= (soft ? MIN_CLAUSE_CHARS : MIN_SENTENCE_CHARS)) {
       sentences.push(pending.trim());
       pending = "";
     }
@@ -63,7 +88,7 @@ function takeSentences(buffer: string): { sentences: string[]; rest: string } {
   return { sentences, rest: pending + buffer.slice(start) };
 }
 
-/** Запрашивает озвучку предложения. Возвращает blob-URL mp3 или null при ошибке (предложение пропускаем). */
+/** Запрашивает озвучку куска. Возвращает blob-URL mp3 или null при ошибке (кусок пропускаем). */
 async function fetchSpeech(sentence: string, signal: AbortSignal): Promise<string | null> {
   try {
     const response = await fetch("/api/demo/tts", {
@@ -80,33 +105,33 @@ async function fetchSpeech(sentence: string, signal: AbortSignal): Promise<strin
 }
 
 export function VoiceAgentDemo() {
+  const [isRecording, setIsRecording] = useState(false);
+  const [isReplying, setIsReplying] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [interim, setInterim] = useState("");
+  const [draft, setDraft] = useState("");
+  const [lang, setLang] = useState<SpeechLang>("ru-RU");
+  const [error, setError] = useState<string | null>(null);
+  const [supported, setSupported] = useState(true);
+  const [siteHost, setSiteHost] = useState<string | null>(null);
+
+  // История нужна только как контекст для LLM — на экране ответы агента не показываем, их можно лишь услышать.
+  const historyRef = useRef<ChatMessage[]>([]);
+  const siteUrlRef = useRef("");
+  const chatAbortRef = useRef<AbortController | null>(null);
+
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const finalRef = useRef("");
+
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const audioCtxRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
   const queueRef = useRef<Promise<string | null>[]>([]);
   const playingRef = useRef(false);
   const epochRef = useRef(0);
   const ttsAbortRef = useRef<AbortController | null>(null);
   const finishPlayRef = useRef<(() => void) | null>(null);
-
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [isReplying, setIsReplying] = useState(false);
-  const messagesRef = useRef<ChatMessage[]>([]);
-  const abortRef = useRef<AbortController | null>(null);
-  const [websiteUrl, setWebsiteUrl] = useState("");
-  const [isRecording, setIsRecording] = useState(false);
-  const [interim, setInterim] = useState("");
-  const [lang, setLang] = useState<SpeechLang>("ru-RU");
-  const [error, setError] = useState<string | null>(null);
-  const [supported, setSupported] = useState(true);
-
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const finalRef = useRef("");
-  const urlRef = useRef(websiteUrl);
-  const scrollRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    urlRef.current = websiteUrl;
-  }, [websiteUrl]);
+  const sphereRef = useRef<HTMLDivElement>(null);
 
   // Поддержку API знает только браузер — проверяем после монтирования, чтобы не ломать гидратацию.
   useEffect(() => {
@@ -114,14 +139,8 @@ export function VoiceAgentDemo() {
     setSupported(getRecognitionConstructor() !== null);
     return () => {
       recognitionRef.current?.abort();
-      abortRef.current?.abort();
+      chatAbortRef.current?.abort();
     };
-  }, []);
-
-  /** Единая точка записи в историю: ref нужен, чтобы запрос к API видел актуальный список без ожидания рендера. */
-  const updateMessages = useCallback((update: (current: ChatMessage[]) => ChatMessage[]) => {
-    messagesRef.current = update(messagesRef.current);
-    setMessages(messagesRef.current);
   }, []);
 
   /** Один Audio на всё демо: разблокированный жестом элемент переиспользуется для каждого куска очереди. */
@@ -132,11 +151,29 @@ export function VoiceAgentDemo() {
       audio.src = SILENT_WAV;
       void audio.play().catch(() => undefined);
       audioRef.current = audio;
+
+      // Анализатор амплитуды нужен, чтобы сфера пульсировала в такт речи. Без него сфера просто анимируется CSS-ом.
+      try {
+        const Ctx =
+          window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        if (Ctx) {
+          const context = new Ctx();
+          const analyser = context.createAnalyser();
+          analyser.fftSize = 256;
+          context.createMediaElementSource(audio).connect(analyser);
+          analyser.connect(context.destination);
+          audioCtxRef.current = context;
+          analyserRef.current = analyser;
+        }
+      } catch {
+        analyserRef.current = null;
+      }
     }
+    void audioCtxRef.current?.resume();
     return audioRef.current;
   }, []);
 
-  /** Прерывание: очищает очередь, отменяет запросы озвучки и немедленно останавливает текущий звук. */
+  /** Barge-in, часть 1: очищает очередь, отменяет запросы озвучки и мгновенно останавливает текущий звук. */
   const stopSpeaking = useCallback(() => {
     epochRef.current += 1;
     ttsAbortRef.current?.abort();
@@ -189,7 +226,7 @@ export function VoiceAgentDemo() {
     setIsSpeaking(false);
   }, [ensureAudio]);
 
-  /** Предложение сразу уходит на озвучку (параллельно с остальными), а в очередь встаёт в порядке следования. */
+  /** Кусок сразу уходит на озвучку (параллельно с остальными), а в очередь встаёт в порядке следования. */
   const enqueueSpeech = useCallback(
     (sentence: string) => {
       const controller = (ttsAbortRef.current ??= new AbortController());
@@ -202,13 +239,51 @@ export function VoiceAgentDemo() {
 
   useEffect(() => () => stopSpeaking(), [stopSpeaking]);
 
-  /** Отправляет историю на /api/demo/chat и по мере прихода кусков дописывает их в сообщение ассистента. */
+  // Пульсация сферы в такт речи: амплитуда звука пишется прямо в CSS-переменную, без перерисовок React.
+  useEffect(() => {
+    const node = sphereRef.current;
+    if (!node) return;
+    if (!isSpeaking) {
+      node.style.setProperty("--level", "0");
+      return;
+    }
+
+    const analyser = analyserRef.current;
+    const data = new Uint8Array(analyser?.fftSize ?? 0);
+    let smooth = 0;
+    let frame = 0;
+    const tick = () => {
+      let level = 0.4 + 0.2 * Math.sin(Date.now() / 150);
+      if (analyser) {
+        analyser.getByteTimeDomainData(data);
+        let sum = 0;
+        for (const value of data) {
+          const normalized = (value - 128) / 128;
+          sum += normalized * normalized;
+        }
+        level = Math.min(1, Math.sqrt(sum / data.length) * 4);
+      }
+      smooth += (level - smooth) * 0.25;
+      node.style.setProperty("--level", smooth.toFixed(3));
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(frame);
+      node.style.setProperty("--level", "0");
+    };
+  }, [isSpeaking]);
+
+  /**
+   * Отправляет историю на /api/demo/chat. Текст агента на экран не выводится: по мере прихода его нарезают
+   * на куски и отправляют в очередь озвучки.
+   */
   const handleSendMessage = useCallback(
     async (text: string, websiteUrl: string): Promise<void> => {
-      void text; // реплика пользователя уже в messagesRef — API получает всю историю целиком
+      void text; // реплика пользователя уже в historyRef — API получает всю историю целиком
       const controller = new AbortController();
-      abortRef.current = controller;
-      const assistantId = crypto.randomUUID();
+      chatAbortRef.current = controller;
+      const reply: ChatMessage = { role: "assistant", content: "" };
       let sentenceBuffer = "";
       stopSpeaking(); // новый ответ не должен накладываться на хвост предыдущего
       setIsReplying(true);
@@ -218,10 +293,7 @@ export function VoiceAgentDemo() {
         const response = await fetch("/api/demo/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            messages: messagesRef.current.map(({ role, content }) => ({ role, content })),
-            websiteUrl: websiteUrl || undefined,
-          }),
+          body: JSON.stringify({ messages: historyRef.current, websiteUrl: websiteUrl || undefined }),
           signal: controller.signal,
         });
 
@@ -230,7 +302,12 @@ export function VoiceAgentDemo() {
           throw new Error(payload?.error ?? "Не удалось получить ответ агента.");
         }
 
-        updateMessages((current) => [...current, { id: assistantId, role: "assistant", content: "" }]);
+        if (response.headers.get("x-site-status") === "failed") {
+          siteUrlRef.current = "";
+          setSiteHost(null);
+        }
+
+        historyRef.current = [...historyRef.current, reply];
 
         const reader = response.body.getReader();
         const decoder = new TextDecoder();
@@ -239,11 +316,8 @@ export function VoiceAgentDemo() {
           if (done) break;
           const chunk = decoder.decode(value, { stream: true });
           if (!chunk) continue;
-          updateMessages((current) =>
-            current.map((message) => (message.id === assistantId ? { ...message, content: message.content + chunk } : message)),
-          );
+          reply.content += chunk;
 
-          // Накапливаем текст и озвучиваем каждое законченное предложение, не дожидаясь конца ответа.
           const taken = takeSentences(sentenceBuffer + chunk);
           sentenceBuffer = taken.rest;
           for (const sentence of taken.sentences) enqueueSpeech(sentence);
@@ -254,27 +328,52 @@ export function VoiceAgentDemo() {
         if (controller.signal.aborted) return;
         setError(failure instanceof Error ? failure.message : "Не удалось получить ответ агента.");
       } finally {
-        // Пустой пузырь (ошибка до первого куска) убираем.
-        updateMessages((current) => current.filter((message) => message.id !== assistantId || message.content !== ""));
-        if (abortRef.current === controller) abortRef.current = null;
+        if (!reply.content) historyRef.current = historyRef.current.filter((message) => message !== reply);
+        if (chatAbortRef.current === controller) chatAbortRef.current = null;
         setIsReplying(false);
       }
     },
-    [enqueueSpeech, stopSpeaking, updateMessages],
+    [enqueueSpeech, stopSpeaking],
   );
 
-  useEffect(() => {
-    scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [messages, interim]);
+  /** Barge-in, часть 2: обрывает стрим LLM и всю озвучку. */
+  const interruptAgent = useCallback(() => {
+    chatAbortRef.current?.abort();
+    stopSpeaking();
+  }, [stopSpeaking]);
+
+  /** Единая точка входа для любого запроса пользователя (голос, чипс, текст): сначала перебиваем бота, потом спрашиваем заново. */
+  const submitText = useCallback(
+    (raw: string) => {
+      const trimmed = raw.trim();
+      if (!trimmed) return;
+
+      // Если шла запись — отбрасываем её, этот запрос важнее.
+      finalRef.current = "";
+      recognitionRef.current?.abort();
+      interruptAgent();
+
+      let text = trimmed;
+      const found = extractUrl(trimmed);
+      if (found) {
+        siteUrlRef.current = found.url;
+        setSiteHost(hostOf(found.url));
+        if (found.onlyUrl) text = "Вот мой сайт. Изучи его и представься менеджером этой компании.";
+      }
+
+      setInterim("");
+      historyRef.current = [...historyRef.current, { role: "user", content: text }];
+      void handleSendMessage(text, siteUrlRef.current);
+    },
+    [handleSendMessage, interruptAgent],
+  );
 
   const commitTranscript = useCallback(() => {
     const text = finalRef.current.trim();
     finalRef.current = "";
     setInterim("");
-    if (!text) return;
-    updateMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: text }]);
-    void handleSendMessage(text, urlRef.current.trim());
-  }, [handleSendMessage, updateMessages]);
+    if (text) submitText(text);
+  }, [submitText]);
 
   const startRecording = useCallback(() => {
     const Recognition = getRecognitionConstructor();
@@ -310,10 +409,10 @@ export function VoiceAgentDemo() {
       if (event.error === "no-speech" || event.error === "aborted") return;
       setError(ERROR_TEXT[event.error] ?? "Не удалось распознать речь. Попробуйте ещё раз.");
     };
-    // Речь закончилась (пауза или повторный клик) — фиксируем распознанный текст как сообщение пользователя.
+    // Речь закончилась (пауза или повторный клик) — распознанный текст уходит агенту.
     recognition.onend = () => {
       setIsRecording(false);
-      recognitionRef.current = null;
+      if (recognitionRef.current === recognition) recognitionRef.current = null;
       commitTranscript();
     };
 
@@ -326,13 +425,7 @@ export function VoiceAgentDemo() {
     }
   }, [commitTranscript, lang]);
 
-  /** Остановить ответ агента: обрывает стрим текста и очищает очередь озвучки. */
-  function interruptAgent() {
-    abortRef.current?.abort();
-    stopSpeaking();
-  }
-
-  function toggleRecording() {
+  function toggleMic() {
     ensureAudio(); // клик — единственный момент, когда браузер разрешает «разбудить» звук
     if (isRecording) {
       recognitionRef.current?.stop();
@@ -343,169 +436,164 @@ export function VoiceAgentDemo() {
     startRecording();
   }
 
+  function handleChip(question: string) {
+    ensureAudio();
+    submitText(question);
+  }
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (!draft.trim()) return;
+    ensureAudio();
+    submitText(draft);
+    setDraft("");
+  }
+
+  const sphereState: SphereState = isRecording ? "listening" : isSpeaking ? "speaking" : isReplying ? "thinking" : "idle";
+  const caption = error
+    ? null
+    : isRecording
+      ? interim || "Слушаю…"
+      : isReplying && !isSpeaking
+        ? "Думаю…"
+        : siteHost
+          ? `Сайт: ${siteHost}`
+          : "";
+
   return (
-    <div className="relative isolate flex min-h-screen flex-col items-center overflow-hidden bg-black px-4 py-8 text-white sm:py-12">
-      <div
-        aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-0 -z-10 h-[620px] bg-[radial-gradient(60%_50%_at_50%_0%,rgba(207,2,52,0.18),transparent_70%)]"
-      />
+    <div className="relative flex min-h-screen flex-col items-center justify-center gap-8 px-4 pt-10 pb-36 text-white">
+      <VoiceSphere ref={sphereRef} state={sphereState} />
 
-      <header className="mb-6 flex w-full max-w-2xl items-center justify-between">
-        <BrandLogo />
-        <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium tracking-wide text-zinc-300">
-          Voice Agent · Demo
-        </span>
-      </header>
-
-      <main className="flex w-full max-w-2xl flex-1 flex-col gap-4">
-        <div className="relative">
-          <Globe className="pointer-events-none absolute top-1/2 left-4 size-4 -translate-y-1/2 text-zinc-500" strokeWidth={1.75} />
-          <input
-            type="url"
-            inputMode="url"
-            autoComplete="off"
-            value={websiteUrl}
-            onChange={(event) => setWebsiteUrl(event.target.value)}
-            placeholder="Вставьте ссылку на ваш сайт..."
-            aria-label="Ссылка на сайт"
-            className="w-full rounded-xl border border-zinc-800 bg-zinc-950 py-3 pr-4 pl-11 text-sm text-white outline-none transition-colors duration-200 placeholder:text-zinc-600 hover:border-zinc-700 focus:border-white"
-          />
-        </div>
-
-        <section
-          aria-label="История диалога"
-          className="flex min-h-[320px] flex-1 flex-col overflow-hidden rounded-2xl border border-zinc-800/60 bg-zinc-900/50 backdrop-blur-md"
-        >
-          <div ref={scrollRef} className="flex max-h-[52vh] flex-1 flex-col gap-3 overflow-y-auto p-4 sm:p-5">
-            {messages.length === 0 && !interim ? (
-              <p className="m-auto max-w-xs text-center text-sm leading-6 text-zinc-500">
-                Нажмите на микрофон и задайте вопрос голосом. Ваша речь появится здесь.
-              </p>
-            ) : null}
-
-            {messages.map((message) => (
-              <Bubble key={message.id} role={message.role}>
-                {message.content}
-              </Bubble>
-            ))}
-
-            {interim ? (
-              <Bubble role="user" draft>
-                {interim}
-              </Bubble>
-            ) : null}
-          </div>
-        </section>
-
+      <div className="flex min-h-12 max-w-xl flex-col items-center gap-1 text-center">
         {error ? (
-          <p role="alert" className="text-center text-sm text-red-400">
+          <p role="alert" className="text-sm text-red-400">
             {error}
           </p>
         ) : null}
         {!supported ? (
-          <p role="alert" className="text-center text-sm text-amber-400">
-            Ваш браузер не поддерживает распознавание речи. Откройте демо в Chrome, Edge или Safari.
+          <p role="alert" className="text-sm text-amber-400">
+            Голосовой ввод недоступен в этом браузере — используйте Chrome, Edge или Safari, либо пишите текстом.
           </p>
         ) : null}
+        {caption ? <p className="text-sm text-zinc-500 transition-opacity">{caption}</p> : null}
+      </div>
 
-        <div className="flex flex-col items-center gap-4 pt-2 pb-2">
+      <div className="flex max-w-2xl flex-wrap items-center justify-center gap-2">
+        {CHIPS.map((chip) => (
+          <button
+            key={chip}
+            type="button"
+            onClick={() => handleChip(chip)}
+            className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-zinc-300 backdrop-blur transition-all duration-200 hover:border-white/25 hover:bg-white/10 hover:text-white active:scale-95"
+          >
+            {chip}
+          </button>
+        ))}
+      </div>
+
+      <form onSubmit={handleSubmit} className="fixed inset-x-0 bottom-6 z-10 px-4">
+        <div className="mx-auto flex max-w-xl items-center gap-2 rounded-full border border-white/10 bg-zinc-900/60 py-2 pr-2 pl-5 shadow-[0_10px_50px_-15px_rgba(0,0,0,0.9)] backdrop-blur-xl transition-colors focus-within:border-white/25">
+          <input
+            type="text"
+            autoComplete="off"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+            placeholder="Спросите о чем угодно или вставьте ссылку..."
+            aria-label="Сообщение агенту"
+            className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-zinc-500"
+          />
+
           <button
             type="button"
-            onClick={toggleRecording}
+            onClick={() => setLang((current) => (current === "ru-RU" ? "en-US" : "ru-RU"))}
+            disabled={isRecording}
+            aria-label="Язык речи"
+            className="shrink-0 rounded-full px-2 py-1 text-xs font-medium text-zinc-500 transition-colors hover:text-white disabled:opacity-40"
+          >
+            {lang === "ru-RU" ? "RU" : "EN"}
+          </button>
+
+          {draft.trim() ? (
+            <button
+              type="submit"
+              aria-label="Отправить"
+              className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 text-white transition-all hover:bg-white/20 active:scale-95"
+            >
+              <ArrowUp className="size-4" strokeWidth={2} />
+            </button>
+          ) : null}
+
+          <button
+            type="button"
+            onClick={toggleMic}
             disabled={!supported}
             aria-pressed={isRecording}
             aria-label={isRecording ? "Остановить запись" : "Начать запись"}
-            className="group relative grid size-20 place-items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-white/60 disabled:cursor-not-allowed disabled:opacity-40"
+            className="relative grid size-10 shrink-0 place-items-center rounded-full bg-strike text-white shadow-[0_0_24px_-6px_rgba(207,2,52,0.8)] transition-all hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
           >
+            {isRecording ? <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-strike/50" /> : null}
             {isRecording ? (
-              <>
-                <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-strike/40" />
-                <span
-                  aria-hidden
-                  className="absolute -inset-3 animate-pulse rounded-full bg-strike/25 blur-xl motion-reduce:animate-none"
-                />
-              </>
-            ) : null}
-            <span
-              className={cn(
-                "relative grid size-20 place-items-center rounded-full text-white transition-all duration-300 group-active:scale-95",
-                isRecording
-                  ? "bg-strike shadow-[0_0_50px_-4px_rgba(207,2,52,0.9)]"
-                  : "bg-strike shadow-[0_0_30px_-6px_rgba(207,2,52,0.6)] group-hover:brightness-110 group-hover:shadow-[0_0_40px_-4px_rgba(207,2,52,0.8)]",
-              )}
-            >
-              {isRecording ? <Square className="size-7 fill-current" strokeWidth={2} /> : <Mic className="size-8" strokeWidth={1.75} />}
-            </span>
+              <Square className="relative size-4 fill-current" strokeWidth={2} />
+            ) : (
+              <Mic className="relative size-[18px]" strokeWidth={1.75} />
+            )}
           </button>
-
-          <div className="flex items-center gap-3 text-xs text-zinc-500">
-            <span>
-              {isRecording
-                ? "Слушаю… нажмите, чтобы закончить"
-                : isSpeaking
-                  ? "Агент говорит… нажмите, чтобы перебить"
-                  : isReplying
-                    ? "Агент отвечает…"
-                    : "Нажмите, чтобы говорить"}
-            </span>
-            {isSpeaking || isReplying ? (
-              <button
-                type="button"
-                onClick={interruptAgent}
-                className="rounded border border-white/10 px-2 py-0.5 font-medium text-zinc-300 transition-colors hover:border-white/30 hover:text-white"
-              >
-                Прервать
-              </button>
-            ) : null}
-            <span aria-hidden className="text-zinc-700">
-              |
-            </span>
-            <div role="radiogroup" aria-label="Язык речи" className="flex items-center gap-1">
-              {LANG_OPTIONS.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  role="radio"
-                  aria-checked={lang === option.value}
-                  disabled={isRecording}
-                  onClick={() => setLang(option.value)}
-                  className={cn(
-                    "rounded px-1.5 py-0.5 font-medium transition-colors disabled:cursor-not-allowed",
-                    lang === option.value ? "text-white" : "text-zinc-500 hover:text-zinc-300",
-                  )}
-                >
-                  {option.label}
-                </button>
-              ))}
-            </div>
-          </div>
         </div>
-      </main>
+      </form>
     </div>
   );
 }
 
-function Bubble({
-  role,
-  draft = false,
-  children,
-}: {
-  role: "user" | "assistant";
-  draft?: boolean;
-  children: React.ReactNode;
-}) {
-  const isUser = role === "user";
+const SPHERE_MOTION: Record<SphereState, string> = {
+  idle: "animate-sphere-breathe",
+  listening: "animate-sphere-tremble",
+  thinking: "animate-sphere-think",
+  speaking: "scale-[1.04]",
+};
+
+const SPHERE_GLOW: Record<SphereState, string> = {
+  idle: "opacity-60",
+  listening: "opacity-40",
+  thinking: "opacity-80",
+  speaking: "opacity-100",
+};
+
+/** 3D-сфера ИИ: слои градиентов, вращающаяся «жидкость», блик и стеклянный ободок. `--level` задаёт амплитуда речи. */
+function VoiceSphere({ state, ref }: { state: SphereState; ref: Ref<HTMLDivElement> }) {
+  const fast = state === "speaking" || state === "thinking";
   return (
-    <div className={cn("flex animate-in", isUser ? "justify-end" : "justify-start")}>
-      <p
+    <div
+      ref={ref}
+      aria-hidden
+      style={{ "--level": 0 } as React.CSSProperties}
+      className="relative grid size-60 place-items-center sm:size-72"
+    >
+      <div
         className={cn(
-          "max-w-[85%] rounded-2xl px-4 py-2.5 text-sm leading-6 break-words whitespace-pre-wrap",
-          isUser ? "rounded-br-md bg-strike/90 text-white" : "rounded-bl-md border border-white/10 bg-white/5 text-zinc-200",
-          draft && "opacity-60",
+          "absolute -inset-[22%] rounded-full bg-[radial-gradient(closest-side,rgba(207,2,52,0.6),rgba(207,2,52,0.14)_58%,transparent)] blur-2xl transition-opacity duration-500",
+          SPHERE_GLOW[state],
         )}
-      >
-        {children}
-      </p>
+        style={{ transform: "scale(calc(1 + var(--level) * 0.4))" }}
+      />
+
+      <div className={cn("size-full transition-transform duration-500 ease-out", SPHERE_MOTION[state])}>
+        <div className="size-full" style={{ transform: "scale(calc(1 + var(--level) * 0.3))" }}>
+          <div className="relative size-full overflow-hidden rounded-full bg-[radial-gradient(circle_at_32%_28%,#ff8aa5_0%,#cf0234_36%,#5a0016_72%,#16000a_100%)] shadow-[inset_-20px_-26px_64px_rgba(0,0,0,0.7),inset_12px_16px_44px_rgba(255,170,195,0.38),0_0_90px_rgba(207,2,52,0.4)]">
+            <div
+              className={cn(
+                "absolute -inset-1/4 mix-blend-screen blur-xl",
+                fast ? "animate-sphere-swirl-fast opacity-90" : "animate-sphere-swirl opacity-60",
+              )}
+              style={{
+                background:
+                  "conic-gradient(from 0deg, transparent 0deg, rgba(255,92,128,0.6) 70deg, transparent 150deg, rgba(255,255,255,0.28) 230deg, transparent 310deg)",
+              }}
+            />
+            <div className="absolute top-[7%] left-[15%] h-[34%] w-[44%] rounded-full bg-[radial-gradient(closest-side,rgba(255,255,255,0.6),transparent)] blur-md" />
+            <div className="absolute inset-0 rounded-full ring-1 ring-white/20 backdrop-blur-[2px]" />
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

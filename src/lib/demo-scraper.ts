@@ -69,8 +69,26 @@ async function readLimited(response: Response): Promise<string> {
   return new TextDecoder("utf-8").decode(Buffer.concat(chunks));
 }
 
+// Клиент шлёт ссылку с каждой репликой — не скачиваем один и тот же сайт заново (кэш в памяти инстанса).
+const CACHE_TTL_MS = 10 * 60 * 1000;
+const CACHE_MAX = 100;
+const cache = new Map<string, { at: number; text: string }>();
+
 /** Достаёт читаемый текст страницы без скриптов и стилей. Возвращает null, если сайт недоступен или не HTML. */
 export async function scrapeWebsite(rawUrl: string): Promise<string | null> {
+  const key = rawUrl.trim().toLowerCase();
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.at < CACHE_TTL_MS) return hit.text;
+
+  const text = await scrapeUncached(rawUrl);
+  if (text) {
+    if (cache.size >= CACHE_MAX) cache.delete(cache.keys().next().value!);
+    cache.set(key, { at: Date.now(), text });
+  }
+  return text;
+}
+
+async function scrapeUncached(rawUrl: string): Promise<string | null> {
   try {
     let url = await assertPublicUrl(rawUrl.trim());
     let response: Response | null = null;

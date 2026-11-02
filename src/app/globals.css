@@ -147,6 +147,72 @@
   animation: pulse-subtle 2.4s infinite ease-in-out;
 }
 
+/* Голосовая сфера демо-агента: дыхание в покое, дрожь при записи, вращение «внутренней жидкости». */
+@keyframes sphere-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.06);
+  }
+}
+
+@keyframes sphere-tremble {
+  0%,
+  100% {
+    transform: scale(0.82) translate(0, 0);
+  }
+  20% {
+    transform: scale(0.84) translate(1px, -1px);
+  }
+  40% {
+    transform: scale(0.81) translate(-1px, 1px);
+  }
+  60% {
+    transform: scale(0.85) translate(1px, 1px);
+  }
+  80% {
+    transform: scale(0.82) translate(-1px, -1px);
+  }
+}
+
+@keyframes sphere-think {
+  0%,
+  100% {
+    transform: scale(0.96);
+  }
+  50% {
+    transform: scale(1.03);
+  }
+}
+
+@keyframes sphere-swirl {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@utility animate-sphere-breathe {
+  animation: sphere-breathe 4.2s ease-in-out infinite;
+}
+
+@utility animate-sphere-tremble {
+  animation: sphere-tremble 0.28s linear infinite;
+}
+
+@utility animate-sphere-think {
+  animation: sphere-think 1.1s ease-in-out infinite;
+}
+
+@utility animate-sphere-swirl {
+  animation: sphere-swirl 14s linear infinite;
+}
+
+@utility animate-sphere-swirl-fast {
+  animation: sphere-swirl 4s linear infinite;
+}
+
 @layer base {
   html {
     @apply bg-black text-zinc-400 antialiased;
