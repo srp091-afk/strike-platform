@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { clientIp, isRateLimited } from "@/lib/demo-rate-limit";
 import { scrapeWebsite } from "@/lib/demo-scraper";
 import { getOpenAI } from "@/lib/openai";
 
@@ -9,23 +10,7 @@ const MAX_MESSAGES = 12;
 const MAX_MESSAGE_CHARS = 2000;
 const MAX_URL_CHARS = 500;
 
-// Публичный эндпоинт тратит наши токены: простой лимит на IP (в пределах одного инстанса; от злоупотреблений — не гарантия).
-const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_MAX_REQUESTS = 30;
-const hits = new Map<string, number[]>();
-
-function rateLimited(key: string) {
-  const now = Date.now();
-  const recent = (hits.get(key) ?? []).filter((time) => now - time < RATE_WINDOW_MS);
-  recent.push(now);
-  hits.set(key, recent);
-  if (hits.size > 5000) {
-    for (const [ip, times] of hits) {
-      if (times.every((time) => now - time >= RATE_WINDOW_MS)) hits.delete(ip);
-    }
-  }
-  return recent.length > RATE_MAX_REQUESTS;
-}
 
 const PROMPT_NO_SITE =
   "Ты — ИИ-сотрудник платформы STRIKE. Твоя задача — коротко поздороваться и попросить пользователя прислать ссылку на его сайт или вкратце рассказать о бизнесе, чтобы ты смог продемонстрировать свои навыки.";
@@ -57,8 +42,7 @@ function readMessages(value: unknown): ChatMessage[] | null {
 }
 
 export async function POST(request: NextRequest) {
-  const ip = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() || "unknown";
-  if (rateLimited(ip)) {
+  if (isRateLimited("demo-chat", clientIp(request), RATE_MAX_REQUESTS)) {
     return Response.json({ error: "Слишком много запросов. Попробуйте чуть позже." }, { status: 429 });
   }
 

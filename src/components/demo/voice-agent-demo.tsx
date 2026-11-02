@@ -37,7 +37,57 @@ function getRecognitionConstructor(): SpeechRecognitionConstructor | null {
   return speech.SpeechRecognition ?? speech.webkitSpeechRecognition ?? null;
 }
 
+/** Пустой WAV: «прогрев» Audio в обработчике клика, иначе Safari/iOS потом блокирует автозапуск озвучки. */
+const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
+
+/** Слишком короткие обрывки («Да.») склеиваем со следующим предложением — так озвучка звучит ровнее. */
+const MIN_SENTENCE_CHARS = 12;
+
+/**
+ * Отрезает законченные предложения (. ! ? … + пробел/перенос) от накопленного текста стрима.
+ * Точка без пробела после неё («3.5», «e.g.» на границе чанков) границей не считается.
+ */
+function takeSentences(buffer: string): { sentences: string[]; rest: string } {
+  const sentences: string[] = [];
+  let start = 0;
+  let pending = "";
+  for (const match of buffer.matchAll(/[.!?…]+["»”')]*\s/g)) {
+    const end = match.index + match[0].length;
+    pending += buffer.slice(start, end);
+    start = end;
+    if (pending.trim().length >= MIN_SENTENCE_CHARS) {
+      sentences.push(pending.trim());
+      pending = "";
+    }
+  }
+  return { sentences, rest: pending + buffer.slice(start) };
+}
+
+/** Запрашивает озвучку предложения. Возвращает blob-URL mp3 или null при ошибке (предложение пропускаем). */
+async function fetchSpeech(sentence: string, signal: AbortSignal): Promise<string | null> {
+  try {
+    const response = await fetch("/api/demo/tts", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: sentence }),
+      signal,
+    });
+    if (!response.ok) return null;
+    return URL.createObjectURL(await response.blob());
+  } catch {
+    return null;
+  }
+}
+
 export function VoiceAgentDemo() {
+  const [isSpeaking, setIsSpeaking] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const queueRef = useRef<Promise<string | null>[]>([]);
+  const playingRef = useRef(false);
+  const epochRef = useRef(0);
+  const ttsAbortRef = useRef<AbortController | null>(null);
+  const finishPlayRef = useRef<(() => void) | null>(null);
+
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isReplying, setIsReplying] = useState(false);
   const messagesRef = useRef<ChatMessage[]>([]);
@@ -74,6 +124,84 @@ export function VoiceAgentDemo() {
     setMessages(messagesRef.current);
   }, []);
 
+  /** Один Audio на всё демо: разблокированный жестом элемент переиспользуется для каждого куска очереди. */
+  const ensureAudio = useCallback(() => {
+    if (!audioRef.current) {
+      const audio = new Audio();
+      audio.preload = "auto";
+      audio.src = SILENT_WAV;
+      void audio.play().catch(() => undefined);
+      audioRef.current = audio;
+    }
+    return audioRef.current;
+  }, []);
+
+  /** Прерывание: очищает очередь, отменяет запросы озвучки и немедленно останавливает текущий звук. */
+  const stopSpeaking = useCallback(() => {
+    epochRef.current += 1;
+    ttsAbortRef.current?.abort();
+    ttsAbortRef.current = null;
+
+    const pending = queueRef.current;
+    queueRef.current = [];
+    for (const item of pending) void item.then((url) => (url ? URL.revokeObjectURL(url) : undefined));
+
+    const audio = audioRef.current;
+    if (audio) {
+      audio.onended = null;
+      audio.onerror = null;
+      audio.pause();
+    }
+    finishPlayRef.current?.();
+    finishPlayRef.current = null;
+    playingRef.current = false;
+    setIsSpeaking(false);
+  }, []);
+
+  /** Строго последовательное проигрывание: следующий кусок стартует по `onended` предыдущего. */
+  const playQueue = useCallback(async () => {
+    if (playingRef.current) return;
+    playingRef.current = true;
+    const epoch = epochRef.current;
+    const audio = ensureAudio();
+
+    while (queueRef.current.length > 0) {
+      const url = await queueRef.current.shift()!;
+      if (epoch !== epochRef.current) {
+        if (url) URL.revokeObjectURL(url);
+        return;
+      }
+      if (!url) continue;
+
+      await new Promise<void>((resolve) => {
+        finishPlayRef.current = resolve;
+        audio.onended = () => resolve();
+        audio.onerror = () => resolve();
+        audio.src = url;
+        audio.play().catch(() => resolve());
+      });
+      finishPlayRef.current = null;
+      URL.revokeObjectURL(url);
+      if (epoch !== epochRef.current) return;
+    }
+
+    playingRef.current = false;
+    setIsSpeaking(false);
+  }, [ensureAudio]);
+
+  /** Предложение сразу уходит на озвучку (параллельно с остальными), а в очередь встаёт в порядке следования. */
+  const enqueueSpeech = useCallback(
+    (sentence: string) => {
+      const controller = (ttsAbortRef.current ??= new AbortController());
+      queueRef.current.push(fetchSpeech(sentence, controller.signal));
+      setIsSpeaking(true);
+      void playQueue();
+    },
+    [playQueue],
+  );
+
+  useEffect(() => () => stopSpeaking(), [stopSpeaking]);
+
   /** Отправляет историю на /api/demo/chat и по мере прихода кусков дописывает их в сообщение ассистента. */
   const handleSendMessage = useCallback(
     async (text: string, websiteUrl: string): Promise<void> => {
@@ -81,6 +209,8 @@ export function VoiceAgentDemo() {
       const controller = new AbortController();
       abortRef.current = controller;
       const assistantId = crypto.randomUUID();
+      let sentenceBuffer = "";
+      stopSpeaking(); // новый ответ не должен накладываться на хвост предыдущего
       setIsReplying(true);
       setError(null);
 
@@ -112,7 +242,14 @@ export function VoiceAgentDemo() {
           updateMessages((current) =>
             current.map((message) => (message.id === assistantId ? { ...message, content: message.content + chunk } : message)),
           );
+
+          // Накапливаем текст и озвучиваем каждое законченное предложение, не дожидаясь конца ответа.
+          const taken = takeSentences(sentenceBuffer + chunk);
+          sentenceBuffer = taken.rest;
+          for (const sentence of taken.sentences) enqueueSpeech(sentence);
         }
+        const tail = sentenceBuffer.trim();
+        if (tail && !controller.signal.aborted) enqueueSpeech(tail);
       } catch (failure) {
         if (controller.signal.aborted) return;
         setError(failure instanceof Error ? failure.message : "Не удалось получить ответ агента.");
@@ -123,7 +260,7 @@ export function VoiceAgentDemo() {
         setIsReplying(false);
       }
     },
-    [updateMessages],
+    [enqueueSpeech, stopSpeaking, updateMessages],
   );
 
   useEffect(() => {
@@ -189,11 +326,20 @@ export function VoiceAgentDemo() {
     }
   }, [commitTranscript, lang]);
 
+  /** Остановить ответ агента: обрывает стрим текста и очищает очередь озвучки. */
+  function interruptAgent() {
+    abortRef.current?.abort();
+    stopSpeaking();
+  }
+
   function toggleRecording() {
+    ensureAudio(); // клик — единственный момент, когда браузер разрешает «разбудить» звук
     if (isRecording) {
       recognitionRef.current?.stop();
       return;
     }
+    // Пользователь перебивает бота: замолкаем сразу и начинаем слушать.
+    interruptAgent();
     startRecording();
   }
 
@@ -266,7 +412,7 @@ export function VoiceAgentDemo() {
           <button
             type="button"
             onClick={toggleRecording}
-            disabled={!supported || isReplying}
+            disabled={!supported}
             aria-pressed={isRecording}
             aria-label={isRecording ? "Остановить запись" : "Начать запись"}
             className="group relative grid size-20 place-items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-white/60 disabled:cursor-not-allowed disabled:opacity-40"
@@ -294,8 +440,23 @@ export function VoiceAgentDemo() {
 
           <div className="flex items-center gap-3 text-xs text-zinc-500">
             <span>
-              {isRecording ? "Слушаю… нажмите, чтобы закончить" : isReplying ? "Агент отвечает…" : "Нажмите, чтобы говорить"}
+              {isRecording
+                ? "Слушаю… нажмите, чтобы закончить"
+                : isSpeaking
+                  ? "Агент говорит… нажмите, чтобы перебить"
+                  : isReplying
+                    ? "Агент отвечает…"
+                    : "Нажмите, чтобы говорить"}
             </span>
+            {isSpeaking || isReplying ? (
+              <button
+                type="button"
+                onClick={interruptAgent}
+                className="rounded border border-white/10 px-2 py-0.5 font-medium text-zinc-300 transition-colors hover:border-white/30 hover:text-white"
+              >
+                Прервать
+              </button>
+            ) : null}
             <span aria-hidden className="text-zinc-700">
               |
             </span>

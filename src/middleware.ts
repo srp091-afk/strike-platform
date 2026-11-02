@@ -62,7 +62,7 @@ export async function middleware(request: NextRequest) {
     // Публичное демо голосового агента: ссылку отправляем клиентам без регистрации.
     pathname === "/demo" ||
     pathname.startsWith("/demo/") ||
-    pathname === "/api/demo/chat";
+    pathname.startsWith("/api/demo/");
 
   // Локальный dev-сервер открывает страницы без Google. На production редирект остаётся
   // для всего, кроме явных public routes выше.
