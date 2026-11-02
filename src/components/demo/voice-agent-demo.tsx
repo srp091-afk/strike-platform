@@ -1,19 +1,23 @@
 "use client";
 
 import { ArrowUp, Mic, Square } from "lucide-react";
-import { useCallback, useEffect, useRef, useState, type FormEvent, type Ref } from "react";
+import dynamic from "next/dynamic";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
+import type { PlasmaState } from "@/components/demo/plasma-sphere";
 import type {
   SpeechRecognitionConstructor,
   SpeechRecognitionErrorEventLike,
   SpeechRecognitionEventLike,
   SpeechRecognitionLike,
 } from "@/components/demo/speech-recognition";
-import { cn } from "@/lib/utils";
+// three.js тяжёлый и нужен только в браузере — грузим отдельным чанком, без SSR.
+const PlasmaSphere = dynamic(() => import("@/components/demo/plasma-sphere").then((module) => module.PlasmaSphere), {
+  ssr: false,
+});
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
 type SpeechLang = "ru-RU" | "en-US";
-type SphereState = "idle" | "listening" | "thinking" | "speaking";
 
 const CHIPS = [
   "Чем вы можете помочь моему бизнесу?",
@@ -131,7 +135,6 @@ export function VoiceAgentDemo() {
   const epochRef = useRef(0);
   const ttsAbortRef = useRef<AbortController | null>(null);
   const finishPlayRef = useRef<(() => void) | null>(null);
-  const sphereRef = useRef<HTMLDivElement>(null);
 
   // Поддержку API знает только браузер — проверяем после монтирования, чтобы не ломать гидратацию.
   useEffect(() => {
@@ -238,41 +241,6 @@ export function VoiceAgentDemo() {
   );
 
   useEffect(() => () => stopSpeaking(), [stopSpeaking]);
-
-  // Пульсация сферы в такт речи: амплитуда звука пишется прямо в CSS-переменную, без перерисовок React.
-  useEffect(() => {
-    const node = sphereRef.current;
-    if (!node) return;
-    if (!isSpeaking) {
-      node.style.setProperty("--level", "0");
-      return;
-    }
-
-    const analyser = analyserRef.current;
-    const data = new Uint8Array(analyser?.fftSize ?? 0);
-    let smooth = 0;
-    let frame = 0;
-    const tick = () => {
-      let level = 0.4 + 0.2 * Math.sin(Date.now() / 150);
-      if (analyser) {
-        analyser.getByteTimeDomainData(data);
-        let sum = 0;
-        for (const value of data) {
-          const normalized = (value - 128) / 128;
-          sum += normalized * normalized;
-        }
-        level = Math.min(1, Math.sqrt(sum / data.length) * 4);
-      }
-      smooth += (level - smooth) * 0.25;
-      node.style.setProperty("--level", smooth.toFixed(3));
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => {
-      cancelAnimationFrame(frame);
-      node.style.setProperty("--level", "0");
-    };
-  }, [isSpeaking]);
 
   /**
    * Отправляет историю на /api/demo/chat. Текст агента на экран не выводится: по мере прихода его нарезают
@@ -449,7 +417,7 @@ export function VoiceAgentDemo() {
     setDraft("");
   }
 
-  const sphereState: SphereState = isRecording ? "listening" : isSpeaking ? "speaking" : isReplying ? "thinking" : "idle";
+  const sphereState: PlasmaState = isRecording ? "listening" : isSpeaking ? "speaking" : isReplying ? "thinking" : "idle";
   const caption = error
     ? null
     : isRecording
@@ -462,7 +430,7 @@ export function VoiceAgentDemo() {
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center gap-8 px-4 pt-10 pb-36 text-white">
-      <VoiceSphere ref={sphereRef} state={sphereState} />
+      <PlasmaSphere state={sphereState} analyserRef={analyserRef} />
 
       <div className="flex min-h-12 max-w-xl flex-col items-center gap-1 text-center">
         {error ? (
@@ -540,60 +508,6 @@ export function VoiceAgentDemo() {
           </button>
         </div>
       </form>
-    </div>
-  );
-}
-
-const SPHERE_MOTION: Record<SphereState, string> = {
-  idle: "animate-sphere-breathe",
-  listening: "animate-sphere-tremble",
-  thinking: "animate-sphere-think",
-  speaking: "scale-[1.04]",
-};
-
-const SPHERE_GLOW: Record<SphereState, string> = {
-  idle: "opacity-60",
-  listening: "opacity-40",
-  thinking: "opacity-80",
-  speaking: "opacity-100",
-};
-
-/** 3D-сфера ИИ: слои градиентов, вращающаяся «жидкость», блик и стеклянный ободок. `--level` задаёт амплитуда речи. */
-function VoiceSphere({ state, ref }: { state: SphereState; ref: Ref<HTMLDivElement> }) {
-  const fast = state === "speaking" || state === "thinking";
-  return (
-    <div
-      ref={ref}
-      aria-hidden
-      style={{ "--level": 0 } as React.CSSProperties}
-      className="relative grid size-60 place-items-center sm:size-72"
-    >
-      <div
-        className={cn(
-          "absolute -inset-[22%] rounded-full bg-[radial-gradient(closest-side,rgba(207,2,52,0.6),rgba(207,2,52,0.14)_58%,transparent)] blur-2xl transition-opacity duration-500",
-          SPHERE_GLOW[state],
-        )}
-        style={{ transform: "scale(calc(1 + var(--level) * 0.4))" }}
-      />
-
-      <div className={cn("size-full transition-transform duration-500 ease-out", SPHERE_MOTION[state])}>
-        <div className="size-full" style={{ transform: "scale(calc(1 + var(--level) * 0.3))" }}>
-          <div className="relative size-full overflow-hidden rounded-full bg-[radial-gradient(circle_at_32%_28%,#ff8aa5_0%,#cf0234_36%,#5a0016_72%,#16000a_100%)] shadow-[inset_-20px_-26px_64px_rgba(0,0,0,0.7),inset_12px_16px_44px_rgba(255,170,195,0.38),0_0_90px_rgba(207,2,52,0.4)]">
-            <div
-              className={cn(
-                "absolute -inset-1/4 mix-blend-screen blur-xl",
-                fast ? "animate-sphere-swirl-fast opacity-90" : "animate-sphere-swirl opacity-60",
-              )}
-              style={{
-                background:
-                  "conic-gradient(from 0deg, transparent 0deg, rgba(255,92,128,0.6) 70deg, transparent 150deg, rgba(255,255,255,0.28) 230deg, transparent 310deg)",
-              }}
-            />
-            <div className="absolute top-[7%] left-[15%] h-[34%] w-[44%] rounded-full bg-[radial-gradient(closest-side,rgba(255,255,255,0.6),transparent)] blur-md" />
-            <div className="absolute inset-0 rounded-full ring-1 ring-white/20 backdrop-blur-[2px]" />
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
