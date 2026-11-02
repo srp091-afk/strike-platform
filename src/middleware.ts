@@ -58,7 +58,11 @@ export async function middleware(request: NextRequest) {
     // Публичный веб-виджет: страница в iframe на чужих сайтах и её чат-API.
     pathname === "/widget" ||
     pathname.startsWith("/widget/") ||
-    pathname === "/api/widget-chat";
+    pathname === "/api/widget-chat" ||
+    // Публичное демо голосового агента: ссылку отправляем клиентам без регистрации.
+    pathname === "/demo" ||
+    pathname.startsWith("/demo/") ||
+    pathname === "/api/demo/chat";
 
   // Локальный dev-сервер открывает страницы без Google. На production редирект остаётся
   // для всего, кроме явных public routes выше.

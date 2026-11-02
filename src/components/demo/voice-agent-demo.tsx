@@ -37,16 +37,11 @@ function getRecognitionConstructor(): SpeechRecognitionConstructor | null {
   return speech.SpeechRecognition ?? speech.webkitSpeechRecognition ?? null;
 }
 
-/**
- * Заглушка: сюда позже прокинем запрос к LLM (ответ агента добавится в историю как assistant-сообщение).
- */
-async function handleSendMessage(text: string, websiteUrl: string): Promise<void> {
-  void text;
-  void websiteUrl;
-}
-
 export function VoiceAgentDemo() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isReplying, setIsReplying] = useState(false);
+  const messagesRef = useRef<ChatMessage[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
   const [websiteUrl, setWebsiteUrl] = useState("");
   const [isRecording, setIsRecording] = useState(false);
   const [interim, setInterim] = useState("");
@@ -67,8 +62,69 @@ export function VoiceAgentDemo() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSupported(getRecognitionConstructor() !== null);
-    return () => recognitionRef.current?.abort();
+    return () => {
+      recognitionRef.current?.abort();
+      abortRef.current?.abort();
+    };
   }, []);
+
+  /** Единая точка записи в историю: ref нужен, чтобы запрос к API видел актуальный список без ожидания рендера. */
+  const updateMessages = useCallback((update: (current: ChatMessage[]) => ChatMessage[]) => {
+    messagesRef.current = update(messagesRef.current);
+    setMessages(messagesRef.current);
+  }, []);
+
+  /** Отправляет историю на /api/demo/chat и по мере прихода кусков дописывает их в сообщение ассистента. */
+  const handleSendMessage = useCallback(
+    async (text: string, websiteUrl: string): Promise<void> => {
+      void text; // реплика пользователя уже в messagesRef — API получает всю историю целиком
+      const controller = new AbortController();
+      abortRef.current = controller;
+      const assistantId = crypto.randomUUID();
+      setIsReplying(true);
+      setError(null);
+
+      try {
+        const response = await fetch("/api/demo/chat", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            messages: messagesRef.current.map(({ role, content }) => ({ role, content })),
+            websiteUrl: websiteUrl || undefined,
+          }),
+          signal: controller.signal,
+        });
+
+        if (!response.ok || !response.body) {
+          const payload = (await response.json().catch(() => null)) as { error?: string } | null;
+          throw new Error(payload?.error ?? "Не удалось получить ответ агента.");
+        }
+
+        updateMessages((current) => [...current, { id: assistantId, role: "assistant", content: "" }]);
+
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder();
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          const chunk = decoder.decode(value, { stream: true });
+          if (!chunk) continue;
+          updateMessages((current) =>
+            current.map((message) => (message.id === assistantId ? { ...message, content: message.content + chunk } : message)),
+          );
+        }
+      } catch (failure) {
+        if (controller.signal.aborted) return;
+        setError(failure instanceof Error ? failure.message : "Не удалось получить ответ агента.");
+      } finally {
+        // Пустой пузырь (ошибка до первого куска) убираем.
+        updateMessages((current) => current.filter((message) => message.id !== assistantId || message.content !== ""));
+        if (abortRef.current === controller) abortRef.current = null;
+        setIsReplying(false);
+      }
+    },
+    [updateMessages],
+  );
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
@@ -79,9 +135,9 @@ export function VoiceAgentDemo() {
     finalRef.current = "";
     setInterim("");
     if (!text) return;
-    setMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: text }]);
+    updateMessages((current) => [...current, { id: crypto.randomUUID(), role: "user", content: text }]);
     void handleSendMessage(text, urlRef.current.trim());
-  }, []);
+  }, [handleSendMessage, updateMessages]);
 
   const startRecording = useCallback(() => {
     const Recognition = getRecognitionConstructor();
@@ -210,7 +266,7 @@ export function VoiceAgentDemo() {
           <button
             type="button"
             onClick={toggleRecording}
-            disabled={!supported}
+            disabled={!supported || isReplying}
             aria-pressed={isRecording}
             aria-label={isRecording ? "Остановить запись" : "Начать запись"}
             className="group relative grid size-20 place-items-center rounded-full outline-none focus-visible:ring-2 focus-visible:ring-white/60 disabled:cursor-not-allowed disabled:opacity-40"
@@ -237,7 +293,9 @@ export function VoiceAgentDemo() {
           </button>
 
           <div className="flex items-center gap-3 text-xs text-zinc-500">
-            <span>{isRecording ? "Слушаю… нажмите, чтобы закончить" : "Нажмите, чтобы говорить"}</span>
+            <span>
+              {isRecording ? "Слушаю… нажмите, чтобы закончить" : isReplying ? "Агент отвечает…" : "Нажмите, чтобы говорить"}
+            </span>
             <span aria-hidden className="text-zinc-700">
               |
             </span>
