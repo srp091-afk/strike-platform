@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Mic, Square } from "lucide-react";
+import { ArrowUp, Mic, MicOff } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -11,6 +11,8 @@ import type {
   SpeechRecognitionEventLike,
   SpeechRecognitionLike,
 } from "@/components/demo/speech-recognition";
+import { cn } from "@/lib/utils";
+
 // three.js тяжёлый и нужен только в браузере — грузим отдельным чанком, без SSR.
 const PlasmaSphere = dynamic(() => import("@/components/demo/plasma-sphere").then((module) => module.PlasmaSphere), {
   ssr: false,
@@ -125,7 +127,13 @@ export function VoiceAgentDemo() {
   const chatAbortRef = useRef<AbortController | null>(null);
 
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
-  const finalRef = useRef("");
+  const micOnRef = useRef(false);
+  const langRef = useRef<SpeechLang>("ru-RU");
+  const botTextRef = useRef("");
+  const bargedRef = useRef(false);
+  const busyRef = useRef(false);
+  const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const startListeningRef = useRef<() => void>(() => undefined);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -141,10 +149,23 @@ export function VoiceAgentDemo() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSupported(getRecognitionConstructor() !== null);
     return () => {
+      micOnRef.current = false;
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       recognitionRef.current?.abort();
       chatAbortRef.current?.abort();
     };
   }, []);
+
+  // Бот занят (думает или говорит) — по этому флагу микрофон отличает перебивание от тишины.
+  useEffect(() => {
+    busyRef.current = isSpeaking || isReplying;
+  }, [isSpeaking, isReplying]);
+
+  // Смена языка: перезапускаем распознавание, onend поднимет его уже с новым языком.
+  useEffect(() => {
+    langRef.current = lang;
+    if (micOnRef.current) recognitionRef.current?.stop();
+  }, [lang]);
 
   /** Один Audio на всё демо: разблокированный жестом элемент переиспользуется для каждого куска очереди. */
   const ensureAudio = useCallback(() => {
@@ -254,6 +275,7 @@ export function VoiceAgentDemo() {
       const reply: ChatMessage = { role: "assistant", content: "" };
       let sentenceBuffer = "";
       stopSpeaking(); // новый ответ не должен накладываться на хвост предыдущего
+      botTextRef.current = "";
       setIsReplying(true);
       setError(null);
 
@@ -285,6 +307,7 @@ export function VoiceAgentDemo() {
           const chunk = decoder.decode(value, { stream: true });
           if (!chunk) continue;
           reply.content += chunk;
+          botTextRef.current = reply.content;
 
           const taken = takeSentences(sentenceBuffer + chunk);
           sentenceBuffer = taken.rest;
@@ -316,9 +339,7 @@ export function VoiceAgentDemo() {
       const trimmed = raw.trim();
       if (!trimmed) return;
 
-      // Если шла запись — отбрасываем её, этот запрос важнее.
-      finalRef.current = "";
-      recognitionRef.current?.abort();
+      // Микрофон не трогаем — он остаётся включённым, перебиваем только агента.
       interruptAgent();
 
       let text = trimmed;
@@ -336,74 +357,101 @@ export function VoiceAgentDemo() {
     [handleSendMessage, interruptAgent],
   );
 
-  const commitTranscript = useCallback(() => {
-    const text = finalRef.current.trim();
-    finalRef.current = "";
-    setInterim("");
-    if (text) submitText(text);
-  }, [submitText]);
+  /**
+   * Эхо: бот говорит через колонки, и микрофон слышит его же. Если распознанные слова почти целиком
+   * входят в то, что бот сейчас произносит, это не перебивание, а эхо — игнорируем.
+   */
+  const looksLikeEcho = useCallback((heard: string) => {
+    if (!busyRef.current) return false;
+    const words = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? [];
+    const heardWords = words(heard);
+    if (heardWords.length === 0) return true;
+    const known = new Set(words(botTextRef.current));
+    const matched = heardWords.filter((word) => known.has(word)).length;
+    return matched / heardWords.length >= 0.7;
+  }, []);
 
-  const startRecording = useCallback(() => {
+  /**
+   * Постоянное прослушивание: continuous-распознавание не закрывается после реплики, а при остановке браузером
+   * (onend) тихо перезапускается. Живая речь поверх бота мгновенно перебивает его (barge-in).
+   */
+  const startListening = useCallback(() => {
+    if (!micOnRef.current) return;
     const Recognition = getRecognitionConstructor();
     if (!Recognition) {
       setSupported(false);
       return;
     }
 
-    setError(null);
-    finalRef.current = "";
-    setInterim("");
-
     const recognition = new Recognition();
-    recognition.lang = lang;
-    recognition.continuous = false;
+    recognition.lang = langRef.current;
+    recognition.continuous = true;
     recognition.interimResults = true;
 
-    recognition.onstart = () => setIsRecording(true);
     recognition.onresult = (event: SpeechRecognitionEventLike) => {
-      let finalText = "";
-      let interimText = "";
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const result = event.results[index]!;
-        const transcript = result[0]?.transcript ?? "";
-        if (result.isFinal) finalText += transcript;
-        else interimText += transcript;
+        const transcript = (result[0]?.transcript ?? "").trim();
+        if (!transcript || looksLikeEcho(transcript)) continue;
+
+        if (result.isFinal) {
+          bargedRef.current = false;
+          setInterim("");
+          submitText(transcript);
+        } else {
+          setInterim(transcript);
+          if (busyRef.current && !bargedRef.current) {
+            bargedRef.current = true;
+            interruptAgent();
+          }
+        }
       }
-      if (finalText) finalRef.current = `${finalRef.current} ${finalText}`.trim();
-      setInterim(interimText || finalRef.current);
     };
     recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
-      // «no-speech» и «aborted» — штатные ситуации, пользователю об ошибке говорить не нужно.
+      // «no-speech» и «aborted» — штатные паузы: onend сам перезапустит прослушивание.
       if (event.error === "no-speech" || event.error === "aborted") return;
-      setError(ERROR_TEXT[event.error] ?? "Не удалось распознать речь. Попробуйте ещё раз.");
-    };
-    // Речь закончилась (пауза или повторный клик) — распознанный текст уходит агенту.
-    recognition.onend = () => {
+      micOnRef.current = false;
       setIsRecording(false);
+      setInterim("");
+      setError(ERROR_TEXT[event.error] ?? "Не удалось распознать речь. Включите микрофон ещё раз.");
+    };
+    recognition.onend = () => {
       if (recognitionRef.current === recognition) recognitionRef.current = null;
-      commitTranscript();
+      setInterim("");
+      if (micOnRef.current) {
+        restartTimerRef.current = setTimeout(() => startListeningRef.current(), 250);
+      }
     };
 
     recognitionRef.current = recognition;
     try {
       recognition.start();
     } catch {
-      setError("Не удалось запустить запись. Попробуйте ещё раз.");
       recognitionRef.current = null;
     }
-  }, [commitTranscript, lang]);
+  }, [interruptAgent, looksLikeEcho, submitText]);
+
+  useEffect(() => {
+    startListeningRef.current = startListening;
+  }, [startListening]);
 
   function toggleMic() {
-    ensureAudio(); // клик — единственный момент, когда браузер разрешает «разбудить» звук
+    ensureAudio(); // клик — момент, когда браузер разрешает «разбудить» звук и запросить микрофон
     if (isRecording) {
-      recognitionRef.current?.stop();
+      micOnRef.current = false;
+      setIsRecording(false);
+      setInterim("");
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
       return;
     }
-    // Пользователь перебивает бота: замолкаем сразу и начинаем слушать.
+    setError(null);
+    micOnRef.current = true;
+    setIsRecording(true);
     interruptAgent();
-    startRecording();
+    startListening();
   }
-
   function handleChip(question: string) {
     ensureAudio();
     submitText(question);
@@ -417,16 +465,19 @@ export function VoiceAgentDemo() {
     setDraft("");
   }
 
-  const sphereState: PlasmaState = isRecording ? "listening" : isSpeaking ? "speaking" : isReplying ? "thinking" : "idle";
+  const userSpeaking = isRecording && interim !== "";
+  const sphereState: PlasmaState = isSpeaking ? "speaking" : isReplying ? "thinking" : userSpeaking ? "listening" : "idle";
   const caption = error
     ? null
-    : isRecording
-      ? interim || "Слушаю…"
+    : userSpeaking
+      ? interim
       : isReplying && !isSpeaking
         ? "Думаю…"
-        : siteHost
-          ? `Сайт: ${siteHost}`
-          : "";
+        : isRecording && !isSpeaking
+          ? "Слушаю…"
+          : siteHost
+            ? `Сайт: ${siteHost}`
+            : "";
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-center gap-8 px-4 pt-10 pb-36 text-white">
@@ -474,7 +525,6 @@ export function VoiceAgentDemo() {
           <button
             type="button"
             onClick={() => setLang((current) => (current === "ru-RU" ? "en-US" : "ru-RU"))}
-            disabled={isRecording}
             aria-label="Язык речи"
             className="shrink-0 rounded-full px-2 py-1 text-xs font-medium text-zinc-500 transition-colors hover:text-white disabled:opacity-40"
           >
@@ -496,14 +546,19 @@ export function VoiceAgentDemo() {
             onClick={toggleMic}
             disabled={!supported}
             aria-pressed={isRecording}
-            aria-label={isRecording ? "Остановить запись" : "Начать запись"}
-            className="relative grid size-10 shrink-0 place-items-center rounded-full bg-strike text-white shadow-[0_0_24px_-6px_rgba(207,2,52,0.8)] transition-all hover:brightness-110 active:scale-95 disabled:cursor-not-allowed disabled:opacity-40"
+            aria-label={isRecording ? "Выключить микрофон" : "Включить микрофон"}
+            className={cn(
+              "relative grid size-10 shrink-0 place-items-center rounded-full text-white transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40",
+              isRecording
+                ? "bg-strike shadow-[0_0_24px_-6px_rgba(207,2,52,0.8)] hover:brightness-110"
+                : "bg-white/10 hover:bg-white/20",
+            )}
           >
-            {isRecording ? <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-strike/50" /> : null}
+            {userSpeaking ? <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-strike/50" /> : null}
             {isRecording ? (
-              <Square className="relative size-4 fill-current" strokeWidth={2} />
-            ) : (
               <Mic className="relative size-[18px]" strokeWidth={1.75} />
+            ) : (
+              <MicOff className="relative size-[18px]" strokeWidth={1.75} />
             )}
           </button>
         </div>

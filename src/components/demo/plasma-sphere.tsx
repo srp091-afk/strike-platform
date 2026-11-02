@@ -1,6 +1,6 @@
 "use client";
 
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { AdditiveBlending, BackSide, Color, type Group, type ShaderMaterial } from "three";
@@ -60,6 +60,7 @@ uniform float uTime;
 uniform float uLevel;
 uniform float uBass;
 uniform float uTreble;
+uniform float uTurb;
 varying vec3 vNormalW;
 varying vec3 vPos;
 varying vec3 vView;
@@ -67,14 +68,14 @@ varying float vDisp;
 
 void main() {
   vec3 dir = normalize(position);
-  // Медленное «дыхание» плазмы + быстрая рябь, амплитуда которых растёт с голосом.
-  float slow = snoise(dir * 1.5 + vec3(0.0, uTime * 0.22, uTime * 0.14));
-  float fast = snoise(dir * 4.2 - vec3(uTime * 0.5, 0.0, uTime * 0.3));
-  // Волны, бегущие от полюса к полюсу в такт речи.
+  // Турбулентность (частота шума) растёт с громкостью голоса: поверхность «кипит» мельче и быстрее.
+  float freq = 1.0 + uTurb * 1.4;
+  float slow = snoise(dir * 1.5 * freq + vec3(0.0, uTime * 0.22, uTime * 0.14));
+  float fast = snoise(dir * 4.2 * freq - vec3(uTime * 0.5, 0.0, uTime * 0.3));
   float wave = sin(dir.y * 8.0 - uTime * 4.5) * 0.5 + sin(dir.x * 5.0 + dir.z * 5.0 - uTime * 3.0) * 0.5;
-  float disp = slow * (0.07 + uBass * 0.34)
-             + fast * (0.015 + uTreble * 0.12)
-             + wave * uLevel * 0.1;
+  float disp = slow * (0.08 + uBass * 0.3)
+             + fast * (0.02 + uTreble * 0.12)
+             + wave * uLevel * 0.08;
   vec3 displaced = position + normal * disp;
   vDisp = disp;
   vPos = displaced;
@@ -89,10 +90,11 @@ const CORE_FRAGMENT = /* glsl */ `
 ${SIMPLEX}
 uniform float uTime;
 uniform float uLevel;
+uniform float uTurb;
 uniform vec3 uDeep;
-uniform vec3 uViolet;
-uniform vec3 uNeon;
-uniform vec3 uAccent;
+uniform vec3 uCrimson;
+uniform vec3 uHot;
+uniform vec3 uBright;
 varying vec3 vNormalW;
 varying vec3 vPos;
 varying vec3 vView;
@@ -101,23 +103,38 @@ varying float vDisp;
 void main() {
   vec3 N = normalize(vNormalW);
   vec3 V = normalize(vView);
-  float fres = pow(1.0 - max(dot(N, V), 0.0), 2.4);
+  float fres = pow(1.0 - max(dot(N, V), 0.0), 2.2);
+  float freq = 1.0 + uTurb * 1.3;
+  float t = uTime;
 
-  // Переливающаяся плазма: два слоя шума, смешанные между глубоким космосом и фиолетовым.
-  float plasma = snoise(vPos * 1.7 + vec3(0.0, uTime * 0.2, uTime * 0.1)) * 0.5 + 0.5;
-  float plasma2 = snoise(vPos * 3.4 - vec3(uTime * 0.28, uTime * 0.12, 0.0)) * 0.5 + 0.5;
-  vec3 col = mix(uDeep, uViolet, smoothstep(0.15, 0.85, plasma));
-  col = mix(col, uAccent, plasma2 * 0.32 + max(vDisp, 0.0) * 1.4);
+  // Тёмная малиновая плазма: два слоя шума между глубоким бордо и кармином.
+  float plasma = snoise(vPos * 1.6 * freq + vec3(0.0, t * 0.2, t * 0.1)) * 0.5 + 0.5;
+  float plasma2 = snoise(vPos * 3.2 * freq - vec3(t * 0.25, t * 0.1, 0.0)) * 0.5 + 0.5;
+  vec3 col = mix(uDeep, uCrimson, smoothstep(0.1, 0.9, plasma));
+  col = mix(col, uCrimson * 1.6, plasma2 * 0.25);
 
-  // «Нейросеть»: тонкие светящиеся нити из ridged-шума в двух масштабах.
-  float veinA = pow(1.0 - abs(snoise(vPos * 2.5 + vec3(uTime * 0.12, 0.0, uTime * 0.08))), 7.0);
-  float veinB = pow(1.0 - abs(snoise(vPos * 5.2 - vec3(0.0, uTime * 0.18, 0.0))), 9.0);
-  float glow = 0.55 + uLevel * 1.7;
-  col += uNeon * (veinA * 0.95 + veinB * 0.55) * glow;
+  // Волокнистые «нейронные» разряды: ridged-шум с доменным искажением, три масштаба нитей.
+  vec3 q = vPos * 1.15 * freq;
+  q += 0.65 * vec3(
+    snoise(q * 0.8 + vec3(t * 0.10, 0.0, 0.0)),
+    snoise(q * 0.8 + vec3(7.3, -t * 0.12, 0.0)),
+    snoise(q * 0.8 + vec3(13.1, 0.0, t * 0.09))
+  );
+  float vA = pow(1.0 - abs(snoise(q * 1.7)), 9.0);
+  float vB = pow(1.0 - abs(snoise(q * 3.3 + 5.0)), 11.0);
+  float vC = pow(1.0 - abs(snoise(q * 6.4 - 3.0)), 14.0);
+  float glow = 0.75 + uLevel * 1.9;
+  col += uHot * (vA * 0.95 + vB * 0.75 + vC * 0.55) * glow;
+  // Раскалённые узлы там, где нити пересекаются.
+  col += uBright * pow(vA * vB, 0.6) * (0.5 + uLevel * 1.4);
 
-  // Светящийся ободок и внутреннее свечение.
-  col += uViolet * fres * (0.9 + uLevel * 1.4);
-  col += uNeon * pow(fres, 3.0) * (0.5 + uLevel);
+  // Искры внутри сферы.
+  float spark = smoothstep(0.93, 1.0, snoise(vPos * 24.0 * freq + t * 0.6));
+  col += uBright * spark * (0.4 + uLevel);
+
+  // Кармин на ободке и общее внутреннее свечение.
+  col += uHot * fres * (0.85 + uLevel * 1.5);
+  col += uBright * pow(fres, 4.0) * (0.35 + uLevel * 0.8);
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -139,13 +156,50 @@ uniform vec3 uColor;
 varying vec3 vNormalW;
 varying vec3 vView;
 void main() {
-  float rim = pow(max(dot(normalize(vNormalW), normalize(vView)), 0.0), 2.2);
-  float alpha = rim * (0.35 + uLevel * 0.9);
-  gl_FragColor = vec4(uColor * (0.8 + uLevel), alpha);
+  float rim = pow(max(dot(normalize(vNormalW), normalize(vView)), 0.0), 2.0);
+  float alpha = rim * (0.42 + uLevel * 1.0);
+  gl_FragColor = vec4(uColor * (0.9 + uLevel * 1.2), alpha);
 }
 `;
 
-/** Детерминированный генератор (mulberry32): точки орбиты не должны меняться между рендерами. */
+const WAVES_VERTEX = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}
+`;
+
+/** Горизонтальная звуковая визуализация: столбики расходятся от центра к краям и затухают, как на референсе. */
+const WAVES_FRAGMENT = /* glsl */ `
+uniform float uTime;
+uniform float uLevel;
+uniform float uBass;
+uniform vec3 uColor;
+varying vec2 vUv;
+
+float hash(float n) { return fract(sin(n * 127.1) * 43758.5453); }
+
+void main() {
+  float dx = abs(vUv.x - 0.5) * 2.0;
+  float y = abs(vUv.y - 0.5) * 2.0;
+  float bars = 110.0;
+  float idx = floor(dx * bars);
+  float h = mix(hash(idx), 0.5 + 0.5 * sin(uTime * 7.0 + idx * 2.1 - dx * 14.0), 0.6);
+
+  float envelope = pow(max(1.0 - dx, 0.0), 1.5) * smoothstep(0.0, 0.1, dx);
+  float amp = (0.05 + uLevel * 1.15 + uBass * 0.45) * envelope * (0.2 + 0.8 * h);
+  float barMask = smoothstep(0.44, 0.2, abs(fract(dx * bars) - 0.5));
+  float body = smoothstep(amp, amp - 0.1, y) * barMask;
+
+  float line = exp(-y * 70.0) * (1.0 - dx) * 0.75;
+  float haze = exp(-y * 5.0) * envelope * (0.15 + uLevel) * 0.55;
+  float a = body * 0.9 + line + haze;
+  gl_FragColor = vec4(uColor * a, a);
+}
+`;
+
+/** Детерминированный генератор (mulberry32): точки не должны меняться между рендерами. */
 function seeded(seed: number) {
   let state = seed;
   return () => {
@@ -156,20 +210,20 @@ function seeded(seed: number) {
   };
 }
 
-function useOrbitPoints(count: number) {
+function useOrbitPoints(count: number, seed: number, near: number, spread: number) {
   return useMemo(() => {
-    const random = seeded(7);
+    const random = seeded(seed);
     const positions = new Float32Array(count * 3);
     for (let index = 0; index < count; index += 1) {
       const theta = random() * Math.PI * 2;
       const phi = Math.acos(2 * random() - 1);
-      const radius = 1.45 + random() * 0.55;
+      const radius = near + random() * spread;
       positions[index * 3] = radius * Math.sin(phi) * Math.cos(theta);
       positions[index * 3 + 1] = radius * Math.cos(phi);
       positions[index * 3 + 2] = radius * Math.sin(phi) * Math.sin(theta);
     }
     return positions;
-  }, [count]);
+  }, [count, seed, near, spread]);
 }
 
 /** Уровни голоса из частотного спектра: общий, низы (бас) и верха. Без анализатора — синтетическая «речь». */
@@ -191,13 +245,16 @@ function readAudio(analyser: AnalyserNode | null, data: Uint8Array<ArrayBuffer>,
 }
 
 function Plasma({ state, analyserRef }: { state: PlasmaState; analyserRef: RefObject<AnalyserNode | null> }) {
+  const viewport = useThree((s) => s.viewport);
   const group = useRef<Group>(null);
   const core = useRef<ShaderMaterial>(null);
   const halo = useRef<ShaderMaterial>(null);
+  const waves = useRef<ShaderMaterial>(null);
   const orbit = useRef<Group>(null);
   const data = useRef(new Uint8Array(new ArrayBuffer(128)));
-  const smooth = useRef({ level: 0, bass: 0, treble: 0, scale: 1, speed: 1, time: 0 });
-  const orbitPoints = useOrbitPoints(1400);
+  const smooth = useRef({ level: 0, bass: 0, treble: 0, turb: 0, scale: 1, speed: 1, time: 0 });
+  const sparks = useOrbitPoints(1500, 7, 1.4, 0.6);
+  const bokeh = useOrbitPoints(90, 21, 1.3, 0.9);
 
   const coreUniforms = useMemo(
     () => ({
@@ -205,51 +262,58 @@ function Plasma({ state, analyserRef }: { state: PlasmaState; analyserRef: RefOb
       uLevel: { value: 0 },
       uBass: { value: 0 },
       uTreble: { value: 0 },
-      uDeep: { value: new Color("#04041c") },
-      uViolet: { value: new Color("#5b2bd6") },
-      uNeon: { value: new Color("#5d8bff") },
-      uAccent: { value: new Color("#a63cff") },
+      uTurb: { value: 0 },
+      uDeep: { value: new Color("#150008") },
+      uCrimson: { value: new Color("#8c0428") },
+      uHot: { value: new Color("#ff2d55") },
+      uBright: { value: new Color("#ff9db0") },
     }),
     [],
   );
-  const haloUniforms = useMemo(() => ({ uLevel: { value: 0 }, uColor: { value: new Color("#6d4bff") } }), []);
+  const haloUniforms = useMemo(() => ({ uLevel: { value: 0 }, uColor: { value: new Color("#ff2d55") } }), []);
+  const waveUniforms = useMemo(
+    () => ({ uTime: { value: 0 }, uLevel: { value: 0 }, uBass: { value: 0 }, uColor: { value: new Color("#ff3358") } }),
+    [],
+  );
 
   useFrame((frame, delta) => {
     const s = smooth.current;
     const analyser = analyserRef.current;
+    const clock = frame.clock.elapsedTime;
 
     let target = { level: 0, bass: 0, treble: 0 };
     let targetScale = 1;
     let targetSpeed = 1;
 
     if (state === "speaking") {
-      target = readAudio(analyser, data.current, frame.clock.elapsedTime);
-      targetScale = 1.04;
+      target = readAudio(analyser, data.current, clock);
+      targetScale = 1.05;
       targetSpeed = 2;
     } else if (state === "listening") {
-      // Сжимается и мелко «дрожит», реагируя на тишину в ожидании речи.
-      const tremble = 0.12 + 0.1 * Math.abs(Math.sin(frame.clock.elapsedTime * 21));
+      // Пользователь говорит: сфера сжимается и мелко «дрожит».
+      const tremble = 0.12 + 0.1 * Math.abs(Math.sin(clock * 21));
       target = { level: tremble, bass: tremble * 0.5, treble: tremble * 1.2 };
-      targetScale = 0.8;
+      targetScale = 0.82;
       targetSpeed = 1.6;
     } else if (state === "thinking") {
-      const pulse = 0.2 + 0.12 * Math.sin(frame.clock.elapsedTime * 5);
+      const pulse = 0.2 + 0.12 * Math.sin(clock * 5);
       target = { level: pulse, bass: pulse, treble: pulse * 0.5 };
-      targetScale = 0.96;
+      targetScale = 0.97;
       targetSpeed = 3;
     } else {
-      const breathe = 0.5 + 0.5 * Math.sin(frame.clock.elapsedTime * 1.4);
+      const breathe = 0.5 + 0.5 * Math.sin(clock * 1.4);
       target = { level: 0.03, bass: 0.02 + breathe * 0.05, treble: 0.01 };
       targetScale = 1 + breathe * 0.04;
     }
 
-    // Лёгкое сглаживание: атака быстрая (удар голоса), спад медленнее — форма «перетекает», а не мигает.
+    // Атака быстрая (удар голоса), спад медленнее: форма «перетекает», а не мигает.
     const attack = 1 - Math.exp(-delta * 18);
     const release = 1 - Math.exp(-delta * 6);
     const follow = (current: number, next: number) => current + (next - current) * (next > current ? attack : release);
     s.level = follow(s.level, target.level);
     s.bass = follow(s.bass, target.bass);
     s.treble = follow(s.treble, target.treble);
+    s.turb += (target.level - s.turb) * (1 - Math.exp(-delta * 4));
     s.scale += (targetScale - s.scale) * (1 - Math.exp(-delta * 7));
     s.speed += (targetSpeed - s.speed) * (1 - Math.exp(-delta * 3));
     s.time += delta * s.speed;
@@ -259,8 +323,14 @@ function Plasma({ state, analyserRef }: { state: PlasmaState; analyserRef: RefOb
       core.current.uniforms.uLevel!.value = s.level;
       core.current.uniforms.uBass!.value = s.bass;
       core.current.uniforms.uTreble!.value = s.treble;
+      core.current.uniforms.uTurb!.value = s.turb;
     }
     if (halo.current) halo.current.uniforms.uLevel!.value = s.level;
+    if (waves.current) {
+      waves.current.uniforms.uTime!.value = s.time;
+      waves.current.uniforms.uLevel!.value = s.level;
+      waves.current.uniforms.uBass!.value = s.bass;
+    }
     if (group.current) {
       group.current.scale.setScalar(s.scale);
       group.current.rotation.y += delta * 0.12 * s.speed;
@@ -269,18 +339,34 @@ function Plasma({ state, analyserRef }: { state: PlasmaState; analyserRef: RefOb
     if (orbit.current) {
       orbit.current.rotation.y -= delta * 0.05 * s.speed;
       orbit.current.rotation.z += delta * 0.02;
-      orbit.current.scale.setScalar(1 + s.level * 0.18);
+      orbit.current.scale.setScalar(1 + s.level * 0.2);
     }
   });
 
+  // Плоскость волн лежит позади сферы (z = -0.8) и перекрывает весь кадр по ширине.
+  const wavesWidth = viewport.width * 1.25;
+
   return (
     <>
+      <mesh position={[0, 0, -0.8]}>
+        <planeGeometry args={[wavesWidth, 1.7]} />
+        <shaderMaterial
+          ref={waves}
+          vertexShader={WAVES_VERTEX}
+          fragmentShader={WAVES_FRAGMENT}
+          uniforms={waveUniforms}
+          transparent
+          depthWrite={false}
+          blending={AdditiveBlending}
+        />
+      </mesh>
+
       <group ref={group}>
         <mesh>
           <sphereGeometry args={[1, 192, 192]} />
           <shaderMaterial ref={core} vertexShader={CORE_VERTEX} fragmentShader={CORE_FRAGMENT} uniforms={coreUniforms} />
         </mesh>
-        <mesh scale={1.22}>
+        <mesh scale={1.24}>
           <sphereGeometry args={[1, 64, 64]} />
           <shaderMaterial
             ref={halo}
@@ -294,12 +380,25 @@ function Plasma({ state, analyserRef }: { state: PlasmaState; analyserRef: RefOb
           />
         </mesh>
       </group>
+
       <group ref={orbit}>
-        <Points positions={orbitPoints} stride={3} frustumCulled={false}>
+        <Points positions={sparks} stride={3} frustumCulled={false}>
           <PointMaterial
             transparent
-            color="#8f7bff"
-            size={0.018}
+            color="#ff4d6d"
+            size={0.02}
+            sizeAttenuation
+            depthWrite={false}
+            blending={AdditiveBlending}
+          />
+        </Points>
+        {/* Крупные размытые алые частицы по краям — «боке». */}
+        <Points positions={bokeh} stride={3} frustumCulled={false}>
+          <PointMaterial
+            transparent
+            opacity={0.28}
+            color="#ff2d55"
+            size={0.14}
             sizeAttenuation
             depthWrite={false}
             blending={AdditiveBlending}
@@ -319,7 +418,7 @@ function hasWebGL() {
   }
 }
 
-/** Плазменная 3D-сфера на WebGL: шейдер с симплекс-шумом, искажаемый спектром голоса. */
+/** Плазменная 3D-сфера на WebGL: шейдер с симплекс-шумом, искажаемый спектром голоса, и звуковые волны по бокам. */
 export function PlasmaSphere({
   state,
   analyserRef,
@@ -335,9 +434,9 @@ export function PlasmaSphere({
   }, []);
 
   return (
-    <div aria-hidden className="relative size-72 sm:size-[26rem]">
+    <div aria-hidden className="relative h-72 w-full max-w-6xl sm:h-[26rem]">
       {webgl === false ? (
-        <div className="absolute inset-[12%] rounded-full bg-[conic-gradient(from_0deg,#04041c,#5b2bd6,#5d8bff,#a63cff,#04041c)] opacity-80 blur-2xl" />
+        <div className="absolute inset-x-[20%] inset-y-[8%] rounded-full bg-[conic-gradient(from_0deg,#150008,#8c0428,#ff2d55,#8c0428,#150008)] opacity-80 blur-2xl" />
       ) : null}
       {webgl ? (
         <Canvas

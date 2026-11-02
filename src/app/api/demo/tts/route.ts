@@ -4,8 +4,8 @@ import { clientIp, isRateLimited } from "@/lib/demo-rate-limit";
 
 export const maxDuration = 30;
 
-/** ElevenLabs, голос Antoni. */
-const VOICE_ID = "ErXwobaYiN019PkySvjV";
+/** ElevenLabs, голос Rachel (живее и динамичнее на русском, чем Antoni). */
+const VOICE_ID = "21m00Tcm4TlvDq8ikWAM";
 const ENDPOINT = `https://api.elevenlabs.io/v1/text-to-speech/${VOICE_ID}`;
 
 /** Один запрос — один кусок реплики; длинный текст не принимаем, чтобы не тратить символы впустую. */
@@ -40,7 +40,12 @@ export async function POST(request: NextRequest) {
       body: JSON.stringify({
         text,
         model_id: "eleven_multilingual_v2",
-        voice_settings: { stability: 0.5, similarity_boost: 0.8 },
+        voice_settings: {
+          stability: 0.4, // ниже — больше эмоций и живости
+          similarity_boost: 0.85, // чётче и ближе к оригиналу голоса
+          style: 0.15, // немного утрированный стиль для естественных интонаций
+          use_speaker_boost: true,
+        },
       }),
       signal: request.signal,
     });
