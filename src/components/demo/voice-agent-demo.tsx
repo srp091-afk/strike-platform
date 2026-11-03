@@ -5,12 +5,6 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { PlasmaState } from "@/components/demo/plasma-sphere";
-import type {
-  SpeechRecognitionConstructor,
-  SpeechRecognitionErrorEventLike,
-  SpeechRecognitionEventLike,
-  SpeechRecognitionLike,
-} from "@/components/demo/speech-recognition";
 import { cn } from "@/lib/utils";
 
 // three.js тяжёлый и нужен только в браузере — грузим отдельным чанком, без SSR.
@@ -19,7 +13,6 @@ const PlasmaSphere = dynamic(() => import("@/components/demo/plasma-sphere").the
 });
 
 type ChatMessage = { role: "user" | "assistant"; content: string };
-type SpeechLang = "ru-RU" | "en-US";
 
 const CHIPS = [
   "Чем вы можете помочь моему бизнесу?",
@@ -28,36 +21,28 @@ const CHIPS = [
   "Покажи пример диалога с клиентом",
 ] as const;
 
-const ERROR_TEXT: Record<string, string> = {
-  "not-allowed": "Доступ к микрофону запрещён. Разрешите его в настройках браузера и попробуйте снова.",
-  "service-not-allowed": "Доступ к микрофону запрещён. Разрешите его в настройках браузера и попробуйте снова.",
-  "audio-capture": "Микрофон не найден. Подключите устройство записи.",
-  network: "Не удалось связаться с сервисом распознавания речи. Проверьте интернет.",
-};
+const MIC_DENIED = "Доступ к микрофону запрещён. Разрешите его в настройках браузера и попробуйте снова.";
 
 /** Пустой WAV: «прогрев» Audio в обработчике клика, иначе Safari/iOS потом блокирует автозапуск озвучки. */
 const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 
-/** Границы озвучки: законченное предложение и мягкая пауза (запятая и т.п.) — только если кусок уже достаточно длинный. */
-/** Пауза тишины, после которой накопленная фраза клиента уходит агенту (Web Speech сам отдаёт финал слишком рано). */
 /** Скрытый стартовый триггер: на экране и в истории не показывается, бэкенд отвечает приветствием. */
 const START_TRIGGER = "START_CONVERSATION";
 
+/** Тишина, после которой запись реплики закрывается и уходит на распознавание (Whisper). */
 const SILENCE_COMMIT_MS = 1300;
+/** Сколько суммарно должно звучать «голоса», чтобы запись считалась речью, а не щелчком или шумом. */
+const MIN_VOICE_MS = 250;
+const VAD_TICK_MS = 80;
+/** Если никто не заговорил, запись перезапускается — не копим длинную тишину (Whisper на ней фантазирует). */
+const IDLE_RESTART_MS = 6000;
+
+/** Границы озвучки: законченное предложение и мягкая пауза (запятая и т.п.) — только если кусок уже достаточно длинный. */
 const MIN_SENTENCE_CHARS = 12;
 const MIN_CLAUSE_CHARS = 45;
 
 const URL_PATTERN =
   /(?:https?:\/\/|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|io|ru|net|org|ai|co|app|dev|pro|biz|info|me|by|ua|kz|su|eu|ge|tr|de|uk|us|xyz|online|site|shop|store|agency)\b(?:\/\S*)?/i;
-
-function getRecognitionConstructor(): SpeechRecognitionConstructor | null {
-  if (typeof window === "undefined") return null;
-  const speech = window as unknown as {
-    SpeechRecognition?: SpeechRecognitionConstructor;
-    webkitSpeechRecognition?: SpeechRecognitionConstructor;
-  };
-  return speech.SpeechRecognition ?? speech.webkitSpeechRecognition ?? null;
-}
 
 /** Ищет ссылку на сайт в реплике (набранной или надиктованной). */
 function extractUrl(text: string): { url: string; onlyUrl: boolean } | null {
@@ -121,7 +106,6 @@ export function VoiceAgentDemo() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [interim, setInterim] = useState("");
   const [draft, setDraft] = useState("");
-  const [lang, setLang] = useState<SpeechLang>("ru-RU");
   const [error, setError] = useState<string | null>(null);
   const [supported, setSupported] = useState(true);
   const [debug, setDebug] = useState(false);
@@ -132,15 +116,13 @@ export function VoiceAgentDemo() {
   const siteUrlRef = useRef("");
   const chatAbortRef = useRef<AbortController | null>(null);
 
-  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const micOnRef = useRef(false);
-  const langRef = useRef<SpeechLang>("ru-RU");
   const busyRef = useRef(false);
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
-  const pendingRef = useRef("");
-  const interimRef = useRef("");
-  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const micCtxRef = useRef<AudioContext | null>(null);
+  const micAnalyserRef = useRef<AnalyserNode | null>(null);
+  const sessionRef = useRef<{ stop: (send: boolean) => void } | null>(null);
   const debugStopRef = useRef<(() => void) | null>(null);
   const startListeningRef = useRef<() => void>(() => undefined);
 
@@ -156,15 +138,14 @@ export function VoiceAgentDemo() {
   // Поддержку API знает только браузер — проверяем после монтирования, чтобы не ломать гидратацию.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    setSupported(getRecognitionConstructor() !== null);
-    setLang(navigator.language.toLowerCase().startsWith("en") ? "en-US" : "ru-RU");
+    setSupported(typeof MediaRecorder !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia));
     setDebug(new URLSearchParams(window.location.search).get("debug") === "true");
     return () => {
       micOnRef.current = false;
-      micStreamRef.current?.getTracks().forEach((track) => track.stop());
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-      recognitionRef.current?.abort();
+      sessionRef.current?.stop(false);
+      micStreamRef.current?.getTracks().forEach((track) => track.stop());
+      void micCtxRef.current?.close().catch(() => undefined);
       chatAbortRef.current?.abort();
     };
   }, []);
@@ -178,35 +159,23 @@ export function VoiceAgentDemo() {
     };
   }, []);
 
-  // Бот занят (думает или говорит) — по этому флагу микрофон отличает перебивание от тишины.
+  // Строгая очередность: пока агент думает или говорит, микрофон глух; договорил — слушаем снова.
   useEffect(() => {
     const busy = isSpeaking || isReplying;
     busyRef.current = busy;
     if (!isRecording) return;
 
     if (busy) {
-      // Агент говорит: сессию распознавания глушим полностью и выбрасываем недослушанное.
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-      commitTimerRef.current = null;
-      pendingRef.current = "";
-      interimRef.current = "";
-      recognitionRef.current?.abort(); // onend сам очистит строку с распознанным текстом
+      sessionRef.current?.stop(false); // недослушанную запись выбрасываем
       return;
     }
-    // Агент договорил (очередь пуста): через короткую паузу, чтобы хвост звука не попал в микрофон, слушаем снова.
+    // Короткая пауза, чтобы хвост озвучки не попал в микрофон.
     restartTimerRef.current = setTimeout(() => startListeningRef.current(), 400);
     return () => {
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
     };
   }, [isSpeaking, isReplying, isRecording]);
-
-  // Смена языка: перезапускаем распознавание, onend поднимет его уже с новым языком.
-  useEffect(() => {
-    langRef.current = lang;
-    if (micOnRef.current) recognitionRef.current?.stop();
-  }, [lang]);
-
   /** Один Audio на всё демо: разблокированный жестом элемент переиспользуется для каждого куска очереди. */
   const ensureAudio = useCallback(() => {
     if (!audioRef.current) {
@@ -327,7 +296,7 @@ export function VoiceAgentDemo() {
           body: JSON.stringify({
             messages: greeting ? [{ role: "user", content: START_TRIGGER }] : historyRef.current,
             websiteUrl: websiteUrl || undefined,
-            lang: langRef.current,
+            lang: navigator.language,
           }),
           signal: controller.signal,
         });
@@ -401,83 +370,127 @@ export function VoiceAgentDemo() {
     [handleSendMessage, interruptAgent],
   );
 
+  /** Отправляет запись реплики в Whisper и передаёт распознанный текст агенту. Язык определяется автоматически. */
+  const transcribe = useCallback(
+    async (blob: Blob) => {
+      setIsReplying(true); // «Думаю…» и глухой микрофон на время распознавания
+      let text = "";
+      try {
+        const form = new FormData();
+        form.append("audio", blob, "speech");
+        const response = await fetch("/api/demo/stt", { method: "POST", body: form });
+        const payload = (await response.json().catch(() => null)) as { text?: string; error?: string } | null;
+        if (!response.ok) throw new Error(payload?.error ?? "Не удалось распознать речь.");
+        text = payload?.text?.trim() ?? "";
+      } catch (failure) {
+        setError(failure instanceof Error ? failure.message : "Не удалось распознать речь.");
+      }
+      if (text && micOnRef.current) {
+        submitText(text); // дальше isReplying ведёт handleSendMessage
+      } else {
+        setIsReplying(false); // тишина или ошибка: освобождаем очередь, микрофон слушает снова
+      }
+    },
+    [submitText],
+  );
+
   /**
-   * Постоянное прослушивание: continuous-распознавание не закрывается после реплики, а при остановке браузером
-   * (onend) тихо перезапускается. Пока агент думает или говорит, сессия остановлена; когда договорил — слушаем снова.
+   * Одна реплика клиента: MediaRecorder пишет микрофон, простой VAD по громкости ждёт речь и 1,3 с тишины,
+   * после чего запись уходит в Whisper. Пока агент занят, сессия не работает.
    */
   const startListening = useCallback(() => {
-    if (!micOnRef.current || busyRef.current || recognitionRef.current) return;
-    const Recognition = getRecognitionConstructor();
-    if (!Recognition) {
+    const stream = micStreamRef.current;
+    const analyser = micAnalyserRef.current;
+    if (!micOnRef.current || busyRef.current || sessionRef.current || !stream || !analyser) return;
+
+    const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find((type) =>
+      MediaRecorder.isTypeSupported(type),
+    );
+    let recorder: MediaRecorder;
+    try {
+      recorder = new MediaRecorder(stream, mimeType ? { mimeType } : undefined);
+    } catch {
       setSupported(false);
       return;
     }
 
-    const recognition = new Recognition();
-    recognition.lang = langRef.current;
-    recognition.continuous = true;
-    recognition.interimResults = true;
+    const chunks: Blob[] = [];
+    const samples = new Float32Array(analyser.fftSize);
+    const startedAt = performance.now();
+    let noise = 0.01;
+    let voiced = 0;
+    let lastVoice = 0;
+    let speaking = false;
+    let send = false;
+    let finished = false;
 
-    recognition.onresult = (event: SpeechRecognitionEventLike) => {
-      // Строгая очередность: пока агент думает или говорит, любой звук от пользователя игнорируется.
-      if (busyRef.current) return;
-
-      for (let index = event.resultIndex; index < event.results.length; index += 1) {
-        const result = event.results[index]!;
-        const transcript = (result[0]?.transcript ?? "").trim();
-        if (!transcript) continue;
-
-        // Любая новая речь отодвигает отправку: пауза между словами не обрывает фразу.
-        if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-        interimRef.current = result.isFinal ? "" : transcript;
-        if (result.isFinal) pendingRef.current = `${pendingRef.current} ${transcript}`.trim();
-        setInterim(result.isFinal ? pendingRef.current : transcript);
-
-        commitTimerRef.current = setTimeout(() => {
-          // Chrome отдаёт финал короткой фразы с задержкой: к моменту тишины слово может ещё лежать в interim.
-          const phrase = `${pendingRef.current} ${interimRef.current}`.trim();
-          pendingRef.current = "";
-          interimRef.current = "";
-          commitTimerRef.current = null;
-          setInterim("");
-          if (!phrase) return;
-          // Сбрасываем сессию: запоздавший финал той же фразы не должен уйти вторым запросом.
-          recognition.abort();
-          submitText(phrase);
-        }, SILENCE_COMMIT_MS);
-      }
-    };    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
-      // «no-speech» и «aborted» — штатные паузы: onend сам перезапустит прослушивание.
-      if (event.error === "no-speech" || event.error === "aborted") return;
-      micOnRef.current = false;
-      setIsRecording(false);
+    recorder.ondataavailable = (event) => {
+      if (event.data.size > 0) chunks.push(event.data);
+    };
+    recorder.onstop = () => {
+      sessionRef.current = null;
       setInterim("");
-      setError(ERROR_TEXT[event.error] ?? "Не удалось распознать речь. Включите микрофон ещё раз.");
-    };
-    recognition.onend = () => {
-      if (recognitionRef.current === recognition) recognitionRef.current = null;
-      // Браузер закрыл сессию посреди фразы — недослушанное слово не теряем, его отправит таймер тишины.
-      if (interimRef.current) {
-        pendingRef.current = `${pendingRef.current} ${interimRef.current}`.trim();
-        interimRef.current = "";
-      }
-      if (!pendingRef.current) setInterim("");
-      if (micOnRef.current && !busyRef.current) {
-        restartTimerRef.current = setTimeout(() => startListeningRef.current(), 250);
+      if (send && chunks.length > 0) {
+        void transcribe(new Blob(chunks, { type: recorder.mimeType || mimeType || "audio/webm" }));
+      } else if (micOnRef.current && !busyRef.current) {
+        restartTimerRef.current = setTimeout(() => startListeningRef.current(), 150);
       }
     };
 
-    recognitionRef.current = recognition;
+    const finish = (sendIt: boolean) => {
+      if (finished) return;
+      finished = true;
+      send = sendIt;
+      window.clearInterval(timer);
+      if (recorder.state !== "inactive") recorder.stop();
+      else recorder.onstop?.(new Event("stop"));
+    };
+
+    const timer = window.setInterval(() => {
+      analyser.getFloatTimeDomainData(samples);
+      let sum = 0;
+      for (const sample of samples) sum += sample * sample;
+      const rms = Math.sqrt(sum / samples.length);
+      const now = performance.now();
+
+      if (rms > Math.max(0.02, noise * 2.5)) {
+        voiced += VAD_TICK_MS;
+        lastVoice = now;
+        if (!speaking && voiced >= MIN_VOICE_MS) {
+          speaking = true;
+          setInterim("Слушаю…");
+        }
+      } else {
+        noise += (rms - noise) * 0.05; // подстраиваемся под фоновый шум комнаты
+        if (!speaking && now - lastVoice > 600) voiced = 0; // отдельные щелчки в сумму не копим
+      }
+
+      if (speaking && now - lastVoice > SILENCE_COMMIT_MS) finish(true);
+      else if (!speaking && now - startedAt > IDLE_RESTART_MS) finish(false);
+    }, VAD_TICK_MS);
+
+    sessionRef.current = { stop: finish };
     try {
-      recognition.start();
+      recorder.start();
     } catch {
-      recognitionRef.current = null;
+      finish(false);
     }
-  }, [submitText]);
+  }, [transcribe]);
 
   useEffect(() => {
     startListeningRef.current = startListening;
   }, [startListening]);
+
+  function releaseMic() {
+    micOnRef.current = false;
+    if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    sessionRef.current?.stop(false);
+    micStreamRef.current?.getTracks().forEach((track) => track.stop());
+    micStreamRef.current = null;
+    micAnalyserRef.current = null;
+    void micCtxRef.current?.close().catch(() => undefined);
+    micCtxRef.current = null;
+  }
 
   function toggleMic() {
     ensureAudio(); // клик — момент, когда браузер разрешает «разбудить» звук и запросить микрофон
@@ -487,16 +500,9 @@ export function VoiceAgentDemo() {
       return;
     }
     if (isRecording) {
-      micOnRef.current = false;
+      releaseMic();
       setIsRecording(false);
       setInterim("");
-      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
-      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-      pendingRef.current = "";
-      micStreamRef.current?.getTracks().forEach((track) => track.stop());
-      micStreamRef.current = null;
-      recognitionRef.current?.abort();
-      recognitionRef.current = null;
       return;
     }
     setError(null);
@@ -505,7 +511,7 @@ export function VoiceAgentDemo() {
     // Первый запуск микрофона: агент сам начинает разговор скрытым триггером.
     if (historyRef.current.length === 0) void handleSendMessage("", siteUrlRef.current, true);
 
-    // Открываем микрофон с жёсткими эхо- и шумоподавлением и держим поток, пока слушаем.
+    // Микрофон с жёстким эхо- и шумоподавлением: поток держим, пока слушаем.
     void (async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
@@ -515,14 +521,24 @@ export function VoiceAgentDemo() {
           stream.getTracks().forEach((track) => track.stop());
           return;
         }
+        const Ctx =
+          window.AudioContext ?? (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+        const context = new Ctx();
+        const analyser = context.createAnalyser();
+        analyser.fftSize = 1024;
+        context.createMediaStreamSource(stream).connect(analyser); // к динамикам не подключаем — иначе эхо
+        void context.resume();
         micStreamRef.current = stream;
+        micCtxRef.current = context;
+        micAnalyserRef.current = analyser;
+        startListening();
       } catch {
-        // Нет доступа или API — распознавание само запросит разрешение и покажет понятную ошибку.
+        releaseMic();
+        setIsRecording(false);
+        setError(MIC_DENIED);
       }
-      startListening();
     })();
   }
-
   function handleChip(question: string) {
     ensureAudio();
     submitText(question);
