@@ -1,6 +1,6 @@
 "use client";
 
-import { Globe, Maximize, Play, Trash } from "lucide-react";
+import { CalendarDays, Globe, Maximize, Play, Trash } from "lucide-react";
 import { startTransition, useActionState, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -14,6 +14,7 @@ import { ChannelIcon } from "@/components/channel-icons";
 import { Button } from "@/components/ui/button";
 import { DialogContent } from "@/components/ui/dialog";
 import { SelectField } from "@/components/ui/select-field";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { WhatsAppConnectDialog } from "@/components/whatsapp-connect-dialog";
 import {
@@ -191,7 +192,7 @@ export function AgentManager({
       </div>
 
       {agents.length === 0 ? (
-        <p className="mt-6 rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/50 px-6 py-10 text-sm text-zinc-400">
+        <p className="mt-6 rounded-2xl border border-dashed border-zinc-800 bg-zinc-900 shadow-sm px-6 py-10 text-sm text-zinc-400">
           Агентов пока нет. Создайте первого, чтобы подключить канал или открыть симулятор.
         </p>
       ) : (
@@ -199,7 +200,7 @@ export function AgentManager({
           {agents.map((agent) => (
             <li
               key={agent.id}
-              className="rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md transition-colors duration-200 hover:border-zinc-600"
+              className="rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md transition-colors duration-200 hover:border-zinc-600"
             >
               <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
                 <div className="min-w-0 flex-1">
@@ -290,7 +291,7 @@ function SimulatorDialog({
         className="flex h-[min(44rem,calc(100dvh-2rem))] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <header className="flex items-center justify-between gap-3 border-b border-zinc-800/80 px-5 py-4">
+        <header className="flex items-center justify-between gap-3 border-b border-zinc-800 px-5 py-4">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Симулятор</p>
             <h2 id="simulator-dialog-title" className="truncate font-heading text-lg font-semibold text-white">
@@ -315,6 +316,39 @@ function SimulatorDialog({
   );
 }
 
+const AGENT_TABS = [
+  { value: "main", label: "Основные" },
+  { value: "prompt", label: "Инструкции" },
+  { value: "channels", label: "Каналы связи" },
+  { value: "behavior", label: "Поведение и автоматизации" },
+] as const;
+
+const tabCardClass = "grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm";
+
+/** Заглушка будущей интеграции: сейчас только показывает, что раздел появится. */
+function GoogleCalendarStub() {
+  return (
+    <section className="flex flex-wrap items-center gap-4 rounded-2xl border border-dashed border-zinc-700 bg-zinc-900 p-6">
+      <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-zinc-800 bg-black text-zinc-400">
+        <CalendarDays className="size-5" strokeWidth={1.75} />
+      </span>
+      <div className="min-w-0 flex-1">
+        <h3 className="flex items-center gap-2 font-heading text-lg font-semibold text-white">
+          Google Calendar
+          <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
+            Скоро
+          </span>
+        </h3>
+        <p className="mt-1 text-sm text-zinc-400">
+          Агент сможет сам предлагать свободные слоты и записывать клиентов на встречи прямо из диалога.
+        </p>
+      </div>
+      <Button type="button" variant="outline" disabled>
+        Подключить
+      </Button>
+    </section>
+  );
+}
 function AgentDialog({
   editing,
   agents,
@@ -459,7 +493,7 @@ function AgentDialog({
             });
           }}
         >
-          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800/80 bg-black px-6 py-4">
+          <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-black px-6 py-4">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</p>
               <h2 id="agent-dialog-title" className="text-2xl font-semibold">
@@ -481,109 +515,134 @@ function AgentDialog({
           </header>
 
           <div className="min-h-0 flex-1 overflow-y-auto">
-            <div className="mx-auto grid max-w-6xl gap-6 p-6 lg:grid-cols-2">
-              <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
-                {persistedId ? <input type="hidden" name="id" value={persistedId} /> : null}
+            <div className="mx-auto max-w-4xl p-4 sm:p-6">
+              {persistedId ? <input type="hidden" name="id" value={persistedId} /> : null}
+              {/* Неактивные вкладки остаются в DOM (forceMount + hidden): иначе их поля не попали бы в FormData при сохранении. */}
+              <Tabs defaultValue="main" className="gap-0">
+                <TabsList className="mb-6 h-auto w-full flex-nowrap justify-start gap-1 overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-1.5 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                  {AGENT_TABS.map((tab) => (
+                    <TabsTrigger
+                      key={tab.value}
+                      value={tab.value}
+                      className="h-10 flex-none rounded-xl px-4 text-sm data-[state=inactive]:hover:bg-zinc-950 data-[state=inactive]:hover:text-white"
+                    >
+                      {tab.label}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
 
-                <label className="grid gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Имя</span>
-                  <input
-                    className={fieldClass}
-                    name="name"
-                    required
-                    value={draft.name}
-                    placeholder="Квалификатор"
-                    onChange={(event) => patchDraft({ name: event.target.value })}
+                <TabsContent value="main" forceMount className="data-[state=inactive]:hidden">
+                  <section className={tabCardClass}>
+                    <label className="grid gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Имя</span>
+                      <input
+                        className={fieldClass}
+                        name="name"
+                        required
+                        value={draft.name}
+                        placeholder="Квалификатор"
+                        onChange={(event) => patchDraft({ name: event.target.value })}
+                      />
+                    </label>
+
+                    <label className="grid min-w-0 gap-2">
+                      <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Модель</span>
+                      <SelectField
+                        name="model"
+                        value={draft.model}
+                        options={AGENT_MODELS.map((model) => ({
+                          value: model.value,
+                          label: `${model.value} (${model.label})`,
+                        }))}
+                        onChange={(model) => patchDraft({ model })}
+                      />
+                    </label>
+
+                    <CreativityField
+                      value={draft.temperature}
+                      onChange={(temperature) => patchDraft({ temperature })}
+                    />
+                  </section>
+                </TabsContent>
+
+                <TabsContent value="prompt" forceMount className="data-[state=inactive]:hidden">
+                  <section className={tabCardClass}>
+                    <SystemPromptField
+                      value={draft.system_prompt}
+                      onChange={(system_prompt) => patchDraft({ system_prompt })}
+                    />
+                  </section>
+                </TabsContent>
+
+                <TabsContent value="channels" forceMount className="data-[state=inactive]:hidden">
+                  <ChannelSettings
+                    agent={channelAgent}
+                    agentId={persistedId}
+                    initialOpenChannel={initialConnectChannel}
+                    connectError={connectError}
+                    onConnectChannel={handleChannelConnect}
+                    credentials={{ instanceId: draft.wa_instance_id, apiToken: draft.wa_api_token }}
+                    phone={draft.wa_phone_number}
+                    greenDefaults={greenDefaults}
+                    channels={draft.active_channels}
+                    onChannelsChange={(active_channels) => patchDraft({ active_channels })}
+                    onWhatsAppCredentials={(credentials) =>
+                      patchDraft({
+                        wa_instance_id: credentials.instanceId,
+                        wa_api_token: credentials.apiToken,
+                      })
+                    }
+                    onWhatsAppPhone={(wa_phone_number) => {
+                      setDraft((current) => ({ ...current, wa_phone_number }));
+                      setBaseline((current) => ({ ...current, wa_phone_number }));
+                    }}
+                    onWhatsAppCleared={() => {
+                      const cleared = { wa_instance_id: "", wa_api_token: "", wa_phone_number: "" };
+                      setDraft((current) => ({ ...current, ...cleared }));
+                      setBaseline((current) => ({ ...current, ...cleared }));
+                    }}
                   />
-                </label>
+                </TabsContent>
 
-                <label className="grid min-w-0 gap-2">
-                  <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Модель</span>
-                  <SelectField
-                    name="model"
-                    value={draft.model}
-                    options={AGENT_MODELS.map((model) => ({
-                      value: model.value,
-                      label: `${model.value} (${model.label})`,
-                    }))}
-                    onChange={(model) => patchDraft({ model })}
-                  />
-                </label>
+                <TabsContent value="behavior" forceMount className="data-[state=inactive]:hidden">
+                  <div className="grid content-start gap-6">
+                    <ResponseDelayField
+                      value={draft.response_delay}
+                      onChange={(response_delay) => patchDraft({ response_delay })}
+                    />
+                    <HumanHandoffField
+                      value={draft.human_handoff_duration}
+                      onChange={(human_handoff_duration) => patchDraft({ human_handoff_duration })}
+                    />
+                    <LeadNotificationsField
+                      value={draft.telegram_chat_id}
+                      onChange={(telegram_chat_id) => patchDraft({ telegram_chat_id })}
+                    />
+                    <MessageLimitsField
+                      agentLimit={draft.limit_agent_messages}
+                      clientLimit={draft.limit_client_messages}
+                      totalLimit={draft.limit_total_messages}
+                      onChange={patchDraft}
+                    />
+                    <SplitMessagesField
+                      enabled={draft.split_messages}
+                      onChange={(split_messages) => patchDraft({ split_messages })}
+                    />
+                    <FollowupField
+                      enabled={draft.followup_enabled}
+                      intervalHours={draft.followup_interval_hours}
+                      maxCount={draft.followup_max_count}
+                      template={draft.followup_template}
+                      onChange={patchDraft}
+                    />
+                    <GoogleCalendarStub />
+                  </div>
+                </TabsContent>
+              </Tabs>
 
-                <CreativityField
-                  value={draft.temperature}
-                  onChange={(temperature) => patchDraft({ temperature })}
-                />
-
-                <SystemPromptField
-                  value={draft.system_prompt}
-                  onChange={(system_prompt) => patchDraft({ system_prompt })}
-                />
-
-                {error ? <p className="text-sm text-red-400">{error}</p> : null}
-              </section>
-
-              <div className="grid content-start gap-6">
-                <ChannelSettings
-                  agent={channelAgent}
-                  agentId={persistedId}
-                  initialOpenChannel={initialConnectChannel}
-                  connectError={connectError}
-                  onConnectChannel={handleChannelConnect}
-                  credentials={{ instanceId: draft.wa_instance_id, apiToken: draft.wa_api_token }}
-                  phone={draft.wa_phone_number}
-                  greenDefaults={greenDefaults}
-                  channels={draft.active_channels}
-                  onChannelsChange={(active_channels) => patchDraft({ active_channels })}
-                  onWhatsAppCredentials={(credentials) =>
-                    patchDraft({
-                      wa_instance_id: credentials.instanceId,
-                      wa_api_token: credentials.apiToken,
-                    })
-                  }
-                  onWhatsAppPhone={(wa_phone_number) => {
-                    setDraft((current) => ({ ...current, wa_phone_number }));
-                    setBaseline((current) => ({ ...current, wa_phone_number }));
-                  }}
-                  onWhatsAppCleared={() => {
-                    const cleared = { wa_instance_id: "", wa_api_token: "", wa_phone_number: "" };
-                    setDraft((current) => ({ ...current, ...cleared }));
-                    setBaseline((current) => ({ ...current, ...cleared }));
-                  }}
-                />
-                <ResponseDelayField
-                  value={draft.response_delay}
-                  onChange={(response_delay) => patchDraft({ response_delay })}
-                />
-                <HumanHandoffField
-                  value={draft.human_handoff_duration}
-                  onChange={(human_handoff_duration) => patchDraft({ human_handoff_duration })}
-                />
-                <LeadNotificationsField
-                  value={draft.telegram_chat_id}
-                  onChange={(telegram_chat_id) => patchDraft({ telegram_chat_id })}
-                />
-                <MessageLimitsField
-                  agentLimit={draft.limit_agent_messages}
-                  clientLimit={draft.limit_client_messages}
-                  totalLimit={draft.limit_total_messages}
-                  onChange={patchDraft}
-                />
-                <SplitMessagesField
-                  enabled={draft.split_messages}
-                  onChange={(split_messages) => patchDraft({ split_messages })}
-                />
-                <FollowupField
-                  enabled={draft.followup_enabled}
-                  intervalHours={draft.followup_interval_hours}
-                  maxCount={draft.followup_max_count}
-                  template={draft.followup_template}
-                  onChange={patchDraft}
-                />
-              </div>
+              {error ? <p className="mt-4 text-sm text-red-400">{error}</p> : null}
             </div>
-          </div>
-        </form>
+          </div>        </form>
       </DialogContent>
     </div>
   );
@@ -823,7 +882,7 @@ function ChannelSettings({
   }
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <div>
         <h3 className="font-heading text-lg font-semibold text-white">Активные каналы</h3>
         <p className="mt-1 text-sm leading-6 text-zinc-400">
@@ -1163,7 +1222,7 @@ function ResponseDelayField({ value, onChange }: { value: string; onChange: (val
   const selected = Number(value);
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <h3 className="font-heading text-lg font-semibold text-white">Задержка ответа</h3>
       <label className="grid gap-2">
         <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
@@ -1224,7 +1283,7 @@ function HumanHandoffField({
   onChange: (value: HandoffDuration) => void;
 }) {
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <div className="grid gap-2">
         <h3 className="font-heading text-lg font-semibold text-white">Вмешательство оператора</h3>
         <p className="text-sm leading-6 text-zinc-400">
@@ -1253,7 +1312,7 @@ function LeadNotificationsField({ value, onChange }: { value: string; onChange: 
   }
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <h3 className="font-heading text-lg font-semibold text-white">Уведомления о лидах</h3>
       {enabled ? null : <input type="hidden" name="telegram_chat_id" value="" />}
       <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
@@ -1299,7 +1358,7 @@ function MessageLimitsField({
   onChange: (patch: Partial<AgentDraft>) => void;
 }) {
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <div className="grid gap-2">
         <h3 className="font-heading text-lg font-semibold text-white">Защита от зацикливания (Лимиты)</h3>
         <p className="text-sm leading-6 text-zinc-400">
@@ -1359,7 +1418,7 @@ function LimitInput({
 function SplitMessagesField({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) {
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <h3 className="font-heading text-lg font-semibold text-white">Форматирование</h3>
       <input type="hidden" name="split_messages" value={enabled ? "true" : "false"} />
       <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
@@ -1387,7 +1446,7 @@ function FollowupField({
   onChange: (patch: Partial<AgentDraft>) => void;
 }) {
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <div className="grid gap-2">
         <h3 className="font-heading text-lg font-semibold text-white">Умные напоминания (Follow-up)</h3>
         <p className="text-sm leading-6 text-zinc-400">

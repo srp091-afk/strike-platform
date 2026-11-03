@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
 function Block({ className }: { className?: string }) {
-  return <div className={cn("animate-pulse rounded-xl bg-[#111]", className)} />;
+  return <div className={cn("animate-pulse rounded-xl bg-gray-100", className)} />;
 }
 
 export function AdsRouteSkeleton() {
@@ -18,7 +18,7 @@ export function AdsRouteSkeleton() {
         {Array.from({ length: 3 }, (_, index) => (
           <div
             key={index}
-            className="flex flex-col gap-6 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-5 sm:p-6 lg:flex-row lg:items-center"
+            className="flex flex-col gap-6 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-5 sm:p-6 lg:flex-row lg:items-center"
           >
             <div className="min-w-0 flex-1 grid gap-3">
               <Block className="h-7 w-64 max-w-full" />
@@ -47,12 +47,12 @@ export function AgentsRouteSkeleton() {
         <Block className="h-4 w-96 max-w-full" />
       </div>
       <div className="mt-8 grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
-        <div className="grid gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-3">
+        <div className="grid gap-2 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-3">
           {Array.from({ length: 5 }, (_, index) => (
             <Block key={index} className="h-11 w-full" />
           ))}
         </div>
-        <div className="grid gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
+        <div className="grid gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6">
           <Block className="h-10 w-full" />
           <Block className="h-10 w-48" />
           <Block className="h-64 w-full" />
@@ -88,7 +88,7 @@ export function ChatsRouteSkeleton() {
         <Block className="h-9 w-32" />
         <Block className="h-4 w-80 max-w-full" />
       </div>
-      <div className="mt-8 grid h-[42rem] gap-4 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40 lg:grid-cols-[20rem_minmax(0,1fr)]">
+      <div className="mt-8 grid h-[42rem] gap-4 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm lg:grid-cols-[20rem_minmax(0,1fr)]">
         <div className="grid gap-2 border-r border-zinc-800 p-3">
           <Block className="h-10 w-full" />
           {Array.from({ length: 8 }, (_, index) => (

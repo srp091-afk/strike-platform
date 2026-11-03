@@ -14,7 +14,7 @@ import { DEFAULT_WIDGET_SETTINGS, type WidgetPosition, type WidgetSettings } fro
 const fieldClass =
   "w-full rounded-xl border border-zinc-800 bg-black px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-white";
 const labelClass = "text-[10px] font-semibold uppercase tracking-widest text-zinc-400";
-const cardClass = "grid gap-3 rounded-2xl border border-zinc-800/60 bg-[#171717] p-4";
+const cardClass = "grid gap-3 rounded-2xl border border-zinc-800 bg-gray-50 p-4";
 
 const POSITION_OPTIONS: { value: WidgetPosition; label: string }[] = [
   { value: "bottom-left", label: "Слева" },
@@ -134,7 +134,7 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
         role="dialog"
         aria-modal="true"
         aria-labelledby="widget-connect-title"
-        className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-zinc-800/50 bg-zinc-950"
+        className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-950"
       >
         <div className="flex items-start justify-between gap-3 px-6 pt-6">
           <div>
@@ -267,7 +267,7 @@ export function WidgetConnectModal({ agentId, initialSettings, onClose, onSaved 
                   />
                 </section>
 
-                <section className="flex h-auto flex-col gap-3 rounded-2xl border border-zinc-800/60 bg-[#171717] p-4">
+                <section className="flex h-auto flex-col gap-3 rounded-2xl border border-zinc-800 bg-gray-50 p-4">
                   <h3 className="text-sm font-semibold text-white">Приветствие</h3>
                   <label className="flex flex-col gap-2">
                     <span className={labelClass}>Стартовое сообщение</span>
@@ -455,7 +455,7 @@ function WidgetPreview({ settings }: { settings: WidgetSettings }) {
   return (
     <div className="scrollbar-strike min-w-0 lg:sticky lg:top-0 lg:max-h-[calc(90vh-250px)] lg:overflow-y-auto">
       <p className={labelClass}>Live-превью</p>
-      <div className="mt-2 overflow-hidden rounded-2xl border border-white/10 bg-[#0a0a0a] shadow-2xl shadow-black/50">
+      <div className="theme-dark mt-2 overflow-hidden rounded-2xl border border-white/10 bg-[#0a0a0a] shadow-2xl shadow-black/50">
         <header
           className="flex items-center gap-3 border-b border-white/10 px-4 py-3 backdrop-blur-md"
           style={{ backgroundColor: `${settings.widget_color_header_bg}cc`, color: settings.widget_color_header_text }}

@@ -3,9 +3,11 @@ import { Anton, Bebas_Neue, Inter, Montserrat, Plus_Jakarta_Sans } from "next/fo
 import Script from "next/script";
 import { Suspense } from "react";
 
+import { AppShell } from "@/components/app-shell";
+import { AppSidebarSkeleton } from "@/components/app-sidebar";
 import { CookieConsent } from "@/components/CookieConsent";
 import { SiteFooter } from "@/components/site-footer";
-import { SiteHeaderData } from "@/components/site-header-data";
+import { SidebarData } from "@/components/sidebar-data";
 import { Toaster } from "@/components/ui/toaster";
 
 import "./globals.css";
@@ -72,13 +74,20 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} ${jakarta.variable} ${anton.variable} ${montserrat.variable} ${bebas.variable} h-full bg-black`}
     >
       <body className="flex min-h-full flex-col bg-black font-sans text-zinc-400">
-        <Suspense fallback={<div className="sticky top-0 z-50 h-16 border-b border-zinc-800 bg-black" />}>
-          <SiteHeaderData />
-        </Suspense>
-        <main className="flex-1">{children}</main>
-        <Suspense fallback={<div className="mt-auto h-14 border-t border-zinc-800 bg-black" />}>
-          <SiteFooter />
-        </Suspense>
+        <AppShell
+          sidebar={
+            <Suspense fallback={<AppSidebarSkeleton />}>
+              <SidebarData />
+            </Suspense>
+          }
+          footer={
+            <Suspense fallback={<div className="mt-auto h-14 border-t border-zinc-800 bg-black" />}>
+              <SiteFooter />
+            </Suspense>
+          }
+        >
+          {children}
+        </AppShell>
         <Toaster />
         <Suspense fallback={null}>
           <CookieConsent />

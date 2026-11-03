@@ -1,7 +1,6 @@
 "use client";
 
-import { CreditCard, LogOut, Settings } from "lucide-react";
-import Link from "next/link";
+import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
@@ -18,7 +17,8 @@ function initials(name: string, email: string) {
   return source.slice(0, 2).toUpperCase();
 }
 
-export function AccountMenu({ account }: { account: AccountProfile }) {
+/** Профиль внизу сайдбара: аватар, имя и меню выхода. В свёрнутом сайдбаре остаётся только аватар. */
+export function AccountMenu({ account, collapsed = false }: { account: AccountProfile; collapsed?: boolean }) {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
@@ -51,63 +51,53 @@ export function AccountMenu({ account }: { account: AccountProfile }) {
   }
 
   return (
-    <div ref={rootRef} className="relative shrink-0">
+    <div ref={rootRef} className="relative">
       <button
         type="button"
         aria-haspopup="menu"
         aria-expanded={open}
+        title={collapsed ? account.displayName : undefined}
         onClick={() => setOpen((value) => !value)}
-        className="flex items-center gap-2 rounded-xl py-1 pl-1 pr-2 transition-colors duration-200 hover:bg-white/5"
+        className={cn(
+          "flex w-full items-center gap-3 rounded-lg p-2 text-left transition-colors hover:bg-gray-100",
+          collapsed && "justify-center",
+        )}
       >
         {account.avatarUrl && !avatarFailed ? (
+          // eslint-disable-next-line @next/next/no-img-element
           <img
             src={account.avatarUrl}
             alt=""
-            className="size-8 rounded-full object-cover"
+            className="size-8 shrink-0 rounded-full object-cover"
             onError={() => setAvatarFailed(true)}
           />
         ) : (
-          <span className="grid size-8 place-items-center rounded-full bg-white font-heading text-xs font-semibold text-black">
+          <span className="grid size-8 shrink-0 place-items-center rounded-full bg-gray-900 font-heading text-xs font-semibold text-gray-50">
             {letters}
           </span>
         )}
-        <span className="hidden max-w-40 truncate text-left sm:block">
-          <span className="block font-heading text-sm font-semibold text-white">{account.displayName}</span>
-          <span className="block truncate text-xs text-zinc-500">{account.email}</span>
-        </span>
+        {collapsed ? null : (
+          <span className="min-w-0 flex-1">
+            <span className="block truncate font-heading text-sm font-semibold text-gray-900">{account.displayName}</span>
+            <span className="block truncate text-xs text-gray-500">{account.email}</span>
+          </span>
+        )}
       </button>
       {open ? (
         <div
           role="menu"
-          className="absolute right-0 top-[calc(100%+0.5rem)] z-50 w-60 rounded-xl border border-zinc-800 bg-zinc-950 p-1.5"
+          className={cn(
+            "absolute bottom-[calc(100%+0.5rem)] z-50 w-56 rounded-xl border border-gray-200 bg-[#fff] p-1.5 shadow-lg",
+            collapsed ? "left-0" : "inset-x-0 w-auto",
+          )}
         >
-          <p className="truncate px-2.5 py-2 text-xs text-zinc-500 sm:hidden">{account.email}</p>
-          <Link
-            role="menuitem"
-            href="/dashboard/billing"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-900 hover:text-white"
-          >
-            <CreditCard className="size-4" strokeWidth={2} />
-            Биллинг
-          </Link>
-          <Link
-            role="menuitem"
-            href="/settings"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-2 rounded-lg px-2.5 py-2 text-sm font-medium text-zinc-300 hover:bg-zinc-900 hover:text-white"
-          >
-            <Settings className="size-4" strokeWidth={2} />
-            Настройки
-          </Link>
+          <p className="truncate px-2.5 py-2 text-xs text-gray-500">{account.email}</p>
           <button
             type="button"
             role="menuitem"
             disabled={pending}
             onClick={signOut}
-            className={cn(
-              "flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-zinc-300 hover:bg-zinc-900 hover:text-white disabled:opacity-40",
-            )}
+            className="flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm font-medium text-gray-700 hover:bg-gray-100 hover:text-gray-900 disabled:opacity-40"
           >
             <LogOut className="size-4" strokeWidth={2} />
             Выйти

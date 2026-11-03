@@ -184,7 +184,7 @@ export function PlaygroundChat({
         "mx-auto flex w-full max-w-4xl flex-col overflow-hidden bg-zinc-950",
         embedded
           ? "h-full rounded-none border-0"
-          : "h-[min(42rem,calc(100dvh-18rem))] rounded-2xl border border-zinc-800/50",
+          : "h-[min(42rem,calc(100dvh-18rem))] rounded-2xl border border-zinc-800",
       )}
     >
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-black/40 p-4">

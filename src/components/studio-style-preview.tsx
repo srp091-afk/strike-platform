@@ -12,7 +12,7 @@ export function StudioStylePreview({ styleId }: { styleId: string }) {
 
 function VsPreview() {
   return (
-    <div className="relative aspect-[4/5] overflow-hidden bg-black text-white">
+    <div className="theme-dark relative aspect-[4/5] overflow-hidden bg-black text-white">
       <div className="absolute inset-0 grid grid-cols-2">
         <div className="bg-zinc-800" />
         <div className="bg-zinc-600" />
@@ -28,7 +28,7 @@ function VsPreview() {
 
 function SplitActionPreview() {
   return (
-    <div className="relative aspect-[4/5] overflow-hidden bg-black text-white">
+    <div className="theme-dark relative aspect-[4/5] overflow-hidden bg-black text-white">
       <div className="absolute inset-x-0 top-0 space-y-1 bg-black px-3 py-4 text-center">
         <p className="text-[9px] tracking-[0.2em] text-amber-300 uppercase">Акцент</p>
         <p className="text-sm font-semibold leading-none">Сплит + CTA</p>
@@ -50,7 +50,7 @@ function SplitActionPreview() {
 
 function PremiumDarkPreview() {
   return (
-    <div className="relative aspect-[4/5] overflow-hidden bg-zinc-800 text-white">
+    <div className="theme-dark relative aspect-[4/5] overflow-hidden bg-zinc-800 text-white">
       <div className="absolute inset-0 bg-gradient-to-t from-black/95 via-black/60 to-transparent" />
       <div className="absolute inset-x-0 bottom-0 space-y-2 p-3">
         <p className="text-[8px] font-bold tracking-[0.18em] text-amber-300 uppercase">🎁 Подарок</p>
@@ -66,7 +66,7 @@ function PremiumDarkPreview() {
 
 function SideFadePreview() {
   return (
-    <div className="relative aspect-[4/5] overflow-hidden bg-zinc-700 text-white">
+    <div className="theme-dark relative aspect-[4/5] overflow-hidden bg-zinc-700 text-white">
       <div className="absolute inset-0 bg-gradient-to-r from-black/95 via-black/80 to-transparent" />
       <div className="absolute inset-0 flex w-[75%] flex-col justify-end gap-2 p-3">
         <p className="text-sm font-semibold leading-none">Side Fade</p>
@@ -80,7 +80,7 @@ function SideFadePreview() {
 
 function EditorialBlockPreview() {
   return (
-    <div className="relative flex aspect-[4/5] flex-col overflow-hidden bg-white text-black">
+    <div className="theme-dark relative flex aspect-[4/5] flex-col overflow-hidden bg-white text-black">
       <div className="flex flex-1">
         <div className="flex w-[45%] flex-col justify-center gap-1 bg-black p-3 text-white">
           <p className="text-xs font-semibold leading-none">Editorial</p>

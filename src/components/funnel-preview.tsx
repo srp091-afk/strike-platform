@@ -147,14 +147,14 @@ export function FunnelPreview({
 
   if (variant === "page") {
     return (
-      <div className="overflow-hidden rounded-2xl border border-zinc-800/50 bg-zinc-950">
+      <div className="theme-dark overflow-hidden rounded-2xl border border-zinc-800/50 bg-zinc-950">
         {screen}
       </div>
     );
   }
 
   return (
-    <div className="mx-auto w-full max-w-[22rem]">
+    <div className="theme-dark mx-auto w-full max-w-[22rem]">
       <div className="rounded-[2.4rem] bg-zinc-900 p-2.5 shadow-[0_24px_50px_-24px_rgba(0,0,0,0.45)]">
         <div className="overflow-hidden rounded-[1.9rem] bg-black">
           <div className="flex justify-center bg-zinc-950 pt-2.5">

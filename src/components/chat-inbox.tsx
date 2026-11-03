@@ -243,7 +243,7 @@ export function ChatInbox({
         <p className="mb-4 rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-200">{error}</p>
       ) : null}
 
-      <div className="grid overflow-hidden rounded-2xl border border-zinc-800/50 bg-zinc-900/50 backdrop-blur-md lg:h-[min(42rem,calc(100dvh-16rem))] lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
+      <div className="grid overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm backdrop-blur-md lg:h-[min(42rem,calc(100dvh-16rem))] lg:grid-cols-[minmax(0,20rem)_minmax(0,1fr)]">
         <aside className="flex min-h-80 min-w-0 flex-col border-b border-zinc-800 lg:border-r lg:border-b-0">
           <AgentFilter agents={agents} value={agentId} onChange={(next) => void selectAgent(next)} />
           <div className="px-4 pt-3">

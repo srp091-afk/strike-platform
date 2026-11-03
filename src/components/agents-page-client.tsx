@@ -15,15 +15,15 @@ type AgentsResponse = {
 function ManagerSkeleton() {
   return (
     <div className="grid gap-4 lg:grid-cols-[16rem_minmax(0,1fr)]">
-      <div className="grid gap-2 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-3">
+      <div className="grid gap-2 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-3">
         {Array.from({ length: 5 }, (_, index) => (
-          <div key={index} className="h-11 animate-pulse rounded-xl bg-[#111]" />
+          <div key={index} className="h-11 animate-pulse rounded-xl bg-gray-100" />
         ))}
       </div>
-      <div className="grid gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/40 p-6">
-        <div className="h-10 animate-pulse rounded-xl bg-[#111]" />
-        <div className="h-10 w-48 animate-pulse rounded-xl bg-[#111]" />
-        <div className="h-64 animate-pulse rounded-xl bg-[#111]" />
+      <div className="grid gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6">
+        <div className="h-10 animate-pulse rounded-xl bg-gray-100" />
+        <div className="h-10 w-48 animate-pulse rounded-xl bg-gray-100" />
+        <div className="h-64 animate-pulse rounded-xl bg-gray-100" />
       </div>
     </div>
   );

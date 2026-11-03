@@ -62,7 +62,7 @@ export function CookieConsent() {
     <div
       role="dialog"
       aria-label="Настройки cookie"
-      className="animate-in fixed bottom-4 left-4 z-[100] w-[calc(100%-2rem)] max-w-md rounded-2xl border border-white/10 bg-[#0a0a0a]/95 p-5 shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] backdrop-blur-xl"
+      className="theme-dark animate-in fixed bottom-4 left-4 z-[100] w-[calc(100%-2rem)] max-w-md rounded-2xl border border-white/10 bg-[#0a0a0a]/95 p-5 shadow-[0_20px_60px_-10px_rgba(0,0,0,0.8)] backdrop-blur-xl"
     >
       <p className="text-sm leading-6 text-zinc-300">
         Мы используем файлы cookie, чтобы платформа работала стабильно и мы могли улучшать сервис. Подробнее в{" "}

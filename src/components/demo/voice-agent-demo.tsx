@@ -705,7 +705,7 @@ export function VoiceAgentDemo() {
             : "";
 
   return (
-    <div className="fixed inset-x-0 top-16 bottom-0 z-30 flex flex-col items-center overflow-hidden bg-black px-4 pt-2 pb-10 text-white">
+    <div className="fixed inset-0 z-30 flex flex-col items-center overflow-hidden bg-black px-4 pt-2 pb-10 text-white">
       {debug ? (
         <button
           type="button"

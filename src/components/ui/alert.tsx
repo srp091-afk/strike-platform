@@ -6,7 +6,7 @@ import { cn } from "@/lib/utils";
 const alertVariants = cva("relative grid w-full gap-1 rounded-xl border px-4 py-3 text-sm", {
   variants: {
     variant: {
-      default: "border-zinc-800 bg-zinc-900/50 text-zinc-300",
+      default: "border-zinc-800 bg-zinc-900 shadow-sm text-zinc-300",
       destructive: "border-red-900/60 bg-red-950/50 text-red-200",
     },
   },

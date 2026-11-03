@@ -33,7 +33,7 @@ const metricIcons = {
 } as const;
 
 const cardClass =
-  "rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md transition-colors duration-200 hover:border-zinc-700";
+  "rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md transition-colors duration-200 hover:border-zinc-700";
 
 export default function DashboardPage() {
   return (

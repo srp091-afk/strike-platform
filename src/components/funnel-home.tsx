@@ -42,7 +42,7 @@ export function FunnelHome({
         </p>
 
         <form
-          className="mt-10 w-full max-w-3xl rounded-[28px] border border-zinc-800/50 bg-zinc-900/50 p-3 text-left backdrop-blur-md transition-colors duration-300 focus-within:border-white"
+          className="mt-10 w-full max-w-3xl rounded-[28px] border border-zinc-800 bg-zinc-900 shadow-sm p-3 text-left backdrop-blur-md transition-colors duration-300 focus-within:border-white"
           onSubmit={(event) => {
             event.preventDefault();
             openBuilder(prompt);
@@ -92,7 +92,7 @@ export function FunnelHome({
           <p className="mt-4 rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-200">{loadError}</p>
         ) : null}
         {landings.length === 0 ? (
-          <p className="mt-6 rounded-2xl border border-dashed border-zinc-800 bg-zinc-900/50 px-6 py-12 text-center text-sm text-zinc-400">
+          <p className="mt-6 rounded-2xl border border-dashed border-zinc-800 bg-zinc-900 shadow-sm px-6 py-12 text-center text-sm text-zinc-400">
             Пока нет воронок. Опишите первую в поле выше.
           </p>
         ) : (
@@ -101,7 +101,7 @@ export function FunnelHome({
               <li key={landing.id}>
                 <button
                   type="button"
-                  className="group flex h-full w-full flex-col rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 text-left backdrop-blur-md transition-colors duration-200 hover:border-zinc-600"
+                  className="group flex h-full w-full flex-col rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 text-left backdrop-blur-md transition-colors duration-200 hover:border-zinc-600"
                   onClick={() => router.push(`/funnels/builder?id=${landing.id}`)}
                 >
                   <div className="flex items-center justify-between gap-3">

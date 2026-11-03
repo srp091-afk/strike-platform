@@ -67,7 +67,7 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
         className="pointer-events-none absolute inset-0 rounded-2xl opacity-0 transition-opacity duration-300 group-hover:opacity-100"
         style={{ background: "radial-gradient(320px circle at var(--mx) var(--my), rgba(207,2,52,0.35), transparent 70%)" }}
       />
-      <div className="relative h-full overflow-hidden rounded-[15px] border border-gray-800/60 bg-[#0a0a0a]/90 p-6 backdrop-blur-xl sm:p-7">
+      <div className="relative h-full overflow-hidden rounded-[15px] border border-gray-200 bg-[#fff] shadow-sm p-6 backdrop-blur-xl sm:p-7">
         {children}
       </div>
     </div>

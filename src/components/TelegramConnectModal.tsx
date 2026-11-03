@@ -198,7 +198,7 @@ export function TelegramConnectModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="telegram-connect-title"
-        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-zinc-800/50 bg-zinc-950 p-6"
+        className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-2xl border border-zinc-800 bg-zinc-950 p-6"
       >
         <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Telegram</p>
         <h2 id="telegram-connect-title" className="mt-1 text-2xl font-semibold">

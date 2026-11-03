@@ -112,7 +112,7 @@ function ProjectCard({
   const extra = total > maxThumbnails ? total - 3 : 0;
 
   return (
-    <Card className="flex flex-col justify-between gap-6 border-zinc-800 bg-zinc-900/40 p-5 backdrop-blur-md sm:p-6 lg:flex-row lg:items-center">
+    <Card className="flex flex-col justify-between gap-6 border-zinc-800 bg-zinc-900 shadow-sm p-5 backdrop-blur-md sm:p-6 lg:flex-row lg:items-center">
       <div className="min-w-0 flex-1">
         <h2 className="text-xl font-medium text-white">{project.name}</h2>
         <div className="mt-4 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">

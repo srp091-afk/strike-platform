@@ -17,17 +17,17 @@ function firstParam(value: string | string[] | undefined) {
 
 function InboxSkeleton() {
   return (
-    <div className="grid h-[42rem] gap-4 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900/40 lg:grid-cols-[20rem_minmax(0,1fr)]">
+    <div className="grid h-[42rem] gap-4 overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm lg:grid-cols-[20rem_minmax(0,1fr)]">
       <div className="grid gap-2 border-r border-zinc-800 p-3">
-        <div className="h-10 animate-pulse rounded-xl bg-[#111]" />
+        <div className="h-10 animate-pulse rounded-xl bg-gray-100" />
         {Array.from({ length: 6 }, (_, index) => (
-          <div key={index} className="h-16 animate-pulse rounded-xl bg-[#111]" />
+          <div key={index} className="h-16 animate-pulse rounded-xl bg-gray-100" />
         ))}
       </div>
       <div className="grid content-start gap-3 p-6">
-        <div className="h-8 w-48 animate-pulse rounded-xl bg-[#111]" />
-        <div className="h-24 w-2/3 animate-pulse rounded-xl bg-[#111]" />
-        <div className="ml-auto h-16 w-1/2 animate-pulse rounded-xl bg-[#111]" />
+        <div className="h-8 w-48 animate-pulse rounded-xl bg-gray-100" />
+        <div className="h-24 w-2/3 animate-pulse rounded-xl bg-gray-100" />
+        <div className="ml-auto h-16 w-1/2 animate-pulse rounded-xl bg-gray-100" />
       </div>
     </div>
   );

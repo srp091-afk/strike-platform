@@ -383,7 +383,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
 
   return (
     <div className={cn("mx-auto w-full", stage === "style" ? "max-w-7xl" : "max-w-5xl")}>
-      <Card className="grid gap-5 border-zinc-800 bg-zinc-900/40 p-4 sm:p-6">
+      <Card className="grid gap-5 border-zinc-800 bg-zinc-900 shadow-sm p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
             Шаг {stage === "intake" ? "1" : "2"} из 2
@@ -421,7 +421,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
                           <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-zinc-600 bg-zinc-800 text-white shadow-sm">
                             <Bot className="size-4" />
                           </span>
-                          <div className="min-w-0 rounded-2xl rounded-tl-sm border border-zinc-800/50 bg-zinc-900/40 px-5 py-4 backdrop-blur-sm">
+                          <div className="min-w-0 rounded-2xl rounded-tl-sm border border-zinc-800 bg-zinc-900 shadow-sm px-5 py-4 backdrop-blur-sm">
                             <p className="whitespace-pre-wrap text-sm leading-relaxed tracking-wide text-zinc-100">{message.content}</p>
                           </div>
                         </div>
@@ -440,7 +440,7 @@ export function AdProjectWizard({ templates }: { templates: StyleTemplate[] }) {
                           <Bot className="size-4" />
                         </span>
                         <div
-                          className="flex items-center gap-1.5 rounded-xl border border-zinc-800/50 bg-zinc-900/40 px-2 py-1 shadow-[0_0_20px_rgba(139,92,246,0.05)] backdrop-blur-sm animate-pulse-subtle"
+                          className="flex items-center gap-1.5 rounded-xl border border-zinc-800 bg-zinc-900 shadow-sm px-2 py-1 shadow-[0_0_20px_rgba(139,92,246,0.05)] backdrop-blur-sm animate-pulse-subtle"
                           role="status"
                           aria-label="ИИ думает"
                         >
@@ -683,7 +683,7 @@ function SuggestionRow({
             <button
               key={`${suggestion}-${index}`}
               type="button"
-              className="shrink-0 cursor-grab rounded-xl border border-zinc-800 bg-zinc-900/50 px-4 py-2 text-sm whitespace-nowrap text-zinc-300 shadow-sm transition-all select-none hover:border-zinc-500 hover:bg-zinc-800 hover:text-white active:cursor-grabbing"
+              className="shrink-0 cursor-grab rounded-xl border border-zinc-800 bg-zinc-900 shadow-sm px-4 py-2 text-sm whitespace-nowrap text-zinc-300 shadow-sm transition-all select-none hover:border-zinc-500 hover:bg-zinc-800 hover:text-white active:cursor-grabbing"
               onClick={() => onChipClick(suggestion)}
             >
               {suggestion}

@@ -320,7 +320,7 @@ export function CampaignDashboard({
       </header>
 
       <div className="mt-8 grid grid-cols-1 gap-6 lg:grid-cols-3">
-        <Card className="rounded-xl border-zinc-800 bg-zinc-900/40 p-5 backdrop-blur lg:col-span-1">
+        <Card className="rounded-xl border-zinc-800 bg-zinc-900 shadow-sm p-5 backdrop-blur lg:col-span-1">
           <Accordion type="multiple" defaultValue={[]} className="w-full">
             <AccordionItem className="border-b border-white/10" value="texts">
               <AccordionTrigger>Тексты для креативов</AccordionTrigger>
@@ -913,7 +913,7 @@ function ArchiveGenerationFolder({
     : generation.images.length;
 
   return (
-    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50">
+    <div className="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900 shadow-sm">
       <div className="flex items-center gap-3 px-4 py-3">
         <Folder className="size-5 shrink-0 text-zinc-300" />
         <div className="min-w-0 flex-1">

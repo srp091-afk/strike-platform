@@ -26,7 +26,7 @@ export function SettingsForm({
   const shownName = state.savedName ?? displayName;
 
   return (
-    <form action={action} className="max-w-lg space-y-5 rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md">
+    <form action={action} className="max-w-lg space-y-5 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <label className="block space-y-2">
         <span className="text-sm font-medium text-zinc-400">Email</span>
         <input readOnly value={email} className={readonlyClass} />

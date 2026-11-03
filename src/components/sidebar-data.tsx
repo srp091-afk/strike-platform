@@ -1,10 +1,10 @@
 import { io } from "next/cache";
 
-import { SiteHeader } from "@/components/site-header";
+import { AppSidebar } from "@/components/app-sidebar";
 import { getAccountProfile } from "@/lib/auth-user";
 
-export async function SiteHeaderData() {
+export async function SidebarData() {
   await io();
   const account = await getAccountProfile();
-  return <SiteHeader account={account} />;
+  return <AppSidebar account={account} />;
 }

@@ -18,7 +18,7 @@ function ListSkeleton() {
       {Array.from({ length: 3 }, (_, index) => (
         <div
           key={index}
-          className="h-40 animate-pulse rounded-2xl border border-zinc-800 bg-[#111]"
+          className="h-40 animate-pulse rounded-2xl border border-zinc-800 bg-gray-100"
         />
       ))}
     </div>
@@ -35,7 +35,7 @@ export function AdsPageClient() {
     <div className="mx-auto w-full max-w-7xl px-6 py-10">
       <header className="flex flex-col gap-6 sm:flex-row sm:items-end sm:justify-between">
         <div className="max-w-2xl">
-          <h1 className="text-3xl font-bold text-white">AI-Кампании</h1>
+          <h1 className="text-3xl font-bold text-white">Ads & Креативы</h1>
           <p className="mt-2 text-sm leading-6 text-zinc-400">
             Создавайте и запускайте прибыльные рекламные кампании в Meta, Google и TikTok с помощью ИИ-автоматизации.
           </p>

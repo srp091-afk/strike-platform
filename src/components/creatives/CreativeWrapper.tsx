@@ -45,7 +45,7 @@ export function CreativeWrapper({ children, className, format = "4:5" }: Creativ
   return (
     <div
       ref={hostRef}
-      className={cn("relative w-full overflow-hidden bg-black", className)}
+      className={cn("theme-dark relative w-full overflow-hidden bg-black", className)}
       style={{ aspectRatio: `${canvas.width} / ${canvas.height}` }}
     >
       <div

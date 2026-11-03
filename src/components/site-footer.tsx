@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 
 import { LegalLinks } from "@/components/legal-links";
 
-const HIDDEN_PREFIXES = ["/l/", "/widget/", "/funnels/builder"];
+const HIDDEN_PREFIXES = ["/l/", "/widget/", "/demo"];
 // Эти страницы рисуют собственный подвал с юридическими ссылками.
 const HIDDEN_EXACT = ["/", "/login", "/pricing", "/privacy", "/terms", "/refund"];
 

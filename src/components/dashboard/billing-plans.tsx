@@ -127,7 +127,7 @@ export function BillingPlans({
                   background: "radial-gradient(320px circle at var(--mx) var(--my), rgba(165,180,252,0.7), transparent 70%)",
                 }}
               />
-              <div className="relative flex h-full flex-col overflow-hidden rounded-[15px] border border-gray-800/60 bg-[#0a0a0a]/90 p-7 backdrop-blur-xl">
+              <div className="relative flex h-full flex-col overflow-hidden rounded-[15px] border border-gray-200 bg-[#fff] shadow-sm p-7 backdrop-blur-xl">
                 {highlighted ? (
                   <span
                     aria-hidden

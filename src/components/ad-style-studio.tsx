@@ -89,7 +89,7 @@ export function AdStyleStudio({
         </Alert>
       ) : null}
 
-      <aside className="rounded-2xl border border-zinc-800/80 bg-zinc-950/60 p-6 backdrop-blur-md lg:col-span-4">
+      <aside className="rounded-2xl border border-zinc-800 bg-zinc-950/60 p-6 backdrop-blur-md lg:col-span-4">
         <h2 className="mb-4 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-zinc-400">
           <Sparkles className="size-3.5" />
           Ключевая выжимка
@@ -184,7 +184,7 @@ export function AdStyleStudio({
         )}
       </section>
 
-      <footer className="flex flex-col gap-3 border-t border-zinc-800/80 pt-4 sm:flex-row sm:items-center sm:justify-between lg:col-span-12">
+      <footer className="flex flex-col gap-3 border-t border-zinc-800 pt-4 sm:flex-row sm:items-center sm:justify-between lg:col-span-12">
         <GenerationCostBadge creativesCount={creativesCount} />
         <div className="flex items-center justify-end gap-2">
           <Button

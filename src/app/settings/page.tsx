@@ -18,7 +18,7 @@ export default function SettingsPage() {
       title="Профиль"
       description="Email и имя из Google. Отображаемое имя можно изменить."
     >
-      <Suspense fallback={<div className="h-64 max-w-lg rounded-2xl border border-zinc-800/50 bg-zinc-900/50" />}>
+      <Suspense fallback={<div className="h-64 max-w-lg rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm" />}>
         <SettingsData />
       </Suspense>
     </PageFrame>
