@@ -33,6 +33,8 @@ const START_TRIGGER = "START_CONVERSATION";
 /** Тишина, после которой запись реплики закрывается и уходит на распознавание (Whisper). */
 /** Лимит демо-сессии: столько реплик (голосом или текстом) можно отправить, дальше API не вызываются. */
 const MAX_TURNS = 10;
+/** Усиление голоса агента (1.5–2.0): на телефонах озвучка ElevenLabs иначе звучит тихо. */
+const VOICE_GAIN = 1.8;
 const LIMIT_MESSAGE =
   "Демо-лимит исчерпан. Зарегистрируйтесь на платформе STRIKE, чтобы создать своего ИИ-менеджера.";
 
@@ -139,6 +141,7 @@ export function VoiceAgentDemo() {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
+  const gainRef = useRef<GainNode | null>(null);
   const queueRef = useRef<Promise<string | null>[]>([]);
   const playingRef = useRef(false);
   const epochRef = useRef(0);
@@ -203,8 +206,19 @@ export function VoiceAgentDemo() {
           const context = new Ctx();
           const analyser = context.createAnalyser();
           analyser.fftSize = 256;
-          context.createMediaElementSource(audio).connect(analyser);
-          analyser.connect(context.destination);
+          // Программное усиление для тихих мобильных динамиков; компрессор страхует от клиппинга на пиках.
+          const gain = context.createGain();
+          gain.gain.value = VOICE_GAIN;
+          const limiter = context.createDynamicsCompressor();
+          limiter.threshold.value = -6;
+          limiter.knee.value = 6;
+          limiter.ratio.value = 12;
+          const source = context.createMediaElementSource(audio);
+          source.connect(analyser); // анализатор слушает исходный сигнал: анимация сферы не зависит от усиления
+          source.connect(gain);
+          gain.connect(limiter);
+          limiter.connect(context.destination);
+          gainRef.current = gain;
           audioCtxRef.current = context;
           analyserRef.current = analyser;
         }
@@ -626,6 +640,7 @@ export function VoiceAgentDemo() {
     const out = context.createGain();
     out.gain.value = 0;
     out.connect(analyser);
+    if (gainRef.current) out.connect(gainRef.current); // тестовый звук идёт к динамикам той же цепью, что и голос
 
     const oscillator = context.createOscillator();
     oscillator.type = "sawtooth";
