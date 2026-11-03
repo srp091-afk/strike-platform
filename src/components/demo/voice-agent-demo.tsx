@@ -44,10 +44,6 @@ const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAE
 const START_TRIGGER = "START_CONVERSATION";
 
 const SILENCE_COMMIT_MS = 1300;
-/** Перебивание срабатывает, только если клиент продолжает говорить дольше этого времени и произнёс осознанную фразу (короткий шум и междометия не в счёт). */
-const BARGE_DEBOUNCE_MS = 900;
-const BARGE_MIN_CHARS = 12;
-
 const MIN_SENTENCE_CHARS = 12;
 const MIN_CLAUSE_CHARS = 45;
 
@@ -139,15 +135,12 @@ export function VoiceAgentDemo() {
   const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
   const micOnRef = useRef(false);
   const langRef = useRef<SpeechLang>("ru-RU");
-  const botTextRef = useRef("");
-  const bargedRef = useRef(false);
   const busyRef = useRef(false);
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
   const pendingRef = useRef("");
   const interimRef = useRef("");
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const bargeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debugStopRef = useRef<(() => void) | null>(null);
   const startListeningRef = useRef<() => void>(() => undefined);
 
@@ -170,7 +163,6 @@ export function VoiceAgentDemo() {
       micStreamRef.current?.getTracks().forEach((track) => track.stop());
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
-      if (bargeTimerRef.current) clearTimeout(bargeTimerRef.current);
       recognitionRef.current?.abort();
       chatAbortRef.current?.abort();
     };
@@ -187,8 +179,26 @@ export function VoiceAgentDemo() {
 
   // Бот занят (думает или говорит) — по этому флагу микрофон отличает перебивание от тишины.
   useEffect(() => {
-    busyRef.current = isSpeaking || isReplying;
-  }, [isSpeaking, isReplying]);
+    const busy = isSpeaking || isReplying;
+    busyRef.current = busy;
+    if (!isRecording) return;
+
+    if (busy) {
+      // Агент говорит: сессию распознавания глушим полностью и выбрасываем недослушанное.
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+      commitTimerRef.current = null;
+      pendingRef.current = "";
+      interimRef.current = "";
+      recognitionRef.current?.abort(); // onend сам очистит строку с распознанным текстом
+      return;
+    }
+    // Агент договорил (очередь пуста): через короткую паузу, чтобы хвост звука не попал в микрофон, слушаем снова.
+    restartTimerRef.current = setTimeout(() => startListeningRef.current(), 400);
+    return () => {
+      if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+    };
+  }, [isSpeaking, isReplying, isRecording]);
 
   // Смена языка: перезапускаем распознавание, onend поднимет его уже с новым языком.
   useEffect(() => {
@@ -226,7 +236,7 @@ export function VoiceAgentDemo() {
     return audioRef.current;
   }, []);
 
-  /** Barge-in, часть 1: очищает очередь, отменяет запросы озвучки и мгновенно останавливает текущий звук. */
+  /** Ручное прерывание, часть 1: очищает очередь, отменяет запросы озвучки и мгновенно останавливает текущий звук. */
   const stopSpeaking = useCallback(() => {
     epochRef.current += 1;
     ttsAbortRef.current?.abort();
@@ -306,7 +316,6 @@ export function VoiceAgentDemo() {
       const reply: ChatMessage = { role: "assistant", content: "" };
       let sentenceBuffer = "";
       stopSpeaking(); // новый ответ не должен накладываться на хвост предыдущего
-      botTextRef.current = "";
       setIsReplying(true);
       setError(null);
 
@@ -342,7 +351,6 @@ export function VoiceAgentDemo() {
           const chunk = decoder.decode(value, { stream: true });
           if (!chunk) continue;
           reply.content += chunk;
-          botTextRef.current = reply.content;
 
           const taken = takeSentences(sentenceBuffer + chunk);
           sentenceBuffer = taken.rest;
@@ -362,7 +370,7 @@ export function VoiceAgentDemo() {
     [enqueueSpeech, stopSpeaking],
   );
 
-  /** Barge-in, часть 2: обрывает стрим LLM и всю озвучку. */
+  /** Ручное прерывание, часть 2: обрывает стрим LLM и всю озвучку. */
   const interruptAgent = useCallback(() => {
     chatAbortRef.current?.abort();
     stopSpeaking();
@@ -393,25 +401,11 @@ export function VoiceAgentDemo() {
   );
 
   /**
-   * Эхо: бот говорит через колонки, и микрофон слышит его же. Если распознанные слова почти целиком
-   * входят в то, что бот сейчас произносит, это не перебивание, а эхо — игнорируем.
-   */
-  const looksLikeEcho = useCallback((heard: string) => {
-    if (!busyRef.current) return false;
-    const words = (text: string) => text.toLowerCase().match(/[\p{L}\p{N}]{2,}/gu) ?? [];
-    const heardWords = words(heard);
-    if (heardWords.length === 0) return true;
-    const known = new Set(words(botTextRef.current));
-    const matched = heardWords.filter((word) => known.has(word)).length;
-    return matched / heardWords.length >= 0.7;
-  }, []);
-
-  /**
    * Постоянное прослушивание: continuous-распознавание не закрывается после реплики, а при остановке браузером
-   * (onend) тихо перезапускается. Живая речь поверх бота мгновенно перебивает его (barge-in).
+   * (onend) тихо перезапускается. Пока агент думает или говорит, сессия остановлена; когда договорил — слушаем снова.
    */
   const startListening = useCallback(() => {
-    if (!micOnRef.current) return;
+    if (!micOnRef.current || busyRef.current || recognitionRef.current) return;
     const Recognition = getRecognitionConstructor();
     if (!Recognition) {
       setSupported(false);
@@ -424,48 +418,34 @@ export function VoiceAgentDemo() {
     recognition.interimResults = true;
 
     recognition.onresult = (event: SpeechRecognitionEventLike) => {
+      // Строгая очередность: пока агент думает или говорит, любой звук от пользователя игнорируется.
+      if (busyRef.current) return;
+
       for (let index = event.resultIndex; index < event.results.length; index += 1) {
         const result = event.results[index]!;
         const transcript = (result[0]?.transcript ?? "").trim();
-        if (!transcript || looksLikeEcho(transcript)) continue;
+        if (!transcript) continue;
 
         // Любая новая речь отодвигает отправку: пауза между словами не обрывает фразу.
         if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
         interimRef.current = result.isFinal ? "" : transcript;
+        if (result.isFinal) pendingRef.current = `${pendingRef.current} ${transcript}`.trim();
         setInterim(result.isFinal ? pendingRef.current : transcript);
 
-        if (result.isFinal) {
-          pendingRef.current = `${pendingRef.current} ${transcript}`.trim();
-          setInterim(pendingRef.current);
-        }
         commitTimerRef.current = setTimeout(() => {
           // Chrome отдаёт финал короткой фразы с задержкой: к моменту тишины слово может ещё лежать в interim.
           const phrase = `${pendingRef.current} ${interimRef.current}`.trim();
           pendingRef.current = "";
           interimRef.current = "";
           commitTimerRef.current = null;
-          bargedRef.current = false;
           setInterim("");
           if (!phrase) return;
-          // Сбрасываем сессию распознавания: запоздавший финал той же фразы не должен уйти вторым запросом.
+          // Сбрасываем сессию: запоздавший финал той же фразы не должен уйти вторым запросом.
           recognition.abort();
           submitText(phrase);
         }, SILENCE_COMMIT_MS);
-
-        // Debounce перебивания: агент замолкает, только если речь клиента не оборвалась за 900 мс.
-        if (busyRef.current && !bargedRef.current && !bargeTimerRef.current) {
-          bargeTimerRef.current = setTimeout(() => {
-            bargeTimerRef.current = null;
-            const heard = `${pendingRef.current} ${interimRef.current}`.trim();
-            if (busyRef.current && heard.length >= BARGE_MIN_CHARS) {
-              bargedRef.current = true;
-              interruptAgent();
-            }
-          }, BARGE_DEBOUNCE_MS);
-        }
       }
-    };
-    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
+    };    recognition.onerror = (event: SpeechRecognitionErrorEventLike) => {
       // «no-speech» и «aborted» — штатные паузы: onend сам перезапустит прослушивание.
       if (event.error === "no-speech" || event.error === "aborted") return;
       micOnRef.current = false;
@@ -481,7 +461,7 @@ export function VoiceAgentDemo() {
         interimRef.current = "";
       }
       if (!pendingRef.current) setInterim("");
-      if (micOnRef.current) {
+      if (micOnRef.current && !busyRef.current) {
         restartTimerRef.current = setTimeout(() => startListeningRef.current(), 250);
       }
     };
@@ -492,7 +472,7 @@ export function VoiceAgentDemo() {
     } catch {
       recognitionRef.current = null;
     }
-  }, [interruptAgent, looksLikeEcho, submitText]);
+  }, [submitText]);
 
   useEffect(() => {
     startListeningRef.current = startListening;
@@ -500,6 +480,11 @@ export function VoiceAgentDemo() {
 
   function toggleMic() {
     ensureAudio(); // клик — момент, когда браузер разрешает «разбудить» звук и запросить микрофон
+    // Ручное действие: если бот говорит или думает, он замолкает, а микрофон остаётся включённым.
+    if (isRecording && (isSpeaking || isReplying)) {
+      interruptAgent();
+      return;
+    }
     if (isRecording) {
       micOnRef.current = false;
       setIsRecording(false);
@@ -516,7 +501,6 @@ export function VoiceAgentDemo() {
     setError(null);
     micOnRef.current = true;
     setIsRecording(true);
-    interruptAgent();
     // Первый запуск микрофона: агент сам начинает разговор скрытым триггером.
     if (historyRef.current.length === 0) void handleSendMessage("", siteUrlRef.current, true);
 
