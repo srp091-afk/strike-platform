@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
 import type { PlasmaState } from "@/components/demo/plasma-sphere";
+import { demoAuthHeaders } from "@/lib/demo-token-client";
 import { cn } from "@/lib/utils";
 
 // three.js тяжёлый и нужен только в браузере — грузим отдельным чанком, без SSR.
@@ -30,6 +31,11 @@ const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAE
 const START_TRIGGER = "START_CONVERSATION";
 
 /** Тишина, после которой запись реплики закрывается и уходит на распознавание (Whisper). */
+/** Лимит демо-сессии: столько реплик (голосом или текстом) можно отправить, дальше API не вызываются. */
+const MAX_TURNS = 10;
+const LIMIT_MESSAGE =
+  "Демо-лимит исчерпан. Зарегистрируйтесь на платформе STRIKE, чтобы создать своего ИИ-менеджера.";
+
 const SILENCE_COMMIT_MS = 1300;
 /** Сколько суммарно должно звучать «голоса», чтобы запись считалась речью, а не щелчком или шумом. */
 const MIN_VOICE_MS = 250;
@@ -89,7 +95,7 @@ async function fetchSpeech(sentence: string, signal: AbortSignal): Promise<strin
   try {
     const response = await fetch("/api/demo/tts", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", ...(await demoAuthHeaders("/api/demo/tts")) },
       body: JSON.stringify({ text: sentence }),
       signal,
     });
@@ -104,12 +110,15 @@ export function VoiceAgentDemo() {
   const [isRecording, setIsRecording] = useState(false);
   const [isReplying, setIsReplying] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [turns, setTurns] = useState(0);
   const [interim, setInterim] = useState("");
   const [draft, setDraft] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [supported, setSupported] = useState(true);
   const [debug, setDebug] = useState(false);
   const [siteHost, setSiteHost] = useState<string | null>(null);
+  // Лимит считается исчерпанным, когда отправлено MAX_TURNS реплик и агент договорил последний ответ.
+  const limitReached = turns >= MAX_TURNS && !isReplying && !isSpeaking;
 
   // История нужна только как контекст для LLM — на экране ответы агента не показываем, их можно лишь услышать.
   const historyRef = useRef<ChatMessage[]>([]);
@@ -117,6 +126,7 @@ export function VoiceAgentDemo() {
   const chatAbortRef = useRef<AbortController | null>(null);
 
   const micOnRef = useRef(false);
+  const turnsRef = useRef(0);
   const busyRef = useRef(false);
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const micStreamRef = useRef<MediaStream | null>(null);
@@ -292,7 +302,7 @@ export function VoiceAgentDemo() {
       try {
         const response = await fetch("/api/demo/chat", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", ...(await demoAuthHeaders("/api/demo/chat")) },
           body: JSON.stringify({
             messages: greeting ? [{ role: "user", content: START_TRIGGER }] : historyRef.current,
             websiteUrl: websiteUrl || undefined,
@@ -351,6 +361,13 @@ export function VoiceAgentDemo() {
     (raw: string) => {
       const trimmed = raw.trim();
       if (!trimmed) return;
+      // Лимит исчерпан: никаких обращений к API.
+      if (turnsRef.current >= MAX_TURNS) {
+        setTurns(turnsRef.current);
+        return;
+      }
+      turnsRef.current += 1;
+      setTurns(turnsRef.current);
 
       // Микрофон не трогаем — он остаётся включённым, перебиваем только агента.
       interruptAgent();
@@ -378,7 +395,11 @@ export function VoiceAgentDemo() {
       try {
         const form = new FormData();
         form.append("audio", blob, "speech");
-        const response = await fetch("/api/demo/stt", { method: "POST", body: form });
+        const response = await fetch("/api/demo/stt", {
+          method: "POST",
+          headers: await demoAuthHeaders("/api/demo/stt"),
+          body: form,
+        });
         const payload = (await response.json().catch(() => null)) as { text?: string; error?: string } | null;
         if (!response.ok) throw new Error(payload?.error ?? "Не удалось распознать речь.");
         text = payload?.text?.trim() ?? "";
@@ -402,6 +423,7 @@ export function VoiceAgentDemo() {
     const stream = micStreamRef.current;
     const analyser = micAnalyserRef.current;
     if (!micOnRef.current || busyRef.current || sessionRef.current || !stream || !analyser) return;
+    if (turnsRef.current >= MAX_TURNS) return; // реплик больше нет — микрофон не пишет и Whisper не вызывается
 
     const mimeType = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg;codecs=opus"].find((type) =>
       MediaRecorder.isTypeSupported(type),
@@ -481,6 +503,7 @@ export function VoiceAgentDemo() {
     startListeningRef.current = startListening;
   }, [startListening]);
 
+  const releaseMicRef = useRef<() => void>(() => undefined);
   function releaseMic() {
     micOnRef.current = false;
     if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
@@ -492,7 +515,12 @@ export function VoiceAgentDemo() {
     micCtxRef.current = null;
   }
 
+  useEffect(() => {
+    releaseMicRef.current = releaseMic;
+  });
+
   function toggleMic() {
+    if (turnsRef.current >= MAX_TURNS) return;
     ensureAudio(); // клик — момент, когда браузер разрешает «разбудить» звук и запросить микрофон
     // Ручное действие: если бот говорит или думает, он замолкает, а микрофон остаётся включённым.
     if (isRecording && (isSpeaking || isReplying)) {
@@ -539,14 +567,20 @@ export function VoiceAgentDemo() {
       }
     })();
   }
+  // Лимит исчерпан: освобождаем микрофон (индикатор записи в браузере гаснет).
+  useEffect(() => {
+    if (limitReached) releaseMicRef.current();
+  }, [limitReached]);
+
   function handleChip(question: string) {
+    if (turnsRef.current >= MAX_TURNS) return;
     ensureAudio();
     submitText(question);
   }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
-    if (!draft.trim()) return;
+    if (!draft.trim() || turnsRef.current >= MAX_TURNS) return;
     ensureAudio();
     submitText(draft);
     setDraft("");
@@ -641,8 +675,10 @@ export function VoiceAgentDemo() {
   }
   const userSpeaking = isRecording && interim !== "";
   const sphereState: PlasmaState = isSpeaking ? "speaking" : isReplying ? "thinking" : userSpeaking ? "listening" : "idle";
-  const caption = error
-    ? null
+  const caption = limitReached
+    ? LIMIT_MESSAGE
+    : error
+      ? null
     : userSpeaking
       ? interim
       : isReplying && !isSpeaking
@@ -695,7 +731,8 @@ export function VoiceAgentDemo() {
               key={chip}
               type="button"
               onClick={() => handleChip(chip)}
-              className="shrink-0 rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition-all duration-200 first:ml-auto last:mr-auto hover:border-white/30 hover:bg-white/5 hover:text-white active:scale-95"
+              disabled={limitReached}
+              className="shrink-0 rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition-all duration-200 first:ml-auto last:mr-auto hover:border-white/30 hover:bg-white/5 hover:text-white active:scale-95 disabled:pointer-events-none disabled:opacity-40"
             >
               {chip}
             </button>
@@ -707,15 +744,16 @@ export function VoiceAgentDemo() {
             type="text"
             autoComplete="off"
             value={draft}
+            disabled={limitReached}
             onChange={(event) => setDraft(event.target.value)}
             placeholder="Спросите о чем угодно или вставьте ссылку..."
             aria-label="Сообщение агенту"
-            className="min-w-0 flex-1 border-b border-white/10 bg-transparent px-1 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-white/40"
+            className="min-w-0 flex-1 border-b border-white/10 bg-transparent px-1 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-white/40 disabled:cursor-not-allowed disabled:opacity-40"
           />
 
           <button
             type="submit"
-            disabled={!draft.trim()}
+            disabled={!draft.trim() || limitReached}
             aria-label="Отправить"
             className={cn(
               "grid size-10 shrink-0 place-items-center rounded-full transition-all",
@@ -727,7 +765,7 @@ export function VoiceAgentDemo() {
             <ArrowUp className="size-4" strokeWidth={2} />
           </button>
           <div className="relative shrink-0">
-            {!isRecording && supported ? (
+            {!isRecording && supported && !limitReached ? (
               <span
                 role="tooltip"
                 className="pointer-events-none absolute right-0 bottom-full mb-3 animate-bounce whitespace-nowrap rounded-full bg-strike px-3 py-1.5 text-xs font-medium text-white shadow-[0_0_24px_-6px_rgba(207,2,52,0.9)]"
@@ -739,7 +777,7 @@ export function VoiceAgentDemo() {
             <button
               type="button"
               onClick={toggleMic}
-              disabled={!supported}
+              disabled={!supported || limitReached}
               aria-pressed={isRecording}
               aria-label={isRecording ? "Выключить микрофон" : "Включить микрофон"}
               className={cn(
@@ -752,7 +790,7 @@ export function VoiceAgentDemo() {
               {!isRecording || userSpeaking ? (
                 <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-strike/50" />
               ) : null}
-              {isRecording ? (
+              {isRecording && !limitReached ? (
                 <Mic className="relative size-5" strokeWidth={1.75} />
               ) : (
                 <MicOff className="relative size-5" strokeWidth={1.75} />

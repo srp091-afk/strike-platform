@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { guardDemoRequest } from "@/lib/demo-guard";
 import { clientIp, isRateLimited } from "@/lib/demo-rate-limit";
 import { scrapeWebsite } from "@/lib/demo-scraper";
 import { getOpenAI } from "@/lib/openai";
@@ -55,6 +56,9 @@ function readMessages(value: unknown): ChatMessage[] | null {
 }
 
 export async function POST(request: NextRequest) {
+  const rejected = guardDemoRequest(request);
+  if (rejected) return rejected;
+
   if (isRateLimited("demo-chat", clientIp(request), RATE_MAX_REQUESTS)) {
     return Response.json({ error: "Слишком много запросов. Попробуйте чуть позже." }, { status: 429 });
   }

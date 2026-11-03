@@ -1,5 +1,6 @@
 import type { NextRequest } from "next/server";
 
+import { guardDemoRequest } from "@/lib/demo-guard";
 import { clientIp, isRateLimited } from "@/lib/demo-rate-limit";
 
 export const maxDuration = 30;
@@ -14,6 +15,9 @@ const MAX_TEXT_CHARS = 600;
 const RATE_MAX_REQUESTS = 120;
 
 export async function POST(request: NextRequest) {
+  const rejected = guardDemoRequest(request);
+  if (rejected) return rejected;
+
   const apiKey = process.env.ELEVENLABS_API_KEY?.trim();
   if (!apiKey) {
     return Response.json({ error: "ELEVENLABS_API_KEY is not set" }, { status: 503 });

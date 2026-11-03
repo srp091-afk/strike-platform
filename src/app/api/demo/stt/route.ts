@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 import { toFile } from "openai";
 
+import { guardDemoRequest } from "@/lib/demo-guard";
 import { clientIp, isRateLimited } from "@/lib/demo-rate-limit";
 import { getOpenAI } from "@/lib/openai";
 
@@ -25,6 +26,9 @@ const EXTENSIONS: Record<string, string> = {
 
 /** Распознавание речи через OpenAI Whisper: язык определяется автоматически (параметр language не передаём). */
 export async function POST(request: NextRequest) {
+  const rejected = guardDemoRequest(request);
+  if (rejected) return rejected;
+
   if (isRateLimited("demo-stt", clientIp(request), RATE_MAX_REQUESTS)) {
     return Response.json({ error: "Слишком много запросов. Попробуйте чуть позже." }, { status: 429 });
   }
