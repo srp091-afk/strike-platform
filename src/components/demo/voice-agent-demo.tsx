@@ -44,9 +44,9 @@ const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAE
 const START_TRIGGER = "START_CONVERSATION";
 
 const SILENCE_COMMIT_MS = 1300;
-/** Перебивание срабатывает, только если клиент продолжает говорить дольше этого времени (короткий шум не в счёт). */
-const BARGE_DEBOUNCE_MS = 450;
-const BARGE_MIN_CHARS = 4;
+/** Перебивание срабатывает, только если клиент продолжает говорить дольше этого времени и произнёс осознанную фразу (короткий шум и междометия не в счёт). */
+const BARGE_DEBOUNCE_MS = 900;
+const BARGE_MIN_CHARS = 12;
 
 const MIN_SENTENCE_CHARS = 12;
 const MIN_CLAUSE_CHARS = 45;
@@ -143,6 +143,7 @@ export function VoiceAgentDemo() {
   const bargedRef = useRef(false);
   const busyRef = useRef(false);
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const micStreamRef = useRef<MediaStream | null>(null);
   const pendingRef = useRef("");
   const interimRef = useRef("");
   const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -166,6 +167,7 @@ export function VoiceAgentDemo() {
     setDebug(new URLSearchParams(window.location.search).get("debug") === "true");
     return () => {
       micOnRef.current = false;
+      micStreamRef.current?.getTracks().forEach((track) => track.stop());
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
       if (bargeTimerRef.current) clearTimeout(bargeTimerRef.current);
@@ -437,15 +439,20 @@ export function VoiceAgentDemo() {
           setInterim(pendingRef.current);
         }
         commitTimerRef.current = setTimeout(() => {
-          const phrase = pendingRef.current.trim();
+          // Chrome отдаёт финал короткой фразы с задержкой: к моменту тишины слово может ещё лежать в interim.
+          const phrase = `${pendingRef.current} ${interimRef.current}`.trim();
           pendingRef.current = "";
+          interimRef.current = "";
           commitTimerRef.current = null;
           bargedRef.current = false;
           setInterim("");
-          if (phrase) submitText(phrase);
+          if (!phrase) return;
+          // Сбрасываем сессию распознавания: запоздавший финал той же фразы не должен уйти вторым запросом.
+          recognition.abort();
+          submitText(phrase);
         }, SILENCE_COMMIT_MS);
 
-        // Debounce перебивания: агент замолкает, только если речь клиента не оборвалась за 450 мс.
+        // Debounce перебивания: агент замолкает, только если речь клиента не оборвалась за 900 мс.
         if (busyRef.current && !bargedRef.current && !bargeTimerRef.current) {
           bargeTimerRef.current = setTimeout(() => {
             bargeTimerRef.current = null;
@@ -468,7 +475,11 @@ export function VoiceAgentDemo() {
     };
     recognition.onend = () => {
       if (recognitionRef.current === recognition) recognitionRef.current = null;
-      interimRef.current = "";
+      // Браузер закрыл сессию посреди фразы — недослушанное слово не теряем, его отправит таймер тишины.
+      if (interimRef.current) {
+        pendingRef.current = `${pendingRef.current} ${interimRef.current}`.trim();
+        interimRef.current = "";
+      }
       if (!pendingRef.current) setInterim("");
       if (micOnRef.current) {
         restartTimerRef.current = setTimeout(() => startListeningRef.current(), 250);
@@ -496,6 +507,8 @@ export function VoiceAgentDemo() {
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
       if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
       pendingRef.current = "";
+      micStreamRef.current?.getTracks().forEach((track) => track.stop());
+      micStreamRef.current = null;
       recognitionRef.current?.abort();
       recognitionRef.current = null;
       return;
@@ -504,10 +517,27 @@ export function VoiceAgentDemo() {
     micOnRef.current = true;
     setIsRecording(true);
     interruptAgent();
-    startListening();
     // Первый запуск микрофона: агент сам начинает разговор скрытым триггером.
     if (historyRef.current.length === 0) void handleSendMessage("", siteUrlRef.current, true);
+
+    // Открываем микрофон с жёсткими эхо- и шумоподавлением и держим поток, пока слушаем.
+    void (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+        });
+        if (!micOnRef.current) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+        micStreamRef.current = stream;
+      } catch {
+        // Нет доступа или API — распознавание само запросит разрешение и покажет понятную ошибку.
+      }
+      startListening();
+    })();
   }
+
   function handleChip(question: string) {
     ensureAudio();
     submitText(question);
