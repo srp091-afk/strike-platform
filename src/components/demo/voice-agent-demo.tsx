@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Mic, MicOff } from "lucide-react";
+import { ArrowUp, Globe, Mic, MicOff } from "lucide-react";
 import dynamic from "next/dynamic";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 
@@ -119,6 +119,7 @@ export function VoiceAgentDemo() {
   const [lang, setLang] = useState<SpeechLang>("ru-RU");
   const [error, setError] = useState<string | null>(null);
   const [supported, setSupported] = useState(true);
+  const [debug, setDebug] = useState(false);
   const [siteHost, setSiteHost] = useState<string | null>(null);
 
   // История нужна только как контекст для LLM — на экране ответы агента не показываем, их можно лишь услышать.
@@ -133,6 +134,7 @@ export function VoiceAgentDemo() {
   const bargedRef = useRef(false);
   const busyRef = useRef(false);
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const debugStopRef = useRef<(() => void) | null>(null);
   const startListeningRef = useRef<() => void>(() => undefined);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -148,6 +150,7 @@ export function VoiceAgentDemo() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSupported(getRecognitionConstructor() !== null);
+    setDebug(new URLSearchParams(window.location.search).get("debug") === "true");
     return () => {
       micOnRef.current = false;
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
@@ -215,6 +218,8 @@ export function VoiceAgentDemo() {
     }
     finishPlayRef.current?.();
     finishPlayRef.current = null;
+    debugStopRef.current?.();
+    debugStopRef.current = null;
     playingRef.current = false;
     setIsSpeaking(false);
   }, []);
@@ -465,6 +470,93 @@ export function VoiceAgentDemo() {
     setDraft("");
   }
 
+  /**
+   * ?debug=true: локальный тест без API. Играет /demo/debug.mp3 (если файл лежит в public/demo), иначе
+   * синтезирует речеподобный сигнал. Звук идёт через тот же AnalyserNode, что и голос ElevenLabs.
+   */
+  async function toggleDebugAudio() {
+    if (isSpeaking) {
+      stopSpeaking();
+      return;
+    }
+    const audio = ensureAudio();
+    stopSpeaking();
+    setIsSpeaking(true);
+
+    const hasFile = await fetch("/demo/debug.mp3", { method: "HEAD" })
+      .then((response) => response.ok)
+      .catch(() => false);
+
+    if (hasFile) {
+      const finish = () => {
+        audio.onended = null;
+        audio.onerror = null;
+        setIsSpeaking(false);
+      };
+      audio.onended = finish;
+      audio.onerror = finish;
+      audio.src = "/demo/debug.mp3";
+      audio.play().catch(finish);
+      return;
+    }
+
+    const context = audioCtxRef.current;
+    const analyser = analyserRef.current;
+    if (!context || !analyser) {
+      setIsSpeaking(false);
+      return;
+    }
+    await context.resume();
+    const out = context.createGain();
+    out.gain.value = 0;
+    out.connect(analyser);
+
+    const oscillator = context.createOscillator();
+    oscillator.type = "sawtooth";
+    const formants = [700, 1200, 2600].map((frequency) => {
+      const filter = context.createBiquadFilter();
+      filter.type = "bandpass";
+      filter.frequency.value = frequency;
+      filter.Q.value = 4;
+      oscillator.connect(filter);
+      filter.connect(out);
+      return filter;
+    });
+
+    // Слоги: случайная громкость, высота тона и форманты, между фразами — паузы.
+    const duration = 10;
+    let at = context.currentTime + 0.1;
+    const end = at + duration;
+    while (at < end) {
+      const level = 0.25 + Math.random() * 0.75;
+      const length = 0.1 + Math.random() * 0.14;
+      oscillator.frequency.setValueAtTime(95 + Math.random() * 90, at);
+      formants[0]!.frequency.setValueAtTime(400 + Math.random() * 500, at);
+      formants[1]!.frequency.setValueAtTime(900 + Math.random() * 900, at);
+      out.gain.setTargetAtTime(level, at, 0.025);
+      out.gain.setTargetAtTime(0.03, at + length, 0.03);
+      at += length + 0.04 + (Math.random() < 0.12 ? 0.5 : 0.02);
+    }
+    oscillator.start();
+    oscillator.stop(end);
+
+    const stop = () => {
+      try {
+        oscillator.stop();
+      } catch {
+        /* уже остановлен */
+      }
+      oscillator.disconnect();
+      out.disconnect();
+    };
+    debugStopRef.current = stop;
+    oscillator.onended = () => {
+      if (debugStopRef.current === stop) {
+        debugStopRef.current = null;
+        setIsSpeaking(false);
+      }
+    };
+  }
   const userSpeaking = isRecording && interim !== "";
   const sphereState: PlasmaState = isSpeaking ? "speaking" : isReplying ? "thinking" : userSpeaking ? "listening" : "idle";
   const caption = error
@@ -480,38 +572,55 @@ export function VoiceAgentDemo() {
             : "";
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-center gap-8 px-4 pt-10 pb-36 text-white">
-      <PlasmaSphere state={sphereState} analyserRef={analyserRef} />
+    <div className="relative flex min-h-screen flex-col items-center overflow-x-clip px-4 pt-6 pb-8 text-white">
+      {debug ? (
+        <button
+          type="button"
+          onClick={toggleDebugAudio}
+          className="absolute top-4 right-4 z-10 rounded-full border border-white/15 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:border-white/30 hover:text-white"
+        >
+          {isSpeaking ? "■ Стоп" : "▶ Тест звука"}
+        </button>
+      ) : null}
 
-      <div className="flex min-h-12 max-w-xl flex-col items-center gap-1 text-center">
-        {error ? (
-          <p role="alert" className="text-sm text-red-400">
-            {error}
-          </p>
-        ) : null}
-        {!supported ? (
-          <p role="alert" className="text-sm text-amber-400">
-            Голосовой ввод недоступен в этом браузере — используйте Chrome, Edge или Safari, либо пишите текстом.
-          </p>
-        ) : null}
-        {caption ? <p className="text-sm text-zinc-500 transition-opacity">{caption}</p> : null}
+      <div className="flex w-full flex-1 flex-col items-center justify-center gap-4">
+        <PlasmaSphere state={sphereState} analyserRef={analyserRef} />
+
+        <div className="flex min-h-12 max-w-xl flex-col items-center gap-1 text-center">
+          {error ? (
+            <p role="alert" className="text-sm text-red-400">
+              {error}
+            </p>
+          ) : null}
+          {!supported ? (
+            <p role="alert" className="text-sm text-amber-400">
+              Голосовой ввод недоступен в этом браузере — используйте Chrome, Edge или Safari, либо пишите текстом.
+            </p>
+          ) : null}
+          {caption ? <p className="text-sm text-zinc-400 transition-opacity">{caption}</p> : null}
+        </div>
       </div>
 
-      <div className="flex max-w-2xl flex-wrap items-center justify-center gap-2">
-        {CHIPS.map((chip) => (
-          <button
-            key={chip}
-            type="button"
-            onClick={() => handleChip(chip)}
-            className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-zinc-300 backdrop-blur transition-all duration-200 hover:border-white/25 hover:bg-white/10 hover:text-white active:scale-95"
-          >
-            {chip}
-          </button>
-        ))}
-      </div>
+      <div className="flex w-full max-w-2xl flex-col items-center gap-5">
+        <p className="flex items-center gap-1.5 text-xs tracking-wide text-zinc-500">
+          <Globe className="size-3.5" strokeWidth={1.5} />
+          Говорю на любом языке
+        </p>
 
-      <form onSubmit={handleSubmit} className="fixed inset-x-0 bottom-6 z-10 px-4">
-        <div className="mx-auto flex max-w-xl items-center gap-2 rounded-full border border-white/10 bg-zinc-900/60 py-2 pr-2 pl-5 shadow-[0_10px_50px_-15px_rgba(0,0,0,0.9)] backdrop-blur-xl transition-colors focus-within:border-white/25">
+        <div className="flex flex-wrap items-center justify-center gap-2">
+          {CHIPS.map((chip) => (
+            <button
+              key={chip}
+              type="button"
+              onClick={() => handleChip(chip)}
+              className="rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition-all duration-200 hover:border-white/30 hover:bg-white/5 hover:text-white active:scale-95"
+            >
+              {chip}
+            </button>
+          ))}
+        </div>
+
+        <form onSubmit={handleSubmit} className="flex w-full max-w-xl items-center gap-2">
           <input
             type="text"
             autoComplete="off"
@@ -519,14 +628,14 @@ export function VoiceAgentDemo() {
             onChange={(event) => setDraft(event.target.value)}
             placeholder="Спросите о чем угодно или вставьте ссылку..."
             aria-label="Сообщение агенту"
-            className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-zinc-500"
+            className="min-w-0 flex-1 border-b border-white/10 bg-transparent px-1 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-zinc-500 focus:border-white/40"
           />
 
           <button
             type="button"
             onClick={() => setLang((current) => (current === "ru-RU" ? "en-US" : "ru-RU"))}
             aria-label="Язык речи"
-            className="shrink-0 rounded-full px-2 py-1 text-xs font-medium text-zinc-500 transition-colors hover:text-white disabled:opacity-40"
+            className="shrink-0 rounded-full px-2 py-1 text-xs font-medium text-zinc-500 transition-colors hover:text-white"
           >
             {lang === "ru-RU" ? "RU" : "EN"}
           </button>
@@ -541,28 +650,41 @@ export function VoiceAgentDemo() {
             </button>
           ) : null}
 
-          <button
-            type="button"
-            onClick={toggleMic}
-            disabled={!supported}
-            aria-pressed={isRecording}
-            aria-label={isRecording ? "Выключить микрофон" : "Включить микрофон"}
-            className={cn(
-              "relative grid size-10 shrink-0 place-items-center rounded-full text-white transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40",
-              isRecording
-                ? "bg-strike shadow-[0_0_24px_-6px_rgba(207,2,52,0.8)] hover:brightness-110"
-                : "bg-white/10 hover:bg-white/20",
-            )}
-          >
-            {userSpeaking ? <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-strike/50" /> : null}
-            {isRecording ? (
-              <Mic className="relative size-[18px]" strokeWidth={1.75} />
-            ) : (
-              <MicOff className="relative size-[18px]" strokeWidth={1.75} />
-            )}
-          </button>
-        </div>
-      </form>
+          <div className="relative shrink-0">
+            {!isRecording && supported ? (
+              <span
+                role="tooltip"
+                className="pointer-events-none absolute right-0 bottom-full mb-3 animate-bounce whitespace-nowrap rounded-full bg-strike px-3 py-1.5 text-xs font-medium text-white shadow-[0_0_24px_-6px_rgba(207,2,52,0.9)]"
+              >
+                Нажмите, чтобы начать диалог
+                <span aria-hidden className="absolute -bottom-1 right-4 size-2 rotate-45 bg-strike" />
+              </span>
+            ) : null}
+            <button
+              type="button"
+              onClick={toggleMic}
+              disabled={!supported}
+              aria-pressed={isRecording}
+              aria-label={isRecording ? "Выключить микрофон" : "Включить микрофон"}
+              className={cn(
+                "relative grid size-12 place-items-center rounded-full text-white transition-all active:scale-95 disabled:cursor-not-allowed disabled:opacity-40",
+                isRecording
+                  ? "bg-strike shadow-[0_0_24px_-6px_rgba(207,2,52,0.8)] hover:brightness-110"
+                  : "bg-strike/90 shadow-[0_0_30px_-4px_rgba(207,2,52,0.9)] hover:brightness-110",
+              )}
+            >
+              {!isRecording || userSpeaking ? (
+                <span aria-hidden className="absolute inset-0 animate-ping rounded-full bg-strike/50" />
+              ) : null}
+              {isRecording ? (
+                <Mic className="relative size-5" strokeWidth={1.75} />
+              ) : (
+                <MicOff className="relative size-5" strokeWidth={1.75} />
+              )}
+            </button>
+          </div>
+        </form>
+      </div>
     </div>
   );
 }

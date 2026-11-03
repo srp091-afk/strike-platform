@@ -3,7 +3,7 @@
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { Points, PointMaterial } from "@react-three/drei";
 import { useEffect, useMemo, useRef, useState, type RefObject } from "react";
-import { AdditiveBlending, BackSide, Color, type Group, type ShaderMaterial } from "three";
+import { AdditiveBlending, BackSide, CanvasTexture, Color, type Group, type ShaderMaterial } from "three";
 
 export type PlasmaState = "idle" | "listening" | "thinking" | "speaking";
 
@@ -73,9 +73,9 @@ void main() {
   float slow = snoise(dir * 1.5 * freq + vec3(0.0, uTime * 0.22, uTime * 0.14));
   float fast = snoise(dir * 4.2 * freq - vec3(uTime * 0.5, 0.0, uTime * 0.3));
   float wave = sin(dir.y * 8.0 - uTime * 4.5) * 0.5 + sin(dir.x * 5.0 + dir.z * 5.0 - uTime * 3.0) * 0.5;
-  float disp = slow * (0.08 + uBass * 0.3)
-             + fast * (0.02 + uTreble * 0.12)
-             + wave * uLevel * 0.08;
+  float disp = slow * (0.022 + uBass * 0.08)
+             + fast * (0.006 + uTreble * 0.035)
+             + wave * uLevel * 0.025;
   vec3 displaced = position + normal * disp;
   vDisp = disp;
   vPos = displaced;
@@ -110,8 +110,8 @@ void main() {
   // Тёмная малиновая плазма: два слоя шума между глубоким бордо и кармином.
   float plasma = snoise(vPos * 1.6 * freq + vec3(0.0, t * 0.2, t * 0.1)) * 0.5 + 0.5;
   float plasma2 = snoise(vPos * 3.2 * freq - vec3(t * 0.25, t * 0.1, 0.0)) * 0.5 + 0.5;
-  vec3 col = mix(uDeep, uCrimson, smoothstep(0.1, 0.9, plasma));
-  col = mix(col, uCrimson * 1.6, plasma2 * 0.25);
+  vec3 col = mix(uDeep, uCrimson * 0.6, smoothstep(0.15, 0.95, plasma));
+  col = mix(col, uCrimson * 0.9, plasma2 * 0.2);
 
   // Волокнистые «нейронные» разряды: ridged-шум с доменным искажением, три масштаба нитей.
   vec3 q = vPos * 1.15 * freq;
@@ -123,18 +123,18 @@ void main() {
   float vA = pow(1.0 - abs(snoise(q * 1.7)), 9.0);
   float vB = pow(1.0 - abs(snoise(q * 3.3 + 5.0)), 11.0);
   float vC = pow(1.0 - abs(snoise(q * 6.4 - 3.0)), 14.0);
-  float glow = 0.75 + uLevel * 1.9;
-  col += uHot * (vA * 0.95 + vB * 0.75 + vC * 0.55) * glow;
+  float glow = 0.45 + uLevel * 1.6;
+  col += uHot * (vA * 0.7 + vB * 0.5 + vC * 0.35) * glow;
   // Раскалённые узлы там, где нити пересекаются.
-  col += uBright * pow(vA * vB, 0.6) * (0.5 + uLevel * 1.4);
+  col += uBright * pow(vA * vB, 0.7) * (0.25 + uLevel * 1.1);
 
   // Искры внутри сферы.
   float spark = smoothstep(0.93, 1.0, snoise(vPos * 24.0 * freq + t * 0.6));
-  col += uBright * spark * (0.4 + uLevel);
+  col += uBright * spark * (0.18 + uLevel * 0.6);
 
   // Кармин на ободке и общее внутреннее свечение.
-  col += uHot * fres * (0.85 + uLevel * 1.5);
-  col += uBright * pow(fres, 4.0) * (0.35 + uLevel * 0.8);
+  col += uHot * fres * (0.32 + uLevel * 1.1);
+  col += uBright * pow(fres, 4.0) * (0.12 + uLevel * 0.5);
   gl_FragColor = vec4(col, 1.0);
 }
 `;
@@ -156,8 +156,8 @@ uniform vec3 uColor;
 varying vec3 vNormalW;
 varying vec3 vView;
 void main() {
-  float rim = pow(max(dot(normalize(vNormalW), normalize(vView)), 0.0), 2.0);
-  float alpha = rim * (0.42 + uLevel * 1.0);
+  float rim = pow(max(dot(normalize(vNormalW), normalize(vView)), 0.0), 3.2);
+  float alpha = rim * (0.3 + uLevel * 0.9);
   gl_FragColor = vec4(uColor * (0.9 + uLevel * 1.2), alpha);
 }
 `;
@@ -193,7 +193,7 @@ void main() {
   float body = smoothstep(amp, amp - 0.1, y) * barMask;
 
   float line = exp(-y * 70.0) * (1.0 - dx) * 0.75;
-  float haze = exp(-y * 5.0) * envelope * (0.15 + uLevel) * 0.55;
+  float haze = exp(-y * 3.5) * envelope * (0.12 + uLevel * 1.2) * 0.6;
   float a = body * 0.9 + line + haze;
   gl_FragColor = vec4(uColor * a, a);
 }
@@ -254,6 +254,19 @@ function Plasma({ state, analyserRef }: { state: PlasmaState; analyserRef: RefOb
   const data = useRef(new Uint8Array(new ArrayBuffer(128)));
   const smooth = useRef({ level: 0, bass: 0, treble: 0, turb: 0, scale: 1, speed: 1, time: 0 });
   const sparks = useOrbitPoints(1500, 7, 1.4, 0.6);
+  const softDot = useMemo(() => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 64;
+    canvas.height = 64;
+    const ctx = canvas.getContext("2d")!;
+    const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gradient.addColorStop(0, "rgba(255,255,255,1)");
+    gradient.addColorStop(0.35, "rgba(255,255,255,0.45)");
+    gradient.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, 64, 64);
+    return new CanvasTexture(canvas);
+  }, []);
   const bokeh = useOrbitPoints(90, 21, 1.3, 0.9);
 
   const coreUniforms = useMemo(
@@ -264,8 +277,8 @@ function Plasma({ state, analyserRef }: { state: PlasmaState; analyserRef: RefOb
       uTreble: { value: 0 },
       uTurb: { value: 0 },
       uDeep: { value: new Color("#150008") },
-      uCrimson: { value: new Color("#8c0428") },
-      uHot: { value: new Color("#ff2d55") },
+      uCrimson: { value: new Color("#7a0624") },
+      uHot: { value: new Color("#ff1f45") },
       uBright: { value: new Color("#ff9db0") },
     }),
     [],
@@ -339,7 +352,8 @@ function Plasma({ state, analyserRef }: { state: PlasmaState; analyserRef: RefOb
     if (orbit.current) {
       orbit.current.rotation.y -= delta * 0.05 * s.speed;
       orbit.current.rotation.z += delta * 0.02;
-      orbit.current.scale.setScalar(1 + s.level * 0.2);
+      const k = 1 + s.level * 0.2;
+      orbit.current.scale.set(k, k * 0.68, k); // облако сплюснуто, чтобы частицы не упирались в края канваса
     }
   });
 
@@ -349,7 +363,7 @@ function Plasma({ state, analyserRef }: { state: PlasmaState; analyserRef: RefOb
   return (
     <>
       <mesh position={[0, 0, -0.8]}>
-        <planeGeometry args={[wavesWidth, 1.7]} />
+        <planeGeometry args={[wavesWidth, 2.2]} />
         <shaderMaterial
           ref={waves}
           vertexShader={WAVES_VERTEX}
@@ -366,7 +380,7 @@ function Plasma({ state, analyserRef }: { state: PlasmaState; analyserRef: RefOb
           <sphereGeometry args={[1, 192, 192]} />
           <shaderMaterial ref={core} vertexShader={CORE_VERTEX} fragmentShader={CORE_FRAGMENT} uniforms={coreUniforms} />
         </mesh>
-        <mesh scale={1.24}>
+        <mesh scale={1.4}>
           <sphereGeometry args={[1, 64, 64]} />
           <shaderMaterial
             ref={halo}
@@ -385,8 +399,9 @@ function Plasma({ state, analyserRef }: { state: PlasmaState; analyserRef: RefOb
         <Points positions={sparks} stride={3} frustumCulled={false}>
           <PointMaterial
             transparent
-            color="#ff4d6d"
-            size={0.02}
+            map={softDot}
+            color="#ff2a4a"
+            size={0.045}
             sizeAttenuation
             depthWrite={false}
             blending={AdditiveBlending}
@@ -396,9 +411,10 @@ function Plasma({ state, analyserRef }: { state: PlasmaState; analyserRef: RefOb
         <Points positions={bokeh} stride={3} frustumCulled={false}>
           <PointMaterial
             transparent
-            opacity={0.28}
-            color="#ff2d55"
-            size={0.14}
+            map={softDot}
+            opacity={0.5}
+            color="#ff1f45"
+            size={0.38}
             sizeAttenuation
             depthWrite={false}
             blending={AdditiveBlending}
@@ -434,7 +450,7 @@ export function PlasmaSphere({
   }, []);
 
   return (
-    <div aria-hidden className="relative h-72 w-full max-w-6xl sm:h-[26rem]">
+    <div aria-hidden className="relative h-72 w-full max-w-6xl [mask-image:radial-gradient(ellipse_at_center,black_60%,transparent_98%)] sm:h-[26rem]">
       {webgl === false ? (
         <div className="absolute inset-x-[20%] inset-y-[8%] rounded-full bg-[conic-gradient(from_0deg,#150008,#8c0428,#ff2d55,#8c0428,#150008)] opacity-80 blur-2xl" />
       ) : null}
