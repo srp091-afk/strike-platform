@@ -39,9 +39,9 @@ export async function POST(request: NextRequest) {
       },
       body: JSON.stringify({
         text,
-        model_id: "eleven_multilingual_v2",
+        model_id: "eleven_turbo_v2_5",
         voice_settings: {
-          stability: 0.4, // ниже — больше эмоций и живости
+          stability: 0.55, // ниже — больше эмоций и живости
           similarity_boost: 0.85, // чётче и ближе к оригиналу голоса
           style: 0.15, // немного утрированный стиль для естественных интонаций
           use_speaker_boost: true,

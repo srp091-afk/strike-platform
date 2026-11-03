@@ -157,6 +157,7 @@ export function VoiceAgentDemo() {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setSupported(getRecognitionConstructor() !== null);
+    setLang(navigator.language.toLowerCase().startsWith("en") ? "en-US" : "ru-RU");
     setDebug(new URLSearchParams(window.location.search).get("debug") === "true");
     return () => {
       micOnRef.current = false;
@@ -697,24 +698,18 @@ export function VoiceAgentDemo() {
           />
 
           <button
-            type="button"
-            onClick={() => setLang((current) => (current === "ru-RU" ? "en-US" : "ru-RU"))}
-            aria-label="Язык речи"
-            className="shrink-0 rounded-full px-2 py-1 text-xs font-medium text-zinc-500 transition-colors hover:text-white"
+            type="submit"
+            disabled={!draft.trim()}
+            aria-label="Отправить"
+            className={cn(
+              "grid size-10 shrink-0 place-items-center rounded-full transition-all",
+              draft.trim()
+                ? "bg-white/15 text-white hover:bg-white/25 active:scale-95"
+                : "cursor-default bg-transparent text-zinc-600",
+            )}
           >
-            {lang === "ru-RU" ? "RU" : "EN"}
+            <ArrowUp className="size-4" strokeWidth={2} />
           </button>
-
-          {draft.trim() ? (
-            <button
-              type="submit"
-              aria-label="Отправить"
-              className="grid size-10 shrink-0 place-items-center rounded-full bg-white/10 text-white transition-all hover:bg-white/20 active:scale-95"
-            >
-              <ArrowUp className="size-4" strokeWidth={2} />
-            </button>
-          ) : null}
-
           <div className="relative shrink-0">
             {!isRecording && supported ? (
               <span
