@@ -39,6 +39,15 @@ const ERROR_TEXT: Record<string, string> = {
 const SILENT_WAV = "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=";
 
 /** Границы озвучки: законченное предложение и мягкая пауза (запятая и т.п.) — только если кусок уже достаточно длинный. */
+/** Пауза тишины, после которой накопленная фраза клиента уходит агенту (Web Speech сам отдаёт финал слишком рано). */
+/** Скрытый стартовый триггер: на экране и в истории не показывается, бэкенд отвечает приветствием. */
+const START_TRIGGER = "START_CONVERSATION";
+
+const SILENCE_COMMIT_MS = 1300;
+/** Перебивание срабатывает, только если клиент продолжает говорить дольше этого времени (короткий шум не в счёт). */
+const BARGE_DEBOUNCE_MS = 450;
+const BARGE_MIN_CHARS = 4;
+
 const MIN_SENTENCE_CHARS = 12;
 const MIN_CLAUSE_CHARS = 45;
 
@@ -134,6 +143,10 @@ export function VoiceAgentDemo() {
   const bargedRef = useRef(false);
   const busyRef = useRef(false);
   const restartTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingRef = useRef("");
+  const interimRef = useRef("");
+  const commitTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bargeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const debugStopRef = useRef<(() => void) | null>(null);
   const startListeningRef = useRef<() => void>(() => undefined);
 
@@ -154,8 +167,19 @@ export function VoiceAgentDemo() {
     return () => {
       micOnRef.current = false;
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+      if (bargeTimerRef.current) clearTimeout(bargeTimerRef.current);
       recognitionRef.current?.abort();
       chatAbortRef.current?.abort();
+    };
+  }, []);
+
+  // Демо занимает весь экран под шапкой: страница не скроллится.
+  useEffect(() => {
+    const previous = document.documentElement.style.overflow;
+    document.documentElement.style.overflow = "hidden";
+    return () => {
+      document.documentElement.style.overflow = previous;
     };
   }, []);
 
@@ -273,7 +297,7 @@ export function VoiceAgentDemo() {
    * на куски и отправляют в очередь озвучки.
    */
   const handleSendMessage = useCallback(
-    async (text: string, websiteUrl: string): Promise<void> => {
+    async (text: string, websiteUrl: string, greeting = false): Promise<void> => {
       void text; // реплика пользователя уже в historyRef — API получает всю историю целиком
       const controller = new AbortController();
       chatAbortRef.current = controller;
@@ -288,7 +312,11 @@ export function VoiceAgentDemo() {
         const response = await fetch("/api/demo/chat", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ messages: historyRef.current, websiteUrl: websiteUrl || undefined }),
+          body: JSON.stringify({
+            messages: greeting ? [{ role: "user", content: START_TRIGGER }] : historyRef.current,
+            websiteUrl: websiteUrl || undefined,
+            lang: langRef.current,
+          }),
           signal: controller.signal,
         });
 
@@ -399,16 +427,34 @@ export function VoiceAgentDemo() {
         const transcript = (result[0]?.transcript ?? "").trim();
         if (!transcript || looksLikeEcho(transcript)) continue;
 
+        // Любая новая речь отодвигает отправку: пауза между словами не обрывает фразу.
+        if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+        interimRef.current = result.isFinal ? "" : transcript;
+        setInterim(result.isFinal ? pendingRef.current : transcript);
+
         if (result.isFinal) {
+          pendingRef.current = `${pendingRef.current} ${transcript}`.trim();
+          setInterim(pendingRef.current);
+        }
+        commitTimerRef.current = setTimeout(() => {
+          const phrase = pendingRef.current.trim();
+          pendingRef.current = "";
+          commitTimerRef.current = null;
           bargedRef.current = false;
           setInterim("");
-          submitText(transcript);
-        } else {
-          setInterim(transcript);
-          if (busyRef.current && !bargedRef.current) {
-            bargedRef.current = true;
-            interruptAgent();
-          }
+          if (phrase) submitText(phrase);
+        }, SILENCE_COMMIT_MS);
+
+        // Debounce перебивания: агент замолкает, только если речь клиента не оборвалась за 450 мс.
+        if (busyRef.current && !bargedRef.current && !bargeTimerRef.current) {
+          bargeTimerRef.current = setTimeout(() => {
+            bargeTimerRef.current = null;
+            const heard = `${pendingRef.current} ${interimRef.current}`.trim();
+            if (busyRef.current && heard.length >= BARGE_MIN_CHARS) {
+              bargedRef.current = true;
+              interruptAgent();
+            }
+          }, BARGE_DEBOUNCE_MS);
         }
       }
     };
@@ -422,7 +468,8 @@ export function VoiceAgentDemo() {
     };
     recognition.onend = () => {
       if (recognitionRef.current === recognition) recognitionRef.current = null;
-      setInterim("");
+      interimRef.current = "";
+      if (!pendingRef.current) setInterim("");
       if (micOnRef.current) {
         restartTimerRef.current = setTimeout(() => startListeningRef.current(), 250);
       }
@@ -447,6 +494,8 @@ export function VoiceAgentDemo() {
       setIsRecording(false);
       setInterim("");
       if (restartTimerRef.current) clearTimeout(restartTimerRef.current);
+      if (commitTimerRef.current) clearTimeout(commitTimerRef.current);
+      pendingRef.current = "";
       recognitionRef.current?.abort();
       recognitionRef.current = null;
       return;
@@ -456,6 +505,8 @@ export function VoiceAgentDemo() {
     setIsRecording(true);
     interruptAgent();
     startListening();
+    // Первый запуск микрофона: агент сам начинает разговор скрытым триггером.
+    if (historyRef.current.length === 0) void handleSendMessage("", siteUrlRef.current, true);
   }
   function handleChip(question: string) {
     ensureAudio();
@@ -572,7 +623,7 @@ export function VoiceAgentDemo() {
             : "";
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center overflow-x-clip px-4 pt-6 pb-8 text-white">
+    <div className="fixed inset-x-0 top-16 bottom-0 z-30 flex flex-col items-center overflow-hidden bg-black px-4 pt-2 pb-10 text-white">
       {debug ? (
         <button
           type="button"
@@ -583,10 +634,10 @@ export function VoiceAgentDemo() {
         </button>
       ) : null}
 
-      <div className="flex w-full flex-1 flex-col items-center justify-center gap-4">
+      <div className="flex min-h-0 w-full flex-1 flex-col items-center justify-center gap-2">
         <PlasmaSphere state={sphereState} analyserRef={analyserRef} />
 
-        <div className="flex min-h-12 max-w-xl flex-col items-center gap-1 text-center">
+        <div className="flex min-h-8 max-w-xl shrink-0 flex-col items-center gap-1 text-center">
           {error ? (
             <p role="alert" className="text-sm text-red-400">
               {error}
@@ -601,19 +652,19 @@ export function VoiceAgentDemo() {
         </div>
       </div>
 
-      <div className="flex w-full max-w-2xl flex-col items-center gap-5">
+      <div className="flex w-full max-w-3xl shrink-0 flex-col items-center gap-4">
         <p className="flex items-center gap-1.5 text-xs tracking-wide text-zinc-500">
           <Globe className="size-3.5" strokeWidth={1.5} />
           Говорю на любом языке
         </p>
 
-        <div className="flex flex-wrap items-center justify-center gap-2">
+        <div className="flex w-full flex-nowrap gap-2 overflow-x-auto whitespace-nowrap [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {CHIPS.map((chip) => (
             <button
               key={chip}
               type="button"
               onClick={() => handleChip(chip)}
-              className="rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition-all duration-200 hover:border-white/30 hover:bg-white/5 hover:text-white active:scale-95"
+              className="shrink-0 rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition-all duration-200 first:ml-auto last:mr-auto hover:border-white/30 hover:bg-white/5 hover:text-white active:scale-95"
             >
               {chip}
             </button>

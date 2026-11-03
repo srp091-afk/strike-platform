@@ -450,7 +450,7 @@ export function PlasmaSphere({
   }, []);
 
   return (
-    <div aria-hidden className="relative h-72 w-full max-w-6xl [mask-image:radial-gradient(ellipse_at_center,black_60%,transparent_98%)] sm:h-[26rem]">
+    <div aria-hidden className="relative h-full max-h-[26rem] min-h-40 w-full max-w-6xl [mask-image:radial-gradient(ellipse_at_center,black_60%,transparent_98%)]">
       {webgl === false ? (
         <div className="absolute inset-x-[20%] inset-y-[8%] rounded-full bg-[conic-gradient(from_0deg,#150008,#8c0428,#ff2d55,#8c0428,#150008)] opacity-80 blur-2xl" />
       ) : null}
