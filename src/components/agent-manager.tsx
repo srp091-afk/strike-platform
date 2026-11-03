@@ -1,7 +1,7 @@
 "use client";
 
 import { CalendarDays, Globe, Maximize, Play, Trash } from "lucide-react";
-import { startTransition, useActionState, useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { startTransition, useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { mutate as swrMutate } from "swr";
@@ -60,6 +60,32 @@ const initialState: SaveState = {
   waPhoneNumber: null,
 };
 
+/** Поля подключения каналов и виджета: если они не изменились, перечитывать запись из списка не нужно. */
+function sameChannelState(a: AgentRecord, b: AgentRecord) {
+  return (
+      a.waPhoneNumber === b.waPhoneNumber &&
+      a.tgBotUsername === b.tgBotUsername &&
+      a.waIsActive === b.waIsActive &&
+      a.tgIsActive === b.tgIsActive &&
+      a.telegram_type === b.telegram_type &&
+      a.telegram_bot_token === b.telegram_bot_token &&
+      a.telegram_phone === b.telegram_phone &&
+      a.telegram_api_id === b.telegram_api_id &&
+      a.telegram_api_hash === b.telegram_api_hash &&
+      a.telegram_session === b.telegram_session &&
+      a.widget_position === b.widget_position &&
+      a.widget_agent_name === b.widget_agent_name &&
+      a.widget_operator_name === b.widget_operator_name &&
+      a.widget_auto_open === b.widget_auto_open &&
+      a.widget_open_delay === b.widget_open_delay &&
+      a.widget_color_header_bg === b.widget_color_header_bg &&
+      a.widget_color_header_text === b.widget_color_header_text &&
+      a.widget_greeting === b.widget_greeting &&
+      a.widget_avatar_agent === b.widget_avatar_agent &&
+      a.widget_avatar_operator === b.widget_avatar_operator
+  );
+}
+
 export function AgentManager({
   agents,
   greenDefaults,
@@ -78,7 +104,13 @@ export function AgentManager({
   initialConnectChannel?: "whatsapp" | "telegram" | "widget";
 }) {
   const router = useRouter();
-  const [editing, setEditing] = useState<AgentRecord | null>(null);
+  const [editingBase, setEditing] = useState<AgentRecord | null>(null);
+  // Свежая запись из списка (каналы подключаются в диалоге и обновляют агента) — считаем при рендере, без эффекта.
+  const editing = useMemo(() => {
+    if (!editingBase) return null;
+    const fresh = agents.find((agent) => agent.id === editingBase.id);
+    return !fresh || sameChannelState(fresh, editingBase) ? editingBase : fresh;
+  }, [agents, editingBase]);
   const [testing, setTesting] = useState<AgentRecord | null>(null);
   const closeTesting = useCallback(() => setTesting(null), []);
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -113,38 +145,6 @@ export function AgentManager({
     }
   }, [state.savedId, router, onSaved]);
 
-  useEffect(() => {
-    setEditing((current) => {
-      if (!current) return current;
-      const fresh = agents.find((agent) => agent.id === current.id);
-      if (!fresh) return current;
-      if (
-        fresh.waPhoneNumber === current.waPhoneNumber &&
-        fresh.tgBotUsername === current.tgBotUsername &&
-        fresh.waIsActive === current.waIsActive &&
-        fresh.tgIsActive === current.tgIsActive &&
-        fresh.telegram_type === current.telegram_type &&
-        fresh.telegram_bot_token === current.telegram_bot_token &&
-        fresh.telegram_phone === current.telegram_phone &&
-        fresh.telegram_api_id === current.telegram_api_id &&
-        fresh.telegram_api_hash === current.telegram_api_hash &&
-        fresh.telegram_session === current.telegram_session &&
-        fresh.widget_position === current.widget_position &&
-        fresh.widget_agent_name === current.widget_agent_name &&
-        fresh.widget_operator_name === current.widget_operator_name &&
-        fresh.widget_auto_open === current.widget_auto_open &&
-        fresh.widget_open_delay === current.widget_open_delay &&
-        fresh.widget_color_header_bg === current.widget_color_header_bg &&
-        fresh.widget_color_header_text === current.widget_color_header_text &&
-        fresh.widget_greeting === current.widget_greeting &&
-        fresh.widget_avatar_agent === current.widget_avatar_agent &&
-        fresh.widget_avatar_operator === current.widget_avatar_operator
-      ) {
-        return current;
-      }
-      return fresh;
-    });
-  }, [agents]);
 
   const initialOpened = useRef(false);
   useEffect(() => {
@@ -381,7 +381,9 @@ function AgentDialog({
   // После автосейва нового агента его запись подтягивается из списка по persistedId.
   const channelAgent = editing ?? agents.find((agent) => agent.id === persistedId) ?? null;
   const draftRef = useRef(draft);
-  draftRef.current = draft;
+  useEffect(() => {
+    draftRef.current = draft;
+  }, [draft]);
   const ignoredSave = useRef(saved?.attemptId ?? null);
   const appliedSave = useRef<string | null>(null);
 

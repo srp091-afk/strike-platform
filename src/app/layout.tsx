@@ -74,20 +74,23 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} ${jakarta.variable} ${anton.variable} ${montserrat.variable} ${bebas.variable} h-full bg-black`}
     >
       <body className="flex min-h-full flex-col bg-black font-sans text-zinc-400">
-        <AppShell
-          sidebar={
-            <Suspense fallback={<AppSidebarSkeleton />}>
-              <SidebarData />
-            </Suspense>
-          }
-          footer={
-            <Suspense fallback={<div className="mt-auto h-14 border-t border-zinc-800 bg-black" />}>
-              <SiteFooter />
-            </Suspense>
-          }
-        >
-          {children}
-        </AppShell>
+        {/* AppShell читает usePathname (светлый портал vs тёмные публичные страницы): без Suspense пререндер роутов падает. */}
+        <Suspense fallback={null}>
+          <AppShell
+            sidebar={
+              <Suspense fallback={<AppSidebarSkeleton />}>
+                <SidebarData />
+              </Suspense>
+            }
+            footer={
+              <Suspense fallback={<div className="mt-auto h-14 border-t border-zinc-800 bg-black" />}>
+                <SiteFooter />
+              </Suspense>
+            }
+          >
+            {children}
+          </AppShell>
+        </Suspense>
         <Toaster />
         <Suspense fallback={null}>
           <CookieConsent />

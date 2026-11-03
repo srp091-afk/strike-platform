@@ -242,7 +242,12 @@ body:has(.portal) {
 }
 
 /* Красные кнопки/плашки остаются с белым текстом: возвращаем исходные white/black в их поддереве. */
-body:has(.portal) [class~="bg-strike"],
+body:has(.portal) [class*="bg-strike"]:not([class*=":bg-strike"]),
+body:has(.portal) [data-state="active"][class*="data-[state=active]:bg-strike"],
+body:has(.portal) [data-state="checked"][class*="data-[state=checked]:bg-strike"],
+body:has(.portal) [data-state="on"][class*="data-[state=on]:bg-strike"],
+body:has(.portal) [aria-selected="true"][class*="aria-selected:bg-strike"],
+body:has(.portal) [class*="hover:bg-strike"]:hover,
 body:has(.portal) [class~="bg-strike-dark"] {
   --color-white: #ffffff;
   --color-black: #000000;
