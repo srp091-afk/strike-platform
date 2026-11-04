@@ -172,8 +172,15 @@ export async function listAgents(): Promise<AgentRecord[]> {
     throw new Error(listed.error.message);
   }
 
-  return (listed.data ?? []).map((row) => ({
+  // Порядок карточек лежит в отдельном запросе: если миграция order_index ещё не применена, список просто идёт по дате.
+  const orderRows = await supabase.from("agents").select("id, order_index").eq("user_id", userId);
+  const orders = new Map<string, number>(
+    orderRows.error ? [] : (orderRows.data ?? []).map((row) => [String(row.id), Number(row.order_index ?? 0)] as const),
+  );
+
+  const records = (listed.data ?? []).map((row) => ({
     id: row.id as string,
+    order_index: orders.get(String(row.id)) ?? 0,
     name: row.name as string,
     system_prompt: row.system_prompt as string,
     model: normalizeAgentModel(row.model),
@@ -208,6 +215,8 @@ export async function listAgents(): Promise<AgentRecord[]> {
     telegram_chat_id: "telegram_chat_id" in row && row.telegram_chat_id ? String(row.telegram_chat_id) : null,
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
+
+  return records.sort((a, b) => a.order_index - b.order_index || b.created_at.localeCompare(a.created_at));
 }
 
 export async function getDashboardCounts() {

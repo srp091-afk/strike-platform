@@ -289,3 +289,27 @@ export async function deleteAgent(formData: FormData) {
   revalidatePath("/dashboard");
   revalidatePath("/agents");
 }
+
+/** Сохраняет порядок карточек после drag-and-drop: позиция агента = его индекс в переданном списке. */
+export async function reorderAgents(ids: string[]): Promise<{ ok: boolean; error?: string }> {
+  if (!Array.isArray(ids) || ids.length === 0 || ids.length > 500 || ids.some((id) => typeof id !== "string" || !id)) {
+    return { ok: false, error: "Некорректный порядок агентов." };
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const userId = await getAuthenticatedUserId();
+  const results = await Promise.all(
+    ids.map((id, index) => supabase.from("agents").update({ order_index: index }).eq("id", id).eq("user_id", userId)),
+  );
+  const failed = results.find((result) => result.error);
+  if (failed?.error) {
+    const missing = failed.error.message.includes("order_index");
+    return {
+      ok: false,
+      error: missing ? "Примените миграцию 20261104_agent_order.sql, чтобы порядок сохранялся." : failed.error.message,
+    };
+  }
+
+  revalidatePath("/agents");
+  return { ok: true };
+}

@@ -1,12 +1,29 @@
-"use client";
+﻿"use client";
 
-import { CalendarDays, Globe, Maximize, Play, Trash } from "lucide-react";
+import { CalendarDays, GripVertical, Globe, Maximize, Play, Trash } from "lucide-react";
+import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { startTransition, useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { mutate as swrMutate } from "swr";
 import { PlaygroundChat } from "@/components/playground-chat";
-import { deleteAgent, saveAgent, saveAgentDirect, type SaveState } from "@/app/agents/actions";
+import { deleteAgent, reorderAgents, saveAgent, saveAgentDirect, type SaveState } from "@/app/agents/actions";
 import { disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
 import { TelegramConnectModal } from "@/components/TelegramConnectModal";
 import { WidgetConnectModal } from "@/components/WidgetConnectModal";
@@ -83,6 +100,90 @@ function sameChannelState(a: AgentRecord, b: AgentRecord) {
       a.widget_greeting === b.widget_greeting &&
       a.widget_avatar_agent === b.widget_avatar_agent &&
       a.widget_avatar_operator === b.widget_avatar_operator
+  );
+}
+
+const CARD_CHANNELS: Array<{ provider: IntegrationProvider; label: string; activeClass: string }> = [
+  { provider: "whatsapp", label: "WhatsApp", activeClass: "text-[#25D366]" },
+  { provider: "telegram", label: "Telegram", activeClass: "text-[#229ED9]" },
+  { provider: "instagram", label: "Instagram", activeClass: "text-[#E1306C]" },
+  { provider: "widget", label: "Веб-виджет", activeClass: "text-strike" },
+];
+
+function SortableAgentCard({ agent, onTest, onEdit }: { agent: AgentRecord; onTest: () => void; onEdit: () => void }) {
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
+    id: agent.id,
+  });
+
+  return (
+    <li
+      ref={setNodeRef}
+      style={{ transform: CSS.Transform.toString(transform), transition }}
+      className={`relative rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md transition-colors duration-200 hover:border-zinc-600 ${
+        isDragging ? "z-10 border-zinc-600 shadow-lg" : ""
+      }`}
+    >
+      <div className="flex gap-3">
+        <button
+          type="button"
+          ref={setActivatorNodeRef}
+          aria-label={`Перетащить агента ${agent.name}`}
+          title="Перетащите, чтобы изменить порядок"
+          className="-ml-2 mt-0.5 flex h-8 w-6 shrink-0 cursor-grab touch-none items-center justify-center rounded-md text-zinc-500 transition-colors hover:bg-zinc-800 hover:text-zinc-300 active:cursor-grabbing"
+          {...attributes}
+          {...listeners}
+        >
+          <GripVertical className="size-5" strokeWidth={1.75} />
+        </button>
+        <div className="flex min-w-0 flex-1 flex-col gap-4 sm:flex-row sm:items-start">
+          <div className="min-w-0 flex-1">
+            <p className="font-heading text-xl font-semibold tracking-tight text-white">{agent.name}</p>
+            <p className="mt-1 text-xs font-medium uppercase tracking-widest text-zinc-400">{agent.model}</p>
+            <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-zinc-400">{agent.system_prompt}</p>
+          </div>
+          <div className="flex flex-col sm:items-end">
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" aria-label={`Тестировать агента ${agent.name}`} onClick={onTest}>
+                <Play className="size-4" strokeWidth={2} />
+                Тестировать
+              </Button>
+              <Button type="button" variant="outline" onClick={onEdit}>
+                Править
+              </Button>
+              <form action={deleteAgent}>
+                <input type="hidden" name="id" value={agent.id} />
+                <Button
+                  type="submit"
+                  variant="dark"
+                  onClick={(event) => {
+                    if (!window.confirm(`Удалить агента ${agent.name}?`)) {
+                      event.preventDefault();
+                    }
+                  }}
+                >
+                  Удалить
+                </Button>
+              </form>
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2 overflow-hidden" aria-label="Каналы агента">
+              {CARD_CHANNELS.map(({ provider, label, activeClass }) => {
+                const active = Boolean(agent.active_channels?.[provider]);
+                return (
+                  <span
+                    key={provider}
+                    title={`${label}: ${active ? "включён" : "выключен"}`}
+                    className={`inline-flex ${active ? activeClass : "text-zinc-600 opacity-50"}`}
+                  >
+                    <ChannelIcon provider={provider} className="size-5" />
+                    <span className="sr-only">{`${label}: ${active ? "включён" : "выключен"}`}</span>
+                  </span>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      </div>
+    </li>
   );
 }
 
@@ -168,6 +269,42 @@ export function AgentManager({
     setDialogOpen(true);
   }
 
+  // Локальный порядок карточек: применяется сразу при перетаскивании, не дожидаясь ответа сервера.
+  const [orderIds, setOrderIds] = useState<string[] | null>(null);
+  const [reorderError, setReorderError] = useState<string | null>(null);
+  const orderedAgents = useMemo(() => {
+    if (!orderIds) return agents;
+    const position = new Map(orderIds.map((id, index) => [id, index]));
+    // Агенты вне локального порядка (только что созданные) остаются сверху.
+    return [...agents].sort((a, b) => (position.get(a.id) ?? -1) - (position.get(b.id) ?? -1));
+  }, [agents, orderIds]);
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+
+  async function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+    const ids = orderedAgents.map((agent) => agent.id);
+    const from = ids.indexOf(String(active.id));
+    const to = ids.indexOf(String(over.id));
+    if (from < 0 || to < 0) return;
+    const next = arrayMove(ids, from, to);
+    const previous = orderIds;
+    setOrderIds(next);
+    setReorderError(null);
+    try {
+      const result = await reorderAgents(next);
+      if (!result.ok) throw new Error(result.error ?? "Не удалось сохранить порядок.");
+      if (onSaved) onSaved();
+      else void swrMutate("/api/agents");
+    } catch (error) {
+      setOrderIds(previous);
+      setReorderError(error instanceof Error ? error.message : "Не удалось сохранить порядок.");
+    }
+  }
+
   function closeDialog() {
     if (pending) return;
     setDialogOpen(false);
@@ -191,52 +328,24 @@ export function AgentManager({
         </Button>
       </div>
 
+      {reorderError ? (
+        <p className="mt-4 rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-200">{reorderError}</p>
+      ) : null}
+
       {agents.length === 0 ? (
         <p className="mt-6 rounded-2xl border border-dashed border-zinc-800 bg-zinc-900 shadow-sm px-6 py-10 text-sm text-zinc-400">
           Агентов пока нет. Создайте первого, чтобы подключить канал или открыть симулятор.
         </p>
       ) : (
-        <ul className="mt-6 grid gap-4">
-          {agents.map((agent) => (
-            <li
-              key={agent.id}
-              className="rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md transition-colors duration-200 hover:border-zinc-600"
-            >
-              <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
-                <div className="min-w-0 flex-1">
-                  <p className="font-heading text-xl font-semibold tracking-tight text-white">{agent.name}</p>
-                  <p className="mt-1 text-xs font-medium uppercase tracking-widest text-zinc-400">{agent.model}</p>
-                  <p className="mt-3 line-clamp-3 whitespace-pre-wrap text-sm leading-6 text-zinc-400">
-                    {agent.system_prompt}
-                  </p>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Button type="button" aria-label={`Тестировать агента ${agent.name}`} onClick={() => setTesting(agent)}>
-                    <Play className="size-4" strokeWidth={2} />
-                    Тестировать
-                  </Button>
-                  <Button type="button" variant="outline" onClick={() => openEdit(agent)}>
-                    Править
-                  </Button>
-                  <form action={deleteAgent}>
-                    <input type="hidden" name="id" value={agent.id} />
-                    <Button
-                      type="submit"
-                      variant="dark"
-                      onClick={(event) => {
-                        if (!window.confirm(`Удалить агента ${agent.name}?`)) {
-                          event.preventDefault();
-                        }
-                      }}
-                    >
-                      Удалить
-                    </Button>
-                  </form>
-                </div>
-              </div>
-            </li>
-          ))}
-        </ul>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+          <SortableContext items={orderedAgents.map((agent) => agent.id)} strategy={verticalListSortingStrategy}>
+            <ul className="mt-6 grid gap-4">
+              {orderedAgents.map((agent) => (
+                <SortableAgentCard key={agent.id} agent={agent} onTest={() => setTesting(agent)} onEdit={() => openEdit(agent)} />
+              ))}
+            </ul>
+          </SortableContext>
+        </DndContext>
       )}
 
       {dialogOpen ? (
@@ -1524,48 +1633,73 @@ function FollowupField({
   );
 }
 
+const CREATIVITY_MODES = [
+  { value: "0.1", label: "Точный и строгий", hint: "Ответы строго по инструкции" },
+  { value: "0.7", label: "Сбалансированный", hint: "Естественная живая речь" },
+  { value: "0.9", label: "Креативный", hint: "Максимум свободы формулировок" },
+] as const;
+
+/** Старые произвольные значения температуры показываем ближайшим режимом, не переписывая их без действий пользователя. */
+function creativityModeFor(value: string) {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return CREATIVITY_MODES[1].value;
+  if (n < 0.45) return CREATIVITY_MODES[0].value;
+  if (n < 0.8) return CREATIVITY_MODES[1].value;
+  return CREATIVITY_MODES[2].value;
+}
+
 function CreativityField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const [open, setOpen] = useState(false);
+  const [hintOpen, setHintOpen] = useState(false);
+  const selected = creativityModeFor(value);
 
   return (
-    <label className="grid min-w-0 gap-2">
-      <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+    <div className="block text-sm font-medium text-zinc-300">
+      <span className="flex items-center gap-2">
         Креативность ответов
-        <button
-          type="button"
-          aria-expanded={open}
-          aria-label="Что значит креативность ответов"
-          className="grid h-4 w-4 shrink-0 place-items-center rounded-full border border-zinc-700 text-[10px] font-semibold normal-case tracking-normal text-zinc-400 transition-colors hover:border-zinc-400 hover:text-white"
-          onClick={(event) => {
-            event.preventDefault();
-            setOpen((current) => !current);
-          }}
-        >
-          ?
-        </button>
-      </span>
-      {open ? (
-        <span
-          role="tooltip"
-          className="rounded-xl bg-zinc-950 px-3 py-2.5 text-left text-xs leading-5 font-normal normal-case tracking-normal text-white"
-        >
-          0.0–0.2 — Точные и строгие ответы по инструкциям.
-          <br />
-          0.7 — Естественный баланс живой речи.
-          <br />
-          0.8–1.0 — Максимальная свобода и вариативность формулировок.
+        <span className="relative inline-flex">
+          <button
+            type="button"
+            aria-label="Что такое креативность ответов"
+            aria-expanded={hintOpen}
+            onClick={() => setHintOpen((open) => !open)}
+            onBlur={() => setHintOpen(false)}
+            className="flex size-5 items-center justify-center rounded-full border border-zinc-700 text-xs text-zinc-400 transition-colors hover:border-zinc-500 hover:text-white"
+          >
+            ?
+          </button>
+          {hintOpen ? (
+            <span
+              role="tooltip"
+              className="absolute left-7 top-1/2 z-20 w-72 -translate-y-1/2 whitespace-pre-line rounded-xl border border-zinc-800 bg-zinc-900 p-3 text-xs font-normal leading-5 text-zinc-300 shadow-lg"
+            >
+              Точный и строгий — агент отвечает строго по инструкциям, без лишних вольностей.
+              {"\n"}Сбалансированный — естественная, живая речь.
+              {"\n"}Креативный — максимальная свобода и разнообразие формулировок.
+            </span>
+          ) : null}
         </span>
-      ) : null}
-      <input
-        className={fieldClass}
-        name="temperature"
-        type="number"
-        min={0}
-        max={2}
-        step={0.1}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </label>
+      </span>
+      <input type="hidden" name="temperature" value={value} />
+      <div role="radiogroup" aria-label="Креативность ответов" className="mt-2 grid gap-2 sm:grid-cols-3">
+        {CREATIVITY_MODES.map((mode) => {
+          const active = mode.value === selected;
+          return (
+            <button
+              key={mode.value}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              onClick={() => onChange(mode.value)}
+              className={`rounded-xl border px-3 py-2.5 text-left transition-colors duration-200 ${
+                active ? "border-strike bg-strike/10 text-white" : "border-zinc-800 bg-black text-zinc-300 hover:border-zinc-600"
+              }`}
+            >
+              <span className="block text-sm font-medium">{mode.label}</span>
+              <span className="mt-0.5 block text-xs font-normal text-zinc-400">{mode.hint}</span>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }

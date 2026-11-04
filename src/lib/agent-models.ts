@@ -148,6 +148,8 @@ export function readWidgetSettings(source: Record<string, unknown> | null | unde
 
 export type AgentRecord = {
   id: string;
+  /** Позиция в списке (drag-and-drop), меньше — выше. */
+  order_index: number;
   name: string;
   system_prompt: string;
   model: string;
