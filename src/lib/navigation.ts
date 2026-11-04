@@ -14,7 +14,7 @@ export const mainNav: readonly NavItem[] = [
   { href: "/funnels", label: "Сайты", icon: "sites" },
   { href: "/ads", label: "Ads & Креативы", icon: "ads" },
   { href: "/outreach", label: "Рассылки", icon: "outreach" },
-  { href: "/smm", label: "SMM", icon: "smm", soon: true },
+  { href: "/smm", label: "SMM", icon: "smm" },
   { href: "/chats", label: "Чаты", icon: "chats" },
 ];
 
