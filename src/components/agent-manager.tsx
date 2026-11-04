@@ -122,7 +122,7 @@ function SortableAgentCard({ agent, onTest, onEdit }: { agent: AgentRecord; onTe
     <li
       ref={setNodeRef}
       style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`relative rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md transition-colors duration-200 hover:border-zinc-600 ${
+      className={`relative min-w-0 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md transition-colors duration-200 hover:border-zinc-600 ${
         isDragging ? "z-10 border-zinc-600 shadow-lg" : ""
       }`}
     >
@@ -1708,11 +1708,11 @@ function CreativityField({ value, onChange }: { value: string; onChange: (value:
               aria-checked={active}
               onClick={() => onChange(mode.value)}
               className={`rounded-xl border px-3 py-2.5 text-left transition-colors duration-200 ${
-                active ? "border-strike bg-strike/10 text-white" : "border-zinc-800 bg-black text-zinc-300 hover:border-zinc-600"
+                active ? "border-rose-500 bg-rose-50" : "border-gray-200 bg-[#ffffff] hover:bg-gray-50"
               }`}
             >
-              <span className="block text-sm font-medium">{mode.label}</span>
-              <span className="mt-0.5 block text-xs font-normal text-zinc-400">{mode.hint}</span>
+              <span className={`block text-sm font-medium ${active ? "text-rose-900" : "text-gray-900"}`}>{mode.label}</span>
+              <span className={`mt-0.5 block text-xs font-normal ${active ? "text-rose-700" : "text-gray-500"}`}>{mode.hint}</span>
             </button>
           );
         })}
