@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { CalendarDays, GripVertical, Globe, Maximize, Play, Trash } from "lucide-react";
 import {
@@ -379,6 +379,16 @@ export function AgentManager({
   );
 }
 
+/** Задержка первого включённого канала агента (WhatsApp → Telegram → Instagram → веб-виджет); 0, если все выключены. */
+function activeChannelDelay(agent: AgentRecord) {
+  const active = effectiveActiveChannels(agent);
+  if (active.whatsapp) return agent.channel_delays.whatsapp;
+  if (active.telegram) return agent.channel_delays.telegram;
+  if (active.instagram) return agent.channel_delays.instagram;
+  if (active.widget) return agent.channel_delays.web_widget;
+  return 0;
+}
+
 function SimulatorDialog({
   agent,
   agents,
@@ -422,7 +432,7 @@ function SimulatorDialog({
         <div className="min-h-0 flex-1">
           <PlaygroundChat
             key={agent.id}
-            agents={agents.map((item) => ({ id: item.id, name: item.name, model: item.model }))}
+            agents={agents.map((item) => ({ id: item.id, name: item.name, model: item.model, defaultDelay: activeChannelDelay(item) }))}
             initialAgentId={agent.id}
             loadError={null}
             embedded

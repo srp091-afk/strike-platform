@@ -11,7 +11,11 @@ type PlaygroundAgent = {
   id: string;
   name: string;
   model: string;
+  /** Задержка активного канала агента (сек): стартовое значение переключателя в симуляторе. */
+  defaultDelay?: number;
 };
+
+const DELAY_PRESETS = [0, 5, 10, 20];
 
 type TranscriptItem = {
   id: string;
@@ -42,6 +46,11 @@ export function PlaygroundChat({
   const [draft, setDraft] = useState("");
   const [typing, setTyping] = useState(false);
   const [ready, setReady] = useState(false);
+  // Ручной выбор задержки живёт только в состоянии симулятора и в БД не пишется.
+  const [manualDelays, setManualDelays] = useState<Record<string, number>>({});
+  const defaultDelay = Math.min(30, agents.find((agent) => agent.id === agentId)?.defaultDelay ?? 0);
+  const delay = manualDelays[agentId] ?? defaultDelay;
+  const delayOptions = [...new Set([...DELAY_PRESETS, defaultDelay])].sort((a, b) => a - b);
   const transcriptRef = useRef<HTMLDivElement>(null);
   const abortRef = useRef<AbortController | null>(null);
 
@@ -131,7 +140,7 @@ export function PlaygroundChat({
       const response = await fetch("/api/playground", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ agent_id: agentId, text, history }),
+        body: JSON.stringify({ agent_id: agentId, text, history, delay_seconds: delay }),
         signal: controller.signal,
       });
 
@@ -203,6 +212,32 @@ export function PlaygroundChat({
             />
           </div>
         </label>
+        <div className="flex items-center gap-2" role="radiogroup" aria-label="Задержка ответа">
+          <span className="shrink-0 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Задержка</span>
+          <div className="flex gap-1">
+            {delayOptions.map((seconds) => {
+              const selected = seconds === delay;
+              return (
+                <button
+                  key={seconds}
+                  type="button"
+                  role="radio"
+                  aria-checked={selected}
+                  disabled={typing}
+                  onClick={() => setManualDelays((current) => ({ ...current, [agentId]: seconds }))}
+                  className={cn(
+                    "h-8 min-w-9 rounded-lg border px-2 text-xs font-medium transition-colors disabled:opacity-50",
+                    selected
+                      ? "border-rose-500 bg-rose-50 text-rose-900"
+                      : "border-gray-200 bg-[#ffffff] text-gray-700 hover:bg-gray-50",
+                  )}
+                >
+                  {seconds}с
+                </button>
+              );
+            })}
+          </div>
+        </div>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={clearChat}>
             Очистить чат

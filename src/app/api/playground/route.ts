@@ -26,6 +26,8 @@ export async function POST(request: NextRequest) {
   const history = sanitizeHistory(record.history);
   // Какой канал симулируем: по умолчанию веб-виджет (самый близкий по формату).
   const channel = readSimulatedChannel(record.channel);
+  // Ручная задержка из окна симулятора (только для этого запроса, настройки агента не меняются).
+  const manualDelay = typeof record.delay_seconds === "number" && Number.isFinite(record.delay_seconds) ? record.delay_seconds : null;
 
   if (!agentId) {
     return Response.json({ error: "Выбери агента." }, { status: 400 });
@@ -78,7 +80,8 @@ export async function POST(request: NextRequest) {
         const reply = completion.choices[0]?.message?.content?.trim() ?? "";
         const chunks = replyChunks(reply, agent.split_messages);
         // Задержка выбранного канала, потолок 30 с: симулятор отвечает в рамках одного запроса.
-        const responseDelayMs = Math.min(WIDGET_DELAY_CAP_SECONDS, readChannelDelays(agent.channel_delays)[channel]) * 1000;
+        const configuredDelay = manualDelay ?? readChannelDelays(agent.channel_delays)[channel];
+        const responseDelayMs = Math.min(WIDGET_DELAY_CAP_SECONDS, Math.max(0, Math.round(configuredDelay))) * 1000;
         if (chunks.length === 0) {
           send({ type: "error", message: "Модель вернула пустой ответ." });
           return;
