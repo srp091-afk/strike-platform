@@ -3,7 +3,7 @@ import { Suspense } from "react";
 import { io } from "next/cache";
 
 import { DashboardView } from "@/components/dashboard/dashboard-view";
-import { getDashboardCounts } from "@/lib/agents";
+import { getDashboardData } from "@/lib/dashboard-data";
 
 export const metadata: Metadata = {
   title: "Дашборд",
@@ -11,7 +11,7 @@ export const metadata: Metadata = {
 
 export default function DashboardPage() {
   return (
-    <Suspense fallback={<DashboardView dialogs={0} />}>
+    <Suspense fallback={<DashboardView data={null} />}>
       <LiveDashboard />
     </Suspense>
   );
@@ -19,6 +19,6 @@ export default function DashboardPage() {
 
 async function LiveDashboard() {
   await io();
-  const counts = await getDashboardCounts();
-  return <DashboardView dialogs={counts.chats} error={counts.error} />;
+  const data = await getDashboardData();
+  return <DashboardView data={data} />;
 }
