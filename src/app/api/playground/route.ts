@@ -75,6 +75,8 @@ export async function POST(request: NextRequest) {
 
         const reply = completion.choices[0]?.message?.content?.trim() ?? "";
         const chunks = replyChunks(reply, agent.split_messages);
+        // Потолок 30 с на сообщение, чтобы симулятор укладывался в maxDuration маршрута.
+        const responseDelayMs = Math.min(30, Math.max(0, Number(agent.response_delay) || 0)) * 1000;
         if (chunks.length === 0) {
           send({ type: "error", message: "Модель вернула пустой ответ." });
           return;
@@ -83,6 +85,8 @@ export async function POST(request: NextRequest) {
         for (const [index, content] of chunks.entries()) {
           // Та же пауза «на печать», что и в боевых каналах.
           if (index > 0) await sleep(splitPauseMs());
+          // Задержка ответа из настроек агента: как в WhatsApp/Telegram, перед каждым сообщением.
+          if (responseDelayMs > 0) await sleep(responseDelayMs);
           send({ type: "chunk", index, content });
         }
         send({ type: "done" });
@@ -110,6 +114,13 @@ async function loadPlaygroundAgent(
   supabase: ReturnType<typeof createSupabaseAdminClient>,
   agentId: string,
 ) {
+  const withDelay = await supabase
+    .from("agents")
+    .select("id, name, system_prompt, model, temperature, is_active, split_messages, response_delay")
+    .eq("id", agentId)
+    .maybeSingle();
+  if (!withDelay.error) return withDelay;
+
   const withSplit = await supabase
     .from("agents")
     .select("id, name, system_prompt, model, temperature, is_active, split_messages")
@@ -117,7 +128,7 @@ async function loadPlaygroundAgent(
     .maybeSingle();
 
   if (!withSplit.error || !withSplit.error.message.includes("split_messages")) {
-    return withSplit;
+    return { data: withSplit.data ? { ...withSplit.data, response_delay: 0 } : null, error: withSplit.error };
   }
 
   const fallback = await supabase
@@ -127,7 +138,7 @@ async function loadPlaygroundAgent(
     .maybeSingle();
 
   return {
-    data: fallback.data ? { ...fallback.data, split_messages: null } : null,
+    data: fallback.data ? { ...fallback.data, split_messages: null, response_delay: 0 } : null,
     error: fallback.error,
   };
 }
