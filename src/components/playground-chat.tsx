@@ -55,19 +55,23 @@ export function PlaygroundChat({
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
-    const stored = window.sessionStorage.getItem(STORAGE_KEY);
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as { items?: TranscriptItem[]; context?: number };
-        if (Array.isArray(parsed.items)) {
-          setItems(parsed.items.filter((item) => item.kind === "reset" || item.kind === "error" || normalizeChunk(item.content)));
+    // Восстановление из sessionStorage после гидратации (асинхронно, чтобы не было setState прямо в теле эффекта).
+    const frame = requestAnimationFrame(() => {
+      const stored = window.sessionStorage.getItem(STORAGE_KEY);
+      if (stored) {
+        try {
+          const parsed = JSON.parse(stored) as { items?: TranscriptItem[]; context?: number };
+          if (Array.isArray(parsed.items)) {
+            setItems(parsed.items.filter((item) => item.kind === "reset" || item.kind === "error" || normalizeChunk(item.content)));
+          }
+          if (typeof parsed.context === "number" && parsed.context > 0) setContext(parsed.context);
+        } catch {
+          window.sessionStorage.removeItem(STORAGE_KEY);
         }
-        if (typeof parsed.context === "number" && parsed.context > 0) setContext(parsed.context);
-      } catch {
-        window.sessionStorage.removeItem(STORAGE_KEY);
       }
-    }
-    setReady(true);
+      setReady(true);
+    });
+    return () => cancelAnimationFrame(frame);
   }, []);
 
   useEffect(() => {
@@ -76,9 +80,9 @@ export function PlaygroundChat({
   }, [items, context, ready]);
 
   useEffect(() => {
-    if (initialAgentId && agents.some((agent) => agent.id === initialAgentId)) {
-      setAgentId(initialAgentId);
-    }
+    if (!initialAgentId || !agents.some((agent) => agent.id === initialAgentId)) return;
+    const frame = requestAnimationFrame(() => setAgentId(initialAgentId));
+    return () => cancelAnimationFrame(frame);
   }, [agents, initialAgentId]);
 
   useEffect(() => {
