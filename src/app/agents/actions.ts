@@ -7,7 +7,7 @@ import {
   isAgentModel,
   readHandoffDuration,
   readMessageLimit,
-  readResponseDelay,
+  readChannelDelays,
   readSplitMessages,
   type ActiveChannels,
   type HandoffDuration,
@@ -30,7 +30,7 @@ function readAgentFields(formData: FormData) {
   const systemPrompt = String(formData.get("system_prompt") ?? "").trim();
   const model = String(formData.get("model") ?? "").trim();
   const temperature = Number(formData.get("temperature") ?? 0.7);
-  const responseDelay = readDelay(formData.get("response_delay"));
+  const channelDelays = readDelays(formData.get("channel_delays"));
   const humanHandoff = readHandoff(formData.get("human_handoff_duration"));
   const agentMessageLimit = readLimit(formData.get("limit_agent_messages"));
   const clientMessageLimit = readLimit(formData.get("limit_client_messages"));
@@ -63,10 +63,6 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "Температура должна быть от 0 до 2." };
   }
 
-  if (responseDelay === null) {
-    return { ok: false as const, error: "Задержка должна быть не меньше 0 секунд." };
-  }
-
   if (agentMessageLimit === null || clientMessageLimit === null || totalMessageLimit === null) {
     return { ok: false as const, error: "Лимит сообщений должен быть целым числом от 0." };
   }
@@ -97,7 +93,7 @@ function readAgentFields(formData: FormData) {
     systemPrompt,
     model,
     temperature,
-    responseDelay,
+    channelDelays,
     humanHandoff,
     agentMessageLimit,
     clientMessageLimit,
@@ -137,11 +133,14 @@ function readHandoff(value: FormDataEntryValue | null): HandoffDuration {
   return readHandoffDuration(value);
 }
 
-function readDelay(value: FormDataEntryValue | null) {
-  if (typeof value !== "string" || !value.trim()) return 0;
-  const delay = Number(value);
-  if (!Number.isFinite(delay) || delay < 0) return null;
-  return readResponseDelay(delay);
+/** JSON {"whatsapp": 0, "telegram": 0, "instagram": 0, "web_widget": 0}; значения приводятся к допустимым границам. */
+function readDelays(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  try {
+    return readChannelDelays(JSON.parse(value));
+  } catch {
+    return null;
+  }
 }
 
 function readChannels(value: FormDataEntryValue | null): ActiveChannels {
@@ -187,7 +186,8 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
       system_prompt: fields.systemPrompt,
       model: fields.model,
       temperature: fields.temperature,
-      response_delay: fields.responseDelay,
+      // Поле отсутствует только у старых клиентов: тогда сохранённые задержки не трогаем.
+      ...(fields.channelDelays ? { channel_delays: fields.channelDelays } : {}),
       human_handoff_duration: fields.humanHandoff,
       limit_agent_messages: fields.agentMessageLimit,
       limit_client_messages: fields.clientMessageLimit,

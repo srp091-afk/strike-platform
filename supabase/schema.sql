@@ -66,7 +66,7 @@ create table if not exists public.agents (
   temperature numeric(3, 2) not null default 0.70,
   is_active boolean not null default true,
   active_channels jsonb not null default '{"whatsapp": false, "telegram": false, "instagram": false}'::jsonb,
-  response_delay integer not null default 0,
+  channel_delays jsonb not null default '{"whatsapp": 0, "telegram": 0, "instagram": 0, "web_widget": 0}'::jsonb,
   human_handoff_duration text not null default '1_hour',
   limit_agent_messages integer not null default 0,
   limit_client_messages integer not null default 0,
@@ -102,7 +102,7 @@ create table if not exists public.agents (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint agents_temperature_range check (temperature >= 0 and temperature <= 2),
-  constraint agents_response_delay_nonnegative check (response_delay >= 0),
+
   constraint agents_message_limits_nonnegative check (
     limit_agent_messages >= 0
     and limit_client_messages >= 0

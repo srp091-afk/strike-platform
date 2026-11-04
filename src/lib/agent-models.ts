@@ -156,7 +156,7 @@ export type AgentRecord = {
   temperature: number;
   is_active: boolean;
   active_channels: ActiveChannels;
-  response_delay: number;
+  channel_delays: ChannelDelays;
   human_handoff_duration: HandoffDuration;
   limit_agent_messages: number;
   limit_client_messages: number;
@@ -279,10 +279,35 @@ export function readMessageLimit(value: unknown) {
   return Math.round(limit);
 }
 
-export function readResponseDelay(value: unknown) {
+/** Ключи задержек по каналам (в JSONB agents.channel_delays). Веб-виджет там называется web_widget. */
+export type ChannelDelayKey = "whatsapp" | "telegram" | "instagram" | "web_widget";
+export type ChannelDelays = Record<ChannelDelayKey, number>;
+
+export const DEFAULT_CHANNEL_DELAYS: ChannelDelays = { whatsapp: 0, telegram: 0, instagram: 0, web_widget: 0 };
+
+/** Верхняя граница для WhatsApp/Telegram/Instagram: маршруты вебхуков живут до 300 с. */
+export const MAX_CHANNEL_DELAY_SECONDS = 120;
+/** Веб-виджет и симулятор отвечают в рамках одного HTTP-запроса, поэтому ждут не дольше 30 с. */
+export const WIDGET_DELAY_CAP_SECONDS = 30;
+
+export function readDelaySeconds(value: unknown, max = MAX_CHANNEL_DELAY_SECONDS) {
   const delay = Number(value);
   if (!Number.isFinite(delay) || delay < 0) return 0;
-  return Math.round(delay);
+  return Math.min(max, Math.round(delay));
+}
+
+export function readChannelDelays(value: unknown): ChannelDelays {
+  const record = value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
+  return {
+    whatsapp: readDelaySeconds(record.whatsapp),
+    telegram: readDelaySeconds(record.telegram),
+    instagram: readDelaySeconds(record.instagram),
+    web_widget: readDelaySeconds(record.web_widget, WIDGET_DELAY_CAP_SECONDS),
+  };
+}
+
+export function sameChannelDelays(a: ChannelDelays, b: ChannelDelays) {
+  return a.whatsapp === b.whatsapp && a.telegram === b.telegram && a.instagram === b.instagram && a.web_widget === b.web_widget;
 }
 
 export function readSplitMessages(value: unknown) {

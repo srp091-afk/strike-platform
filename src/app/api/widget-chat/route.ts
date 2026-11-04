@@ -1,8 +1,8 @@
 import type { NextRequest } from "next/server";
 
-import { normalizeAgentModel, readActiveChannels } from "@/lib/agent-models";
+import { normalizeAgentModel, readActiveChannels, readChannelDelays, WIDGET_DELAY_CAP_SECONDS } from "@/lib/agent-models";
 import { getOpenAI } from "@/lib/openai";
-import { replyChunks, systemPromptWithSplit } from "@/lib/reply";
+import { replyChunks, sleep, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { appendWidgetReply, openWidgetThread, readVisitorId, type WidgetThread } from "@/lib/widget-inbox";
 
@@ -51,10 +51,10 @@ export async function POST(request: NextRequest) {
   const supabase = createSupabaseAdminClient();
   const withWidget = await supabase
     .from("agents")
-    .select("id, user_id, system_prompt, model, temperature, is_active, active_channels, split_messages, widget_greeting, widget_operator_name")
+    .select("id, user_id, system_prompt, model, temperature, is_active, active_channels, split_messages, channel_delays, widget_greeting, widget_operator_name")
     .eq("id", agentId)
     .maybeSingle();
-  const loaded = withWidget.error?.message.includes("widget_")
+  const loaded = withWidget.error?.message.includes("widget_") || withWidget.error?.message.includes("channel_delays")
     ? await supabase
         .from("agents")
         .select("id, user_id, system_prompt, model, temperature, is_active, active_channels, split_messages")
@@ -110,6 +110,9 @@ export async function POST(request: NextRequest) {
     if (replies.length === 0) {
       return Response.json({ error: "Модель вернула пустой ответ." }, { status: 502 });
     }
+    // Задержка веб-виджета (channel_delays.web_widget), потолок 30 с: пока ждём, виджет показывает индикатор набора.
+    const delaySeconds = Math.min(WIDGET_DELAY_CAP_SECONDS, readChannelDelays((agent as { channel_delays?: unknown }).channel_delays).web_widget);
+    if (delaySeconds > 0) await sleep(delaySeconds * 1000);
     if (thread) {
       try {
         // Каждая часть — отдельное сообщение в инбоксе, как и в остальных каналах.

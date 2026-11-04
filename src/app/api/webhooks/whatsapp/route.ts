@@ -1,7 +1,7 @@
 import { after, type NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
-import { normalizeAgentModel, readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
+import { normalizeAgentModel, readChannelDelays, readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
 import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { markAgentReplied, markClientReplied } from "@/lib/followup";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
@@ -246,7 +246,7 @@ async function processIncomingAi(job: IncomingJob) {
   }
 
   try {
-    await new Promise((resolve) => setTimeout(resolve, readDebounceMs(agent.response_delay)));
+    await new Promise((resolve) => setTimeout(resolve, INBOUND_WINDOW_MS));
     if (!(await readBotActive(supabase, job.conversationId))) {
       await logChatPause(supabase, job.conversationId);
       return;
@@ -298,7 +298,8 @@ async function processIncomingAi(job: IncomingJob) {
     if (!reply) throw new Error("Модель вернула пустой ответ.");
     if (!completion.pausedByTool && !(await readBotActive(supabase, job.conversationId))) return;
 
-    const responseDelay = Number(agent.response_delay);
+    // Задержка канала — одна пауза перед отправкой ответа (дальше только пауза «на печать» между частями).
+    const responseDelay = readChannelDelays(agent.channel_delays).whatsapp;
     const chunks = replyChunks(reply, agent.split_messages);
     if (chunks.length === 0) throw new Error("Модель вернула пустой ответ.");
 
@@ -310,9 +311,7 @@ async function processIncomingAi(job: IncomingJob) {
       try {
         // Каждое следующее сообщение — после паузы «на печать» (2–4 с), чтобы не слать пачкой и не ловить бан.
         if (index > 0) await sleep(splitPauseMs());
-        if (responseDelay > 0) {
-          await new Promise((resolve) => setTimeout(resolve, responseDelay * 1000));
-        }
+        else if (responseDelay > 0) await sleep(responseDelay * 1000);
         outboundId = await sendGreenMessage(job.from, chunk, job.credentials);
         delivered = true;
       } catch (error) {
@@ -753,13 +752,14 @@ async function loadWhatsAppAgent(
 ) {
   const withChannels = await supabase
     .from("agents")
-    .select("id, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages, limit_agent_messages, limit_client_messages, limit_total_messages")
+    .select("id, system_prompt, model, temperature, is_active, active_channels, channel_delays, split_messages, limit_agent_messages, limit_client_messages, limit_total_messages")
     .eq("id", agentId)
     .maybeSingle();
 
   if (
     !withChannels.error ||
-    (!withChannels.error.message.includes("split_messages") &&
+    (!withChannels.error.message.includes("channel_delays") &&
+      !withChannels.error.message.includes("split_messages") &&
       !withChannels.error.message.includes("limit_agent_messages"))
   ) {
     return withChannels;
@@ -767,7 +767,7 @@ async function loadWhatsAppAgent(
 
   const fallback = await supabase
     .from("agents")
-    .select("id, system_prompt, model, temperature, is_active, active_channels, response_delay")
+    .select("id, system_prompt, model, temperature, is_active, active_channels")
     .eq("id", agentId)
     .maybeSingle();
 
@@ -775,6 +775,7 @@ async function loadWhatsAppAgent(
     data: fallback.data
       ? {
           ...fallback.data,
+          channel_delays: null,
           split_messages: false,
           limit_agent_messages: 0,
           limit_client_messages: 0,
@@ -865,11 +866,8 @@ async function releaseProcessingLock(
   if (error) console.error("[whatsapp webhook] unlock", error.message);
 }
 
-function readDebounceMs(value: unknown) {
-  const seconds = Number(value);
-  if (!Number.isFinite(seconds) || seconds <= 0) return 8000;
-  return seconds * 1000;
-}
+/** Окно тишины: ждём, пока клиент допишет подряд идущие сообщения. Не зависит от задержки ответа. */
+const INBOUND_WINDOW_MS = 8000;
 
 function collapseTrailingUserMessages(history: { role?: string; content?: string }[]) {
   const dialogue = [...history]

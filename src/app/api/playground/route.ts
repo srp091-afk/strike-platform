@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 
-import { normalizeAgentModel } from "@/lib/agent-models";
+import { normalizeAgentModel, readChannelDelays, WIDGET_DELAY_CAP_SECONDS, type ChannelDelayKey } from "@/lib/agent-models";
 import { getOpenAI } from "@/lib/openai";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -24,6 +24,8 @@ export async function POST(request: NextRequest) {
   const agentId = stringValue(record.agent_id);
   const text = stringValue(record.text);
   const history = sanitizeHistory(record.history);
+  // Какой канал симулируем: по умолчанию веб-виджет (самый близкий по формату).
+  const channel = readSimulatedChannel(record.channel);
 
   if (!agentId) {
     return Response.json({ error: "Выбери агента." }, { status: 400 });
@@ -75,8 +77,8 @@ export async function POST(request: NextRequest) {
 
         const reply = completion.choices[0]?.message?.content?.trim() ?? "";
         const chunks = replyChunks(reply, agent.split_messages);
-        // Потолок 30 с на сообщение, чтобы симулятор укладывался в maxDuration маршрута.
-        const responseDelayMs = Math.min(30, Math.max(0, Number(agent.response_delay) || 0)) * 1000;
+        // Задержка выбранного канала, потолок 30 с: симулятор отвечает в рамках одного запроса.
+        const responseDelayMs = Math.min(WIDGET_DELAY_CAP_SECONDS, readChannelDelays(agent.channel_delays)[channel]) * 1000;
         if (chunks.length === 0) {
           send({ type: "error", message: "Модель вернула пустой ответ." });
           return;
@@ -84,9 +86,9 @@ export async function POST(request: NextRequest) {
 
         for (const [index, content] of chunks.entries()) {
           // Та же пауза «на печать», что и в боевых каналах.
+          // Как в боевых каналах: одна пауза перед ответом, дальше — пауза «на печать» между частями.
           if (index > 0) await sleep(splitPauseMs());
-          // Задержка ответа из настроек агента: как в WhatsApp/Telegram, перед каждым сообщением.
-          if (responseDelayMs > 0) await sleep(responseDelayMs);
+          else if (responseDelayMs > 0) await sleep(responseDelayMs);
           send({ type: "chunk", index, content });
         }
         send({ type: "done" });
@@ -116,7 +118,7 @@ async function loadPlaygroundAgent(
 ) {
   const withDelay = await supabase
     .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active, split_messages, response_delay")
+    .select("id, name, system_prompt, model, temperature, is_active, split_messages, channel_delays")
     .eq("id", agentId)
     .maybeSingle();
   if (!withDelay.error) return withDelay;
@@ -128,7 +130,7 @@ async function loadPlaygroundAgent(
     .maybeSingle();
 
   if (!withSplit.error || !withSplit.error.message.includes("split_messages")) {
-    return { data: withSplit.data ? { ...withSplit.data, response_delay: 0 } : null, error: withSplit.error };
+    return { data: withSplit.data ? { ...withSplit.data, channel_delays: null } : null, error: withSplit.error };
   }
 
   const fallback = await supabase
@@ -138,7 +140,7 @@ async function loadPlaygroundAgent(
     .maybeSingle();
 
   return {
-    data: fallback.data ? { ...fallback.data, split_messages: null, response_delay: 0 } : null,
+    data: fallback.data ? { ...fallback.data, split_messages: null, channel_delays: null } : null,
     error: fallback.error,
   };
 }
@@ -172,4 +174,8 @@ function asRecord(value: unknown): Record<string, unknown> {
 function stringValue(value: unknown) {
   if (typeof value === "string") return value.trim();
   return "";
+}
+
+function readSimulatedChannel(value: unknown): ChannelDelayKey {
+  return value === "whatsapp" || value === "telegram" || value === "instagram" ? value : "web_widget";
 }

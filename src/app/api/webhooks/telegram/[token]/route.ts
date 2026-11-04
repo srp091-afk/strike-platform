@@ -1,6 +1,6 @@
 import type { NextRequest } from "next/server";
 
-import { normalizeAgentModel, readMessageLimit } from "@/lib/agent-models";
+import { normalizeAgentModel, readChannelDelays, readMessageLimit } from "@/lib/agent-models";
 import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { markAgentReplied, markClientReplied } from "@/lib/followup";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
@@ -28,13 +28,19 @@ async function handleUpdate(token: string, body: unknown) {
   if (!message) return;
 
   const supabase = createSupabaseAdminClient();
-  const { data: agent, error } = await supabase
+  const columns =
+    "id, user_id, system_prompt, model, temperature, is_active, active_channels, split_messages, limit_agent_messages, limit_client_messages, limit_total_messages, tg_bot_token, tg_is_active";
+  const withDelays = await supabase
     .from("agents")
-    .select(
-      "id, user_id, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages, limit_agent_messages, limit_client_messages, limit_total_messages, tg_bot_token, tg_is_active",
-    )
+    .select(`${columns}, channel_delays`)
     .eq("tg_bot_token", token)
     .maybeSingle();
+  // Пока миграция channel_delays не применена, бот продолжает отвечать без задержки.
+  const loaded = withDelays.error?.message.includes("channel_delays")
+    ? await supabase.from("agents").select(columns).eq("tg_bot_token", token).maybeSingle()
+    : withDelays;
+  const agent = loaded.data as ((typeof withDelays)["data"] & { channel_delays?: unknown }) | null;
+  const error = loaded.error;
 
   if (error) throw new Error(error.message);
   if (!agent?.user_id || !agent.tg_bot_token) return;
@@ -154,7 +160,8 @@ async function handleUpdate(token: string, body: unknown) {
   const reply = completion.text;
   if (!reply) return;
 
-  const responseDelay = Number(agent.response_delay);
+  // Задержка канала: одна пауза перед отправкой ответа; между частями — только пауза «на печать».
+  const responseDelay = readChannelDelays(agent.channel_delays).telegram;
   const chunks = replyChunks(reply, agent.split_messages);
   let preview = chunks[0] ?? reply;
   let repliedOk = false;
@@ -164,9 +171,7 @@ async function handleUpdate(token: string, body: unknown) {
     try {
       // Пауза «на печать» между сообщениями одного ответа (2–4 с).
       if (index > 0) await sleep(splitPauseMs());
-      if (responseDelay > 0) {
-        await new Promise((resolve) => setTimeout(resolve, responseDelay * 1000));
-      }
+      else if (responseDelay > 0) await sleep(responseDelay * 1000);
       let response = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },

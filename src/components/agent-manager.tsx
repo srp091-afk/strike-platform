@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { CalendarDays, GripVertical, Globe, Maximize, Play, Trash } from "lucide-react";
 import {
@@ -54,6 +54,11 @@ import {
   isTelegramConnected,
   normalizeAgentModel,
   readWidgetSettings,
+  DEFAULT_CHANNEL_DELAYS,
+  MAX_CHANNEL_DELAY_SECONDS,
+  WIDGET_DELAY_CAP_SECONDS,
+  sameChannelDelays,
+  type ChannelDelays,
   telegramChannelLabel,
   type ActiveChannels,
   type AgentRecord,
@@ -543,7 +548,7 @@ function AgentDialog({
         whatsapp: Boolean(current.wa_instance_id || current.wa_phone_number || editing?.waIsActive) && current.active_channels.whatsapp,
       }),
     );
-    data.set("response_delay", current.response_delay);
+    data.set("channel_delays", JSON.stringify(current.channel_delays));
     data.set("human_handoff_duration", current.human_handoff_duration);
     data.set("telegram_chat_id", current.telegram_chat_id);
     data.set("limit_agent_messages", current.limit_agent_messages);
@@ -706,6 +711,8 @@ function AgentDialog({
                     greenDefaults={greenDefaults}
                     channels={draft.active_channels}
                     onChannelsChange={(active_channels) => patchDraft({ active_channels })}
+                    delays={draft.channel_delays}
+                    onDelaysChange={(channel_delays) => patchDraft({ channel_delays })}
                     onWhatsAppCredentials={(credentials) =>
                       patchDraft({
                         wa_instance_id: credentials.instanceId,
@@ -726,10 +733,6 @@ function AgentDialog({
 
                 <TabsContent value="behavior" forceMount className="data-[state=inactive]:hidden">
                   <div className="grid content-start gap-6">
-                    <ResponseDelayField
-                      value={draft.response_delay}
-                      onChange={(response_delay) => patchDraft({ response_delay })}
-                    />
                     <HumanHandoffField
                       value={draft.human_handoff_duration}
                       onChange={(human_handoff_duration) => patchDraft({ human_handoff_duration })}
@@ -774,7 +777,7 @@ type AgentDraft = {
   temperature: string;
   system_prompt: string;
   active_channels: ActiveChannels;
-  response_delay: string;
+  channel_delays: ChannelDelays;
   human_handoff_duration: HandoffDuration;
   telegram_chat_id: string;
   limit_agent_messages: string;
@@ -797,7 +800,7 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     temperature: String(agent?.temperature ?? 0.7),
     system_prompt: agent?.system_prompt ?? "",
     active_channels: { ...(agent?.active_channels ?? DEFAULT_ACTIVE_CHANNELS) },
-    response_delay: String(agent?.response_delay ?? 0),
+    channel_delays: { ...(agent?.channel_delays ?? DEFAULT_CHANNEL_DELAYS) },
     human_handoff_duration: agent?.human_handoff_duration ?? "1_hour",
     telegram_chat_id: agent?.telegram_chat_id ?? "",
     limit_agent_messages: String(agent?.limit_agent_messages ?? 0),
@@ -827,7 +830,7 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     sameNumber(left.followup_interval_hours, right.followup_interval_hours) &&
     sameNumber(left.followup_max_count, right.followup_max_count) &&
     sameNumber(left.temperature, right.temperature) &&
-    sameNumber(left.response_delay, right.response_delay) &&
+    sameChannelDelays(left.channel_delays, right.channel_delays) &&
     sameNumber(left.limit_agent_messages, right.limit_agent_messages) &&
     sameNumber(left.limit_client_messages, right.limit_client_messages) &&
     sameNumber(left.limit_total_messages, right.limit_total_messages) &&
@@ -958,6 +961,8 @@ function ChannelSettings({
   greenDefaults,
   channels,
   onChannelsChange,
+  delays,
+  onDelaysChange,
   onWhatsAppCredentials,
   onWhatsAppPhone,
   onWhatsAppCleared,
@@ -973,6 +978,8 @@ function ChannelSettings({
   greenDefaults: GreenDefaults;
   channels: ActiveChannels;
   onChannelsChange: (channels: ActiveChannels) => void;
+  delays: ChannelDelays;
+  onDelaysChange: (delays: ChannelDelays) => void;
   onWhatsAppCredentials: (credentials: GreenDefaults) => void;
   onWhatsAppPhone: (phone: string) => void;
   onWhatsAppCleared: () => void;
@@ -1018,6 +1025,7 @@ function ChannelSettings({
           telegram: telegramConnected && channels.telegram,
         })}
       />
+      <input type="hidden" name="channel_delays" value={JSON.stringify(delays)} />
       <input type="hidden" name="wa_instance_id" value={credentials.instanceId} />
       <input type="hidden" name="wa_api_token" value={credentials.apiToken} />
       <input type="hidden" name="wa_phone_number" value={phone} />
@@ -1039,6 +1047,9 @@ function ChannelSettings({
               title={whatsappConnected ? undefined : "Сначала подключите номер WhatsApp"}
             />
           </label>
+          {whatsappConnected && channels.whatsapp ? (
+            <ChannelDelay value={delays.whatsapp} onChange={(whatsapp) => onDelaysChange({ ...delays, whatsapp })} />
+          ) : null}
           <WhatsAppChannel
             agentId={agentId}
             instanceId={credentials.instanceId}
@@ -1065,9 +1076,13 @@ function ChannelSettings({
               title={telegramConnected ? undefined : "Сначала подключите Telegram"}
             />
           </label>
+          {telegramConnected && channels.telegram ? (
+            <ChannelDelay value={delays.telegram} onChange={(telegram) => onDelaysChange({ ...delays, telegram })} />
+          ) : null}
           <TelegramChannel agent={agent} connecting={connectingChannel === "telegram"} onConnect={() => void handleConnect("telegram")} />
         </div>
-        <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+        <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+        <label className="flex items-center justify-between gap-3">
           <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
             <span className={`grid size-9 place-items-center rounded-xl ${channelTone.instagram}`}>
               <ChannelIcon provider="instagram" className="size-4" />
@@ -1080,6 +1095,10 @@ function ChannelSettings({
             aria-label="Instagram"
           />
         </label>
+        {channels.instagram ? (
+          <ChannelDelay value={delays.instagram} onChange={(instagram) => onDelaysChange({ ...delays, instagram })} />
+        ) : null}
+        </div>
         <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
           <label className="flex items-center justify-between gap-3">
             <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
@@ -1094,6 +1113,13 @@ function ChannelSettings({
               aria-label="Web Widget"
             />
           </label>
+          {channels.widget ? (
+            <ChannelDelay
+              value={delays.web_widget}
+              max={WIDGET_DELAY_CAP_SECONDS}
+              onChange={(web_widget) => onDelaysChange({ ...delays, web_widget })}
+            />
+          ) : null}
           <button
             type="button"
             className="w-full rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
@@ -1343,66 +1369,49 @@ function DisconnectButton({
   );
 }
 
-const responseDelayPresets = [0, 10, 20, 30, 60];
+const channelDelayPresets = [0, 10, 20, 30, 60];
 
-function ResponseDelayField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const selected = Number(value);
+/** Компактная настройка задержки ответа внутри карточки канала (показывается, когда канал включён). */
+function ChannelDelay({ value, onChange, max = MAX_CHANNEL_DELAY_SECONDS }: { value: number; onChange: (value: number) => void; max?: number }) {
+  const presets = channelDelayPresets.filter((preset) => preset <= max);
+  const set = (next: number) => onChange(Math.min(max, Math.max(0, Math.round(Number.isFinite(next) ? next : 0))));
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <h3 className="font-heading text-lg font-semibold text-white">Задержка ответа</h3>
-      <label className="grid gap-2">
-        <span className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-          Задержка (в секундах)
-          <button
-            type="button"
-            aria-expanded={open}
-            aria-label="Что значит задержка ответа"
-            className="grid h-4 w-4 shrink-0 place-items-center rounded-full border border-zinc-700 text-[10px] font-semibold normal-case tracking-normal text-zinc-400 transition-colors hover:border-zinc-400 hover:text-white"
-            onClick={(event) => {
-              event.preventDefault();
-              setOpen((current) => !current);
-            }}
-          >
-            ?
-          </button>
-        </span>
-        {open ? (
-          <span
-            role="tooltip"
-            className="rounded-xl bg-zinc-950 px-3 py-2.5 text-left text-xs leading-5 font-normal normal-case tracking-normal text-white"
-          >
-            Бот ждёт это время и склеивает сообщения, которые клиент отправил подряд. 0 сек — пауза 8 секунд. Если значение больше нуля, та же пауза ещё раз стоит перед отправкой каждого сообщения.
-          </span>
-        ) : null}
+    <div className="flex flex-wrap items-center gap-x-3 gap-y-2 rounded-lg bg-zinc-800/40 px-3 py-2.5">
+      <label className="flex items-center gap-2 text-xs font-medium text-zinc-300">
+        Задержка ответа
         <input
-          className={fieldClass}
-          name="response_delay"
           type="number"
           min={0}
+          max={max}
           step={1}
           value={value}
-          onChange={(event) => onChange(event.target.value)}
+          aria-label="Задержка ответа в секундах"
+          onChange={(event) => set(Number(event.target.value))}
+          className="w-16 rounded-lg border border-zinc-800 bg-black px-2 py-1 text-center text-sm text-white outline-none transition-colors hover:border-zinc-700 focus:border-white"
         />
+        <span className="text-zinc-400">сек</span>
       </label>
-      <div className="flex flex-wrap gap-2">
-        {responseDelayPresets.map((preset) => (
-          <Button
+      <div className="flex flex-wrap gap-1.5">
+        {presets.map((preset) => (
+          <button
             key={preset}
             type="button"
-            size="sm"
-            variant={selected === preset ? "dark" : "outline"}
-            onClick={() => onChange(String(preset))}
+            onClick={() => set(preset)}
+            className={`rounded-md border px-2 py-0.5 text-xs transition-colors ${
+              value === preset ? "border-strike bg-strike/10 text-white" : "border-zinc-700 text-zinc-400 hover:border-zinc-500 hover:text-white"
+            }`}
           >
-            {preset} сек
-          </Button>
+            {preset}
+          </button>
         ))}
       </div>
-    </section>
+      <p className="basis-full text-[11px] leading-4 text-zinc-400">
+        Пауза перед отправкой ответа{max < MAX_CHANNEL_DELAY_SECONDS ? ` (не больше ${max} с)` : ""}. На это время клиент видит, что агент печатает.
+      </p>
+    </div>
   );
 }
-
 function HumanHandoffField({
   value,
   onChange,

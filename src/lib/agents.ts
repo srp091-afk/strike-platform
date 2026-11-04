@@ -9,7 +9,7 @@ import {
   readFollowupMaxCount,
   readHandoffDuration,
   readMessageLimit,
-  readResponseDelay,
+  readChannelDelays,
   readSplitMessages,
   readTelegramType,
   readWidgetSettings,
@@ -128,14 +128,14 @@ export async function listAgents(): Promise<AgentRecord[]> {
   const userId = await getAuthenticatedUserId();
   const withPosition = await supabase
     .from("agents")
-    .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, followup_enabled, followup_interval_hours, followup_max_count, followup_template, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_position, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")
+    .select("id, name, system_prompt, model, temperature, is_active, active_channels, channel_delays, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, followup_enabled, followup_interval_hours, followup_max_count, followup_template, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_position, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")
     .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   const withDelay = withPosition.error?.message.includes("widget_position")
     ? await supabase
         .from("agents")
-        .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, followup_enabled, followup_interval_hours, followup_max_count, followup_template, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")
+        .select("id, name, system_prompt, model, temperature, is_active, active_channels, channel_delays, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, followup_enabled, followup_interval_hours, followup_max_count, followup_template, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
     : withPosition;
@@ -152,10 +152,11 @@ export async function listAgents(): Promise<AgentRecord[]> {
     withDelay.error?.message.includes("followup_") ||
     withDelay.error?.message.includes("limit_agent_messages") ||
     withDelay.error?.message.includes("human_handoff_duration") ||
+    withDelay.error?.message.includes("channel_delays") ||
     withDelay.error?.message.includes("split_messages")
       ? await supabase
           .from("agents")
-          .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, split_messages, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
+          .select("id, name, system_prompt, model, temperature, is_active, active_channels, split_messages, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, created_at")
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
       : withDelay;
@@ -163,7 +164,7 @@ export async function listAgents(): Promise<AgentRecord[]> {
   const listed = rows.error?.message?.includes("split_messages")
     ? await supabase
         .from("agents")
-        .select("id, name, system_prompt, model, temperature, is_active, active_channels, response_delay, created_at")
+        .select("id, name, system_prompt, model, temperature, is_active, active_channels, created_at")
         .eq("user_id", userId)
         .order("created_at", { ascending: false })
     : rows;
@@ -188,7 +189,7 @@ export async function listAgents(): Promise<AgentRecord[]> {
     is_active: Boolean(row.is_active),
     created_at: row.created_at as string,
     active_channels: readActiveChannels("active_channels" in row ? row.active_channels : undefined),
-    response_delay: readResponseDelay("response_delay" in row ? row.response_delay : 0),
+    channel_delays: readChannelDelays("channel_delays" in row ? row.channel_delays : undefined),
     human_handoff_duration: readHandoffDuration(
       "human_handoff_duration" in row ? row.human_handoff_duration : "1_hour",
     ),
