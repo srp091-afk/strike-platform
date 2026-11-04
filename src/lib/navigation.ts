@@ -2,7 +2,7 @@ export type NavItem = {
   href: string;
   label: string;
   /** Ключ иконки: сопоставляется с lucide-иконкой в сайдбаре. */
-  icon: "dashboard" | "agents" | "sites" | "ads" | "smm" | "chats" | "billing" | "settings";
+  icon: "dashboard" | "agents" | "sites" | "ads" | "outreach" | "smm" | "chats" | "billing" | "settings";
   /** Визуальная заглушка будущего раздела: пункт показывается, но никуда не ведёт. */
   soon?: boolean;
 };
@@ -13,6 +13,7 @@ export const mainNav: readonly NavItem[] = [
   { href: "/agents", label: "Агенты", icon: "agents" },
   { href: "/funnels", label: "Сайты", icon: "sites" },
   { href: "/ads", label: "Ads & Креативы", icon: "ads" },
+  { href: "/outreach", label: "Рассылки", icon: "outreach" },
   { href: "/smm", label: "SMM", icon: "smm", soon: true },
   { href: "/chats", label: "Чаты", icon: "chats" },
 ];
@@ -30,6 +31,7 @@ const PORTAL_PREFIXES = [
   "/funnels",
   "/sites",
   "/ads",
+  "/outreach",
   "/chats",
   "/settings",
   "/playground",

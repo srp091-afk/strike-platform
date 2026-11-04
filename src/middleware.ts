@@ -55,6 +55,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/api/webhooks/") ||
     // Крон Vercel приходит без сессии, защищён CRON_SECRET внутри роута.
     pathname.startsWith("/api/cron/") ||
+    // Воркер очереди рассылок: без сессии, защищён OUTREACH_WORKER_SECRET внутри роута.
+    pathname === "/api/outreach/worker" ||
     // Публичный веб-виджет: страница в iframe на чужих сайтах и её чат-API.
     pathname === "/widget" ||
     pathname.startsWith("/widget/") ||
