@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { CalendarDays, GripVertical, Globe, Maximize, Play, Trash } from "lucide-react";
 import {
@@ -50,6 +50,7 @@ import {
   DEFAULT_ACTIVE_CHANNELS,
   DEFAULT_AGENT_MODEL,
   HANDOFF_DURATIONS,
+  effectiveActiveChannels,
   isTelegramConnected,
   normalizeAgentModel,
   readWidgetSettings,
@@ -115,6 +116,8 @@ function SortableAgentCard({ agent, onTest, onEdit }: { agent: AgentRecord; onTe
     id: agent.id,
   });
 
+  const channelState = effectiveActiveChannels(agent);
+
   return (
     <li
       ref={setNodeRef}
@@ -167,7 +170,7 @@ function SortableAgentCard({ agent, onTest, onEdit }: { agent: AgentRecord; onTe
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-2 overflow-hidden" aria-label="Каналы агента">
               {CARD_CHANNELS.map(({ provider, label, activeClass }) => {
-                const active = Boolean(agent.active_channels?.[provider]);
+                const active = channelState[provider];
                 return (
                   <span
                     key={provider}
@@ -533,7 +536,13 @@ function AgentDialog({
     data.set("model", current.model);
     data.set("temperature", current.temperature);
     data.set("system_prompt", current.system_prompt);
-    data.set("active_channels", JSON.stringify(current.active_channels));
+    data.set(
+      "active_channels",
+      JSON.stringify({
+        ...current.active_channels,
+        whatsapp: Boolean(current.wa_instance_id || current.wa_phone_number || editing?.waIsActive) && current.active_channels.whatsapp,
+      }),
+    );
     data.set("response_delay", current.response_delay);
     data.set("human_handoff_duration", current.human_handoff_duration);
     data.set("telegram_chat_id", current.telegram_chat_id);
@@ -1000,7 +1009,15 @@ function ChannelSettings({
           У агента один номер WhatsApp и один Telegram-канал (бот или личный аккаунт). Выключенный канал не вызывает модель.
         </p>
       </div>
-      <input type="hidden" name="active_channels" value={JSON.stringify(channels)} />
+      <input
+        type="hidden"
+        name="active_channels"
+        value={JSON.stringify({
+          ...channels,
+          whatsapp: whatsappConnected && channels.whatsapp,
+          telegram: telegramConnected && channels.telegram,
+        })}
+      />
       <input type="hidden" name="wa_instance_id" value={credentials.instanceId} />
       <input type="hidden" name="wa_api_token" value={credentials.apiToken} />
       <input type="hidden" name="wa_phone_number" value={phone} />

@@ -213,6 +213,34 @@ export function isTelegramConnected(
   return telegramChannelLabel(agent) !== null;
 }
 
+/**
+ * Канал реально работает, только если он физически подключён И включён тумблером.
+ * Флаги в active_channels могут «залипнуть» (по умолчанию/после отключения номера), поэтому
+ * WhatsApp и Telegram проверяем по наличию подключения. Instagram и виджет подключения не требуют.
+ */
+export function effectiveActiveChannels(
+  agent: Pick<
+    AgentRecord,
+    | "active_channels"
+    | "waInstanceId"
+    | "waPhoneNumber"
+    | "waIsActive"
+    | "telegram_type"
+    | "telegram_phone"
+    | "telegram_session"
+    | "tgBotUsername"
+    | "telegram_bot_token"
+  >,
+): ActiveChannels {
+  const whatsappConnected = Boolean(agent.waInstanceId || agent.waPhoneNumber || agent.waIsActive);
+  return {
+    whatsapp: whatsappConnected && agent.active_channels.whatsapp,
+    telegram: isTelegramConnected(agent) && agent.active_channels.telegram,
+    instagram: agent.active_channels.instagram,
+    widget: agent.active_channels.widget,
+  };
+}
+
 export const HANDOFF_DURATIONS = [
   { value: "1_hour", label: "1 час" },
   { value: "3_hours", label: "3 часа" },
