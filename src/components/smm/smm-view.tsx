@@ -1,9 +1,12 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
-import { CalendarDays, Check, Clapperboard, KeyRound, Link2, Mic, Plug, Sparkles, Target, Video } from "lucide-react";
+import { useState, useTransition, type ReactNode } from "react";
+import { CalendarDays, Check, Clapperboard, KeyRound, Link2, Loader2, Mic, Plug, Sparkles, Target, Trash2, Video } from "lucide-react";
 
+import { clearSmmKey, saveSmmAvatarId, saveSmmKey, saveSmmStrategy } from "@/app/actions/smm";
 import { ChannelIcon } from "@/components/channel-icons";
+import { toast } from "@/components/ui/toaster";
+import type { SmmIntegrationsState, SmmKeyField, SmmStrategyState } from "@/lib/smm-types";
 import { cn } from "@/lib/utils";
 
 /* Явные цвета: светлая тема портала строится инверсией переменных, white/zinc здесь не используем. */
@@ -26,7 +29,15 @@ const TABS = [
 ] as const;
 type TabId = (typeof TABS)[number]["id"];
 
-export function SmmView() {
+export function SmmView({
+  strategy,
+  integrations,
+  loadError,
+}: {
+  strategy: SmmStrategyState;
+  integrations: SmmIntegrationsState;
+  loadError: string | null;
+}) {
   const [tab, setTab] = useState<TabId>("connections");
 
   return (
@@ -39,6 +50,12 @@ export function SmmView() {
             Подключайте соцсети, задавайте стратегию и получайте контент-план с AI-видео, который публикуется сам.
           </p>
         </header>
+
+        {loadError ? (
+          <p className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
+            Не удалось загрузить настройки: {loadError}
+          </p>
+        ) : null}
 
         <div className="mt-10 overflow-x-auto pb-1">
           <div role="tablist" aria-label="Разделы SMM" className="inline-flex min-w-full gap-1 rounded-2xl border border-gray-200 bg-gray-50 p-1 sm:min-w-0">
@@ -71,8 +88,8 @@ export function SmmView() {
 
         <div role="tabpanel" id={`smm-panel-${tab}`} aria-labelledby={`smm-tab-${tab}`} className="mt-8">
           {tab === "connections" ? <ConnectionsTab /> : null}
-          {tab === "strategy" ? <StrategyTab /> : null}
-          {tab === "studio" ? <StudioTab /> : null}
+          {tab === "strategy" ? <StrategyTab initial={strategy} /> : null}
+          {tab === "studio" ? <StudioTab initial={integrations} /> : null}
           {tab === "plan" ? <PlanTab /> : null}
         </div>
       </div>
@@ -174,11 +191,27 @@ const DAYS = [
   { id: "sun", label: "Вс" },
 ] as const;
 
-function StrategyTab() {
-  const [description, setDescription] = useState("");
-  const [tone, setTone] = useState<(typeof TONES)[number]["id"]>("friendly");
-  const [days, setDays] = useState<string[]>(["mon", "wed", "fri"]);
-  const [time, setTime] = useState("12:00");
+function Spinner() {
+  return <Loader2 className="size-4 animate-spin" strokeWidth={2} aria-hidden />;
+}
+
+function StrategyTab({ initial }: { initial: SmmStrategyState }) {
+  const [description, setDescription] = useState(initial.description);
+  const [tone, setTone] = useState(initial.tone);
+  const [days, setDays] = useState<string[]>(initial.days);
+  const [time, setTime] = useState(initial.time);
+  const [isSubmitting, startTransition] = useTransition();
+
+  function save() {
+    startTransition(async () => {
+      const result = await saveSmmStrategy({ description, tone, days, time });
+      if (result.ok) {
+        toast.success("Стратегия сохранена");
+      } else {
+        toast.error(result.error);
+      }
+    });
+  }
 
   function toggleDay(id: string) {
     setDays((current) => (current.includes(id) ? current.filter((day) => day !== id) : [...current, id]));
@@ -260,8 +293,9 @@ function StrategyTab() {
             <span className="font-semibold text-[#0b0b0f]">{days.length}</span> публикаций в неделю
             {days.length > 0 ? ` · в ${time}` : ""}.
           </div>
-          <button type="button" className={cn(BTN_PRIMARY, "mt-auto w-full")}>
-            Сохранить стратегию
+          <button type="button" onClick={save} disabled={isSubmitting} className={cn(BTN_PRIMARY, "mt-auto w-full disabled:opacity-70")}>
+            {isSubmitting ? <Spinner /> : null}
+            {isSubmitting ? "Сохраняем…" : "Сохранить стратегию"}
           </button>
         </div>
       </div>
@@ -277,45 +311,47 @@ const KEYS = [
   { id: "elevenlabs", name: "ElevenLabs", text: "Реалистичная озвучка на русском и других языках.", icon: Mic, placeholder: "ElevenLabs API Key" },
 ] as const;
 
-function StudioTab() {
+function StudioTab({ initial }: { initial: SmmIntegrationsState }) {
+  const [state, setState] = useState(initial);
+  const [avatarId, setAvatarId] = useState(initial.avatarId);
+  const [isSavingAvatar, startAvatar] = useTransition();
+
+  function saveAvatar() {
+    startAvatar(async () => {
+      const result = await saveSmmAvatarId(avatarId);
+      if (result.ok) {
+        setState(result.integrations);
+        toast.success("ID аватара сохранён");
+      } else {
+        toast.error(result.error);
+      }
+    });
+  }
+
   return (
     <div>
-      <SectionTitle title="AI-Студия" text="Ключи видеодвижка хранятся на сервере и используются только для ваших роликов." />
+      <SectionTitle title="AI-Студия" text="Ключи видеодвижка хранятся на сервере и используются только для ваших роликов. Сохранённый ключ в браузер не возвращается." />
       <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
-        {KEYS.map((item) => {
-          const Icon = item.icon;
-          return (
-            <div key={item.id} className={cn(CARD, "flex flex-col p-6 sm:p-8")}>
-              <div className="flex items-center gap-4">
-                <span className="grid size-12 shrink-0 place-items-center rounded-2xl border border-rose-100 bg-rose-50 text-rose-600">
-                  <Icon className="size-5" strokeWidth={2} />
-                </span>
-                <div className="min-w-0">
-                  <h3 className={cn("font-heading text-lg font-bold tracking-tight", INK)}>{item.name}</h3>
-                  <p className="text-sm leading-5 text-gray-500">{item.text}</p>
-                </div>
-              </div>
-              <label htmlFor={`key-${item.id}`} className={cn(LABEL, "mt-6")}>
-                API-ключ
-              </label>
-              <div className="relative mt-3">
-                <KeyRound className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-gray-400" strokeWidth={2} />
-                <input id={`key-${item.id}`} type="password" autoComplete="off" placeholder={item.placeholder} className={cn(INPUT, "pl-11")} />
-              </div>
-              <button type="button" className={cn(BTN_OUTLINE, "mt-5 w-full")}>
-                Сохранить ключ
-              </button>
-            </div>
-          );
-        })}
+        {KEYS.map((item) => (
+          <KeyCard key={item.id} item={item} masked={state[item.id]} onChange={setState} />
+        ))}
         <div className={cn(CARD, "flex flex-col p-6 sm:p-8 md:col-span-2 xl:col-span-3")}>
           <label htmlFor="avatar-id" className={LABEL}>
             ID аватара по умолчанию
           </label>
           <div className="mt-3 flex flex-col gap-3 sm:flex-row">
-            <input id="avatar-id" type="text" autoComplete="off" placeholder="Например, Anna_public_3_20240108" className={cn(INPUT, "sm:max-w-md")} />
-            <button type="button" className={BTN_OUTLINE}>
-              Сохранить
+            <input
+              id="avatar-id"
+              type="text"
+              autoComplete="off"
+              value={avatarId}
+              onChange={(event) => setAvatarId(event.target.value)}
+              placeholder="Например, Anna_public_3_20240108"
+              className={cn(INPUT, "sm:max-w-md")}
+            />
+            <button type="button" onClick={saveAvatar} disabled={isSavingAvatar} className={cn(BTN_OUTLINE, "disabled:opacity-70")}>
+              {isSavingAvatar ? <Spinner /> : null}
+              {isSavingAvatar ? "Сохраняем…" : "Сохранить"}
             </button>
           </div>
         </div>
@@ -324,6 +360,99 @@ function StudioTab() {
   );
 }
 
+function KeyCard({
+  item,
+  masked,
+  onChange,
+}: {
+  item: (typeof KEYS)[number];
+  masked: string;
+  onChange: (next: SmmIntegrationsState) => void;
+}) {
+  const Icon = item.icon;
+  const field: SmmKeyField = item.id;
+  const [value, setValue] = useState("");
+  const [isSubmitting, startTransition] = useTransition();
+
+  function save() {
+    startTransition(async () => {
+      const result = await saveSmmKey(field, value);
+      if (result.ok) {
+        onChange(result.integrations);
+        setValue("");
+        toast.success(`Ключ ${item.name} сохранён`);
+      } else {
+        toast.error(result.error);
+      }
+    });
+  }
+
+  function clear() {
+    startTransition(async () => {
+      const result = await clearSmmKey(field);
+      if (result.ok) {
+        onChange(result.integrations);
+        toast.success(`Ключ ${item.name} удалён`);
+      } else {
+        toast.error(result.error);
+      }
+    });
+  }
+
+  return (
+    <div className={cn(CARD, "flex flex-col p-6 sm:p-8")}>
+      <div className="flex items-center gap-4">
+        <span className="grid size-12 shrink-0 place-items-center rounded-2xl border border-rose-100 bg-rose-50 text-rose-600">
+          <Icon className="size-5" strokeWidth={2} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h3 className={cn("font-heading text-lg font-bold tracking-tight", INK)}>{item.name}</h3>
+          <p className="text-sm leading-5 text-gray-500">{item.text}</p>
+        </div>
+      </div>
+      <div className="mt-6 flex items-center justify-between gap-2">
+        <label htmlFor={`key-${item.id}`} className={LABEL}>
+          API-ключ
+        </label>
+        {masked ? (
+          <span className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-semibold text-emerald-700">
+            <Check className="size-3" strokeWidth={2.5} />
+            Подключён
+          </span>
+        ) : null}
+      </div>
+      <div className="relative mt-3">
+        <KeyRound className="pointer-events-none absolute left-4 top-1/2 size-4 -translate-y-1/2 text-gray-400" strokeWidth={2} />
+        <input
+          id={`key-${item.id}`}
+          type="password"
+          autoComplete="off"
+          value={value}
+          onChange={(event) => setValue(event.target.value)}
+          placeholder={masked || item.placeholder}
+          className={cn(INPUT, "pl-11")}
+        />
+      </div>
+      <div className="mt-5 flex gap-2">
+        <button type="button" onClick={save} disabled={isSubmitting || !value.trim()} className={cn(BTN_OUTLINE, "flex-1 disabled:opacity-60")}>
+          {isSubmitting ? <Spinner /> : null}
+          {isSubmitting ? "Сохраняем…" : masked ? "Заменить ключ" : "Сохранить ключ"}
+        </button>
+        {masked ? (
+          <button
+            type="button"
+            onClick={clear}
+            disabled={isSubmitting}
+            aria-label={`Удалить ключ ${item.name}`}
+            className="grid size-[46px] shrink-0 place-items-center rounded-xl border border-gray-200 bg-[#ffffff] text-gray-500 transition-colors hover:border-rose-300 hover:bg-rose-50 hover:text-rose-700 disabled:opacity-60"
+          >
+            <Trash2 className="size-4" strokeWidth={2} />
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
+}
 /* ------------------------------ Контент-план ----------------------------- */
 
 type PostStatus = "draft" | "scheduled" | "published";
