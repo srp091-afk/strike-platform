@@ -21,12 +21,26 @@ export async function processOutreachLog(logId: string): Promise<ProcessResult> 
     .maybeSingle();
   if (!log || log.strike_status !== "queued") return { status: "skipped", detail: "строка уже обработана или удалена" };
 
+  // Атомарный захват строки: повторная доставка QStash или повторный запуск после паузы не отправят дубль.
+  const { data: claimed } = await supabase
+    .from("outreach_logs")
+    .update({ strike_error: "processing" })
+    .eq("id", logId)
+    .eq("strike_status", "queued")
+    .is("strike_error", null)
+    .select("id");
+  if (!claimed?.length) return { status: "skipped", detail: "строка уже в обработке" };
+  const release = () => supabase.from("outreach_logs").update({ strike_error: null }).eq("id", logId);
+
   const { data: campaign } = await supabase
     .from("outreach_campaigns")
     .select("id, user_id, agent_id, channel_type, outreach_prompt, daily_limit, status, contact_column, website_column, webhook_url")
     .eq("id", log.campaign_id)
     .maybeSingle();
-  if (!campaign || campaign.status !== "active") return { status: "skipped", detail: "кампания не активна" };
+  if (!campaign || campaign.status !== "active") {
+    await release();
+    return { status: "skipped", detail: "кампания не активна" };
+  }
 
   const fail = async (message: string): Promise<ProcessResult> => {
     await supabase.from("outreach_logs").update({ strike_status: "error", strike_error: message }).eq("id", logId);
@@ -43,7 +57,10 @@ export async function processOutreachLog(logId: string): Promise<ProcessResult> 
     .eq("campaign_id", campaign.id)
     .eq("strike_status", "success")
     .gte("strike_sent_time", dayStart.toISOString());
-  if ((count ?? 0) >= Number(campaign.daily_limit)) return { status: "skipped", detail: "daily_limit" };
+  if ((count ?? 0) >= Number(campaign.daily_limit)) {
+    await release();
+    return { status: "skipped", detail: "daily_limit" };
+  }
 
   const { data: agent } = await supabase
     .from("agents")

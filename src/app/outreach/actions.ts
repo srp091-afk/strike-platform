@@ -160,6 +160,7 @@ export async function controlCampaign(id: string, action: "start" | "pause" | "s
     return { ok: true, message: "Рассылка остановлена" };
   }
 
+  if (campaign.status === "active") return fail("Рассылка уже запущена.");
   if (!campaign.agent_id || !campaign.channel_type) return fail("Выберите агента и канал во вкладке «Настройки».");
   if (!campaign.outreach_prompt.trim()) return fail("Заполните инструкцию для первого сообщения.");
   if (!campaign.contact_column) return fail("Загрузите базу и укажите колонку с номером.");
@@ -169,13 +170,26 @@ export async function controlCampaign(id: string, action: "start" | "pause" | "s
     return fail("Очередь фоновых задач не настроена: добавьте QSTASH_TOKEN, OUTREACH_WORKER_SECRET и OUTREACH_WORKER_URL.");
   }
 
+  // Суточный лимит (UTC-сутки, как в воркере): вычитаем уже отправленное сегодня.
+  const dayStart = new Date();
+  dayStart.setUTCHours(0, 0, 0, 0);
+  const { count: sentToday } = await supabase
+    .from("outreach_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("campaign_id", id)
+    .eq("strike_status", "success")
+    .gte("strike_sent_time", dayStart.toISOString());
+  const remaining = campaign.daily_limit - (sentToday ?? 0);
+  if (remaining <= 0) return fail("Суточный лимит на сегодня уже выбран. Запустите рассылку завтра или увеличьте лимит.");
+
   const { data: queued, error } = await supabase
     .from("outreach_logs")
     .select("id")
     .eq("campaign_id", id)
     .eq("strike_status", "queued")
     .order("row_index", { ascending: true })
-    .limit(campaign.daily_limit);
+    .is("strike_error", null)
+    .limit(remaining);
   if (error) return fail(error.message);
   if (!queued?.length) return fail("В базе нет строк в очереди.");
 
