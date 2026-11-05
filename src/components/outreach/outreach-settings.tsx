@@ -49,10 +49,15 @@ async function parseSpreadsheet(file: File): Promise<ParsedFile> {
   const sheet = workbook.Sheets[workbook.SheetNames[0]];
   if (!sheet) throw new Error("В файле нет листов.");
   const matrix = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: "" });
-  if (matrix.length < 2) throw new Error("В файле нет строк с данными.");
+  if (matrix.length < 1) throw new Error("В файле нет строк с данными.");
+
+  // Файл без строки заголовков: первая строка уже содержит данные (номер, e-mail, ссылка).
+  const headerless = (matrix[0] ?? []).some((cell) => looksLikeData(String(cell ?? "")));
+  const width = Math.max(...matrix.slice(0, 50).map((row) => row.length));
+  const headerRow: unknown[] = headerless ? Array.from({ length: width }, () => "") : (matrix[0] ?? []);
 
   const used = new Map<string, number>();
-  const columns = (matrix[0] ?? []).map((cell, index) => {
+  const columns = headerRow.map((cell, index) => {
     const base = String(cell ?? "").trim() || `Колонка ${index + 1}`;
     const count = used.get(base) ?? 0;
     used.set(base, count + 1);
@@ -60,7 +65,7 @@ async function parseSpreadsheet(file: File): Promise<ParsedFile> {
   });
 
   const rows = matrix
-    .slice(1)
+    .slice(headerless ? 0 : 1)
     .filter((row) => row.some((cell) => String(cell ?? "").trim() !== ""))
     .map((row) => Object.fromEntries(columns.map((column, index) => [column, String(row[index] ?? "").trim()])));
   if (rows.length === 0) throw new Error("В файле нет строк с данными.");
@@ -70,6 +75,36 @@ async function parseSpreadsheet(file: File): Promise<ParsedFile> {
 
 function guessColumn(columns: string[], pattern: RegExp) {
   return columns.find((column) => pattern.test(column)) ?? "";
+}
+
+const PHONE_VALUE = /^\+?[\d\s().-]{7,}$/;
+const EMAIL_VALUE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const URL_VALUE = /^(https?:\/\/|www\.)\S+$/i;
+const SOCIAL_VALUE = /(instagram\.com|facebook\.com|fb\.com|t\.me|telegram\.me|vk\.com|linkedin\.com|tiktok\.com|twitter\.com|x\.com)/i;
+
+function isPhone(value: string) {
+  return PHONE_VALUE.test(value) && value.replace(/\D/g, "").length >= 7;
+}
+
+function looksLikeData(value: string) {
+  const v = value.trim();
+  return v !== "" && (isPhone(v) || EMAIL_VALUE.test(v) || URL_VALUE.test(v));
+}
+
+/** Подбор колонки по содержимому: доля подходящих значений среди непустых в первых 30 строках. */
+function guessByContent(parsed: ParsedFile, test: (value: string) => boolean) {
+  let best = "";
+  let bestShare = 0;
+  for (const column of parsed.columns) {
+    const values = parsed.rows.slice(0, 30).map((row) => (row[column] ?? "").trim()).filter(Boolean);
+    if (values.length === 0) continue;
+    const share = values.filter(test).length / values.length;
+    if (share > bestShare) {
+      best = column;
+      bestShare = share;
+    }
+  }
+  return bestShare >= 0.6 ? best : "";
 }
 
 export function OutreachSettings({
@@ -479,10 +514,10 @@ function DataSource({
     try {
       const result = await parseSpreadsheet(file);
       setParsed(result);
-      setNewContact(guessColumn(result.columns, /phone|тел|whats|номер|mobile|e-?mail|почт/i));
-      setNewWebsite(guessColumn(result.columns, /site|сайт|url|web|домен|domain/i));
+      setNewContact(guessColumn(result.columns, /phone|тел|whats|номер|mobile|e-?mail|почт/i) || guessByContent(result, (v) => isPhone(v) || EMAIL_VALUE.test(v)));
+      setNewWebsite(guessColumn(result.columns, /site|сайт|url|web|домен|domain/i) || guessByContent(result, (v) => URL_VALUE.test(v) && !SOCIAL_VALUE.test(v)));
       setNewName(guessColumn(result.columns, /^(name|имя|фио|first.?name|contact.?name)$/i) || guessColumn(result.columns, /имя|name|фио/i));
-      setNewSocial(guessColumn(result.columns, /social|соц|insta|telegram|tg|vk|facebook|linkedin|ссылк/i));
+      setNewSocial(guessColumn(result.columns, /social|соц|insta|telegram|tg|vk|facebook|linkedin|ссылк/i) || guessByContent(result, (v) => SOCIAL_VALUE.test(v)));
     } catch (error) {
       setParsed(null);
       setFileError(error instanceof Error ? error.message : "Не удалось прочитать файл.");
