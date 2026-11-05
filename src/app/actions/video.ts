@@ -93,6 +93,21 @@ export async function startVideoGeneration(
   if (missing) return { ok: false, error: "Генерация видео временно недоступна: на платформе не настроены ключи сервиса." };
 
   const supabase = createSupabaseAdminClient();
+
+  // post_id уходит в движок только для своего поста этого проекта: по нему движок пришлёт вебхук с видео.
+  let postId: string | null = null;
+  if (options?.postId && /^[0-9a-f-]{36}$/i.test(String(options.postId))) {
+    const { data: ownPost } = await supabase
+      .from("smm_posts")
+      .select("id")
+      .eq("id", options.postId)
+      .eq("project_id", project.id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!ownPost) return { ok: false, error: "Пост не найден." };
+    postId = String(ownPost.id);
+  }
+
   const { data: integration } = await supabase.from("smm_integrations").select("default_avatar_id").eq("project_id", project.id).eq("user_id", userId).maybeSingle();
   const avatarId = (integration?.default_avatar_id as string | null | undefined) ?? null;
 
@@ -118,6 +133,7 @@ export async function startVideoGeneration(
         style: style ?? undefined,
         background_url: backgroundUrl ?? undefined,
         overlay_text: overlayText || undefined,
+        post_id: postId ?? undefined,
         credentials: {
           heygen_api_key: videoMode === "avatar" ? heygen : undefined,
           runway_api_key: videoMode === "broll" ? runway : undefined,
