@@ -5,16 +5,18 @@ export type NavItem = {
   icon: "dashboard" | "agents" | "sites" | "ads" | "outreach" | "smm" | "chats" | "billing" | "settings";
   /** Визуальная заглушка будущего раздела: пункт показывается, но никуда не ведёт. */
   soon?: boolean;
+  /** Раздел в бета-версии: рядом с названием показывается бейдж «Beta». */
+  beta?: boolean;
 };
 
 /** Верхний блок сайдбара. */
 export const mainNav: readonly NavItem[] = [
   { href: "/dashboard", label: "Дашборд", icon: "dashboard" },
   { href: "/agents", label: "Агенты", icon: "agents" },
-  { href: "/funnels", label: "Сайты", icon: "sites" },
+  { href: "/funnels", label: "Сайты", icon: "sites", beta: true },
   { href: "/ads", label: "Ads & Креативы", icon: "ads" },
   { href: "/outreach", label: "Рассылки", icon: "outreach" },
-  { href: "/smm", label: "SMM", icon: "smm" },
+  { href: "/smm", label: "SMM", icon: "smm", beta: true },
   { href: "/chats", label: "Чаты", icon: "chats" },
 ];
 

@@ -63,7 +63,13 @@ function NavLink({
     <>
       {active ? <span aria-hidden className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-strike" /> : null}
       <Icon className="size-[18px] shrink-0" strokeWidth={1.75} />
+      {item.beta && collapsed ? <span aria-hidden className="absolute right-2 top-2 size-1.5 rounded-full bg-strike" /> : null}
       {collapsed ? null : <span className="min-w-0 flex-1 truncate">{item.label}</span>}
+      {item.beta && !collapsed ? (
+        <span className="shrink-0 rounded-full bg-strike/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none tracking-wide text-strike ring-1 ring-inset ring-strike/20">
+          Beta
+        </span>
+      ) : null}
       {item.soon && !collapsed ? (
         <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
           Скоро
@@ -85,7 +91,7 @@ function NavLink({
       href={item.href}
       prefetch
       aria-current={active ? "page" : undefined}
-      title={collapsed ? item.label : undefined}
+      title={collapsed ? (item.beta ? `${item.label} (Beta)` : item.label) : undefined}
       onClick={onNavigate}
       className={className}
     >
