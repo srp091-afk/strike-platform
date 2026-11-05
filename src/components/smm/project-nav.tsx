@@ -9,12 +9,12 @@ import { cn } from "@/lib/utils";
 import type { SmmProject } from "@/lib/smm-project-types";
 
 const TABS = [
+  { slug: "settings", label: "Настройки бренда", icon: Palette },
   { slug: "integrations", label: "Интеграции", icon: Plug },
   { slug: "strategy", label: "Идеи и стратегия", icon: Lightbulb },
-  { slug: "plan", label: "Контент-план", icon: CalendarDays },
   { slug: "studio", label: "AI-Видеостудия", icon: Clapperboard },
+  { slug: "plan", label: "Контент-план", icon: CalendarDays },
   { slug: "assets", label: "Медиатека", icon: FolderOpen },
-  { slug: "settings", label: "Настройки бренда", icon: Palette },
 ] as const;
 
 export function ProjectHeader({ project }: { project: SmmProject }) {

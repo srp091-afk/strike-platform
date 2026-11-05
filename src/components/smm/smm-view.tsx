@@ -1,13 +1,14 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition, type ReactNode } from "react";
-import { Check, Link2, Loader2, Sparkles, TrendingUp, Video } from "lucide-react";
+import { CalendarDays, Check, Lightbulb, Link2, Loader2, Sparkles, TrendingUp, Video } from "lucide-react";
 
 import { saveSmmAvatarId, saveSmmStrategy } from "@/app/actions/smm";
 import { ChannelIcon } from "@/components/channel-icons";
 import { VideoPanel } from "@/components/smm/video-panel";
 import { toast } from "@/components/ui/toaster";
-import type { SmmStrategyState } from "@/lib/smm-types";
+import type { SmmPostItem, SmmStrategyState } from "@/lib/smm-types";
 import { cn } from "@/lib/utils";
 
 /* Явные цвета: светлая тема портала строится инверсией переменных, white/zinc здесь не используем. */
@@ -358,49 +359,60 @@ function CreditsCard({ credits }: { credits: number }) {
 }
 /* ------------------------------ Контент-план ----------------------------- */
 
-type PostStatus = "draft" | "scheduled" | "published";
+type PostStatus = SmmPostItem["status"];
 const STATUS: Record<PostStatus, { label: string; className: string }> = {
   draft: { label: "Черновик", className: "border-gray-200 bg-gray-50 text-gray-600" },
   scheduled: { label: "Запланирован", className: "border-amber-200 bg-amber-50 text-amber-700" },
+  publishing: { label: "Публикуется", className: "border-sky-200 bg-sky-50 text-sky-700" },
   published: { label: "Опубликован", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
+  failed: { label: "Ошибка", className: "border-rose-200 bg-rose-50 text-rose-700" },
 };
 
-const POSTS: { id: number; date: string; title: string; text: string; status: PostStatus; video?: boolean }[] = [
-  { id: 1, date: "Пн, 10 ноя · 12:00", title: "5 ошибок при запуске рекламы", text: "Разбираем частые ошибки новичков и как их избежать. Сохраняйте, чтобы не потерять.", status: "scheduled", video: true },
-  { id: 2, date: "Ср, 12 ноя · 12:00", title: "Кейс: заявки в 2 раза дешевле", text: "Как мы изменили креативы и сократили стоимость лида за две недели.", status: "scheduled" },
-  { id: 3, date: "Пт, 14 ноя · 12:00", title: "За кулисами команды", text: "Показываем, как проходит рабочий день и как рождаются идеи для кампаний.", status: "draft", video: true },
-  { id: 4, date: "Пн, 17 ноя · 12:00", title: "Чек-лист: подготовка к запуску", text: "Короткий список из семи пунктов, который экономит бюджет на старте.", status: "draft" },
-  { id: 5, date: "Ср, 5 ноя · 12:00", title: "Новый тариф: что изменилось", text: "Рассказываем о новых возможностях и о том, кому они подойдут в первую очередь.", status: "published" },
-  { id: 6, date: "Пт, 7 ноя · 12:00", title: "Ответы на частые вопросы", text: "Собрали самые популярные вопросы клиентов и дали на них честные ответы.", status: "published", video: true },
-];
+function formatPostDate(value: string | null) {
+  if (!value) return "Без даты";
+  return new Intl.DateTimeFormat("ru-RU", { weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
+}
 
-export function PlanTab({ projectId, initialCredits }: { projectId: string; initialCredits: number }) {
+export function PlanTab({ projectId, initialCredits, posts }: { projectId: string; initialCredits: number; posts: SmmPostItem[] }) {
   const [credits, onCredits] = useState(initialCredits);
+
+  if (posts.length === 0) {
+    return (
+      <div>
+        <SectionTitle title="Контент-план" text="Посты проекта: текст, медиа и время публикации." />
+        <div className={cn(CARD, "mt-6 grid place-items-center px-6 py-20 text-center")}>
+          <span className="grid size-16 place-items-center rounded-2xl border border-rose-100 bg-rose-50 text-rose-600">
+            <CalendarDays className="size-7" strokeWidth={1.75} />
+          </span>
+          <h3 className={cn("mt-6 font-heading text-2xl font-bold tracking-tight", INK)}>Контент-план пуст</h3>
+          <p className="mt-2 max-w-md text-sm leading-6 text-gray-500">Сформируйте темы и сценарии во вкладке «Идеи и стратегия».</p>
+          <Link href={`/smm/p/${projectId}/strategy`} className={cn(BTN_PRIMARY, "mt-8")}>
+            <Lightbulb className="size-4" strokeWidth={2} />
+            Перейти к идеям и стратегии
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div>
-      <SectionTitle
-        title="Контент-план"
-        text="Посты на месяц вперёд: текст, медиа и время публикации. Примеры ниже — заглушки."
-        action={
-          <button type="button" className={cn(BTN_PRIMARY, "w-full sm:w-auto")}>
-            <Sparkles className="size-4" strokeWidth={2} />
-            Сгенерировать контент на месяц
-          </button>
-        }
-      />
+      <SectionTitle title="Контент-план" text="Посты проекта: текст, медиа и время публикации." />
       <ul className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
-        {POSTS.map((post) => {
-          const status = STATUS[post.status];
+        {posts.map((post) => {
+          const status = STATUS[post.status] ?? STATUS.draft;
+          const [firstLine = ""] = post.text.split("\n");
+          const title = firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine || "Без названия";
           return (
             <li key={post.id} className={cn(CARD, "flex flex-col p-6")}>
               <div className="grid aspect-video place-items-center rounded-2xl border border-gray-200 bg-gradient-to-br from-rose-50 to-gray-50 text-rose-300">
-                {post.video ? <Video className="size-8" strokeWidth={1.5} /> : <Sparkles className="size-8" strokeWidth={1.5} />}
+                {post.hasMedia ? <Video className="size-8" strokeWidth={1.5} /> : <Sparkles className="size-8" strokeWidth={1.5} />}
               </div>
               <div className="mt-5 flex flex-wrap items-center justify-between gap-2">
                 <span className={cn("rounded-full border px-2.5 py-0.5 text-xs font-semibold", status.className)}>{status.label}</span>
-                <span className="text-xs text-gray-400">{post.date}</span>
+                <span className="text-xs text-gray-400">{formatPostDate(post.scheduledTime)}</span>
               </div>
-              <h3 className={cn("mt-3 font-heading text-lg font-bold leading-snug tracking-tight", INK)}>{post.title}</h3>
+              <h3 className={cn("mt-3 font-heading text-lg font-bold leading-snug tracking-tight", INK)}>{title}</h3>
               <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-500">{post.text}</p>
               <div className="mt-auto">
                 <VideoPanel projectId={projectId} defaultScript={post.text} credits={credits} onCredits={onCredits} />

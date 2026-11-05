@@ -24,3 +24,13 @@ export const DEFAULT_SMM_STRATEGY: SmmStrategyState = {
 };
 
 export const EMPTY_SMM_STUDIO: SmmStudioState = { avatarId: "", credits: 0 };
+
+export type SmmPostStatus = "draft" | "scheduled" | "publishing" | "published" | "failed";
+
+export type SmmPostItem = {
+  id: string;
+  text: string;
+  status: SmmPostStatus;
+  scheduledTime: string | null;
+  hasMedia: boolean;
+};

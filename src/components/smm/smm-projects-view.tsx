@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -66,7 +66,7 @@ export function SmmProjectsView({ projects, loadError }: { projects: SmmProject[
           <ul className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-3">
             {projects.map((project) => (
               <li key={project.id} className={cn(CARD, "group relative transition-all duration-200 hover:-translate-y-0.5 hover:border-rose-200")}>
-                <Link href={`/smm/p/${project.id}/plan`} className="flex h-full flex-col p-6 sm:p-7">
+                <Link href={`/smm/p/${project.id}/settings`} className="flex h-full flex-col p-6 sm:p-7">
                   <span className="grid size-14 place-items-center rounded-2xl bg-strike font-heading text-2xl font-bold text-[#ffffff] shadow-[0_8px_24px_-8px_rgba(207,2,52,0.55)]">
                     {projectInitial(project.name)}
                   </span>
@@ -151,7 +151,7 @@ function CreateDialog({ onClose }: { onClose: () => void }) {
       const result = await createProject(name);
       if (result.ok) {
         toast.success("Проект создан");
-        router.push(`/smm/p/${result.id}/plan`);
+        router.push(`/smm/p/${result.id}/settings`);
       } else {
         toast.error(result.error);
       }

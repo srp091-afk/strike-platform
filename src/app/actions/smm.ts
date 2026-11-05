@@ -7,6 +7,7 @@ import {
   DEFAULT_SMM_STRATEGY,
   SMM_DAYS,
   SMM_TONES,
+  type SmmPostItem,
   type SmmStrategyState,
   type SmmStudioState,
 } from "@/lib/smm-types";
@@ -136,5 +137,32 @@ export async function saveSmmAvatarId(projectId: string, value: string): Promise
     return { ok: true, avatarId };
   } catch (error) {
     return failure(error);
+  }
+}
+export async function getSmmPosts(projectId: string): Promise<SmmActionResult<{ posts: SmmPostItem[] }>> {
+  try {
+    const userId = await getAuthenticatedUserId();
+    const project = await ownedProjectId(userId, projectId);
+    if (!project) return NO_PROJECT;
+    const { data, error } = await createSupabaseAdminClient()
+      .from("smm_posts")
+      .select("id, content_text, media_urls, scheduled_time, status, created_at")
+      .eq("project_id", project)
+      .eq("user_id", userId)
+      .order("scheduled_time", { ascending: true, nullsFirst: false })
+      .limit(200);
+    if (error) return { ok: false, error: error.message };
+    return {
+      ok: true,
+      posts: (data ?? []).map((row) => ({
+        id: String(row.id),
+        text: String(row.content_text ?? ""),
+        status: String(row.status) as SmmPostItem["status"],
+        scheduledTime: (row.scheduled_time as string | null) ?? null,
+        hasMedia: Array.isArray(row.media_urls) && row.media_urls.length > 0,
+      })),
+    };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Не удалось загрузить посты." };
   }
 }

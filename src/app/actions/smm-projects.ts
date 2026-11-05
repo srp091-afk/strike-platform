@@ -48,7 +48,7 @@ export async function getProjects(): Promise<{ ok: true; projects: SmmProject[] 
   }
 }
 
-/** Создаёт проект и возвращает его id: клиент сразу переходит на /smm/p/[id]/plan. */
+/** Создаёт проект и возвращает его id: клиент сразу переходит на /smm/p/[id]/settings. */
 export async function createProject(name: string): Promise<{ ok: true; id: string } | Failure> {
   try {
     const userId = await getAuthenticatedUserId();
