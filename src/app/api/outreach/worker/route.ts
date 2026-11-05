@@ -34,9 +34,11 @@ export async function POST(request: Request) {
   await connection();
   const body = await request.text();
 
+  const signature = request.headers.get("upstash-signature");
   const authorized =
-    (await validSignature(request.headers.get("upstash-signature"), body, process.env.OUTREACH_WORKER_URL?.trim() || request.url)) ||
-    validSecret(request.headers.get("x-outreach-secret"));
+    validSecret(request.headers.get("x-outreach-secret")) ||
+    (await validSignature(signature, body, request.url)) ||
+    (await validSignature(signature, body, process.env.OUTREACH_WORKER_URL?.trim() || request.url));
   if (!authorized) {
     console.error("[outreach-worker] 403: нет валидной подписи QStash или x-outreach-secret");
     return Response.json({ error: "Forbidden" }, { status: 403 });

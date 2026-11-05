@@ -22,6 +22,22 @@ function workerUrl() {
   return site ? `${site.replace(/\/$/, "")}/api/outreach/worker` : null;
 }
 
+/** QStash не следует редиректам (apex -> www дают 308): заранее находим конечный адрес воркера. */
+async function resolveFinalUrl(start: string): Promise<string> {
+  let current = start;
+  for (let hop = 0; hop < 3; hop += 1) {
+    try {
+      const response = await fetch(current, { method: "HEAD", redirect: "manual", signal: AbortSignal.timeout(5000) });
+      const location = response.headers.get("location");
+      if (response.status >= 300 && response.status < 400 && location) current = new URL(location, current).toString();
+      else break;
+    } catch {
+      break;
+    }
+  }
+  return current;
+}
+
 export function outreachQueueConfigured() {
   return Boolean(process.env.QSTASH_TOKEN && process.env.OUTREACH_WORKER_SECRET && workerUrl());
 }
@@ -32,7 +48,8 @@ export async function enqueueLogs(
 ): Promise<{ queued: number; error?: string }> {
   const token = process.env.QSTASH_TOKEN;
   const secret = process.env.OUTREACH_WORKER_SECRET;
-  const url = workerUrl();
+  const configuredUrl = workerUrl();
+  const url = configuredUrl ? await resolveFinalUrl(configuredUrl) : null;
   if (!token || !secret || !url) {
     return { queued: 0, error: "Очередь не настроена (QSTASH_TOKEN, OUTREACH_WORKER_SECRET, OUTREACH_WORKER_URL)." };
   }
