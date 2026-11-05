@@ -1,6 +1,6 @@
 /** Каталог модульных тарифов STRIKE и пакетов STRIKE Credits (SC). Единый источник для /pricing и /dashboard/billing. */
 
-export type ModuleId = "agents" | "smm" | "sites" | "bundle";
+export type ModuleId = "agents" | "smm" | "ads" | "sites" | "bundle";
 export type Lang = "en" | "ru";
 export type Text2 = Record<Lang, string>;
 
@@ -13,11 +13,12 @@ export type Tier = {
   features: Text2[];
 };
 
-export const MODULE_ORDER: ModuleId[] = ["agents", "smm", "sites", "bundle"];
+export const MODULE_ORDER: ModuleId[] = ["agents", "smm", "ads", "sites", "bundle"];
 
 export const MODULE_LABELS: Record<ModuleId, Text2> = {
   agents: { ru: "AI-Агенты", en: "AI Agents" },
   smm: { ru: "SMM-Студия", en: "SMM Studio" },
+  ads: { ru: "Ads & Креативы", en: "Ads & Creatives" },
   sites: { ru: "Сайты", en: "Websites" },
   bundle: { ru: "Бандл STRIKE Business", en: "STRIKE Business Bundle" },
 };
@@ -25,6 +26,7 @@ export const MODULE_LABELS: Record<ModuleId, Text2> = {
 export const MODULE_BLURBS: Record<ModuleId, Text2> = {
   agents: { ru: "Автоматизируйте диалоги и продажи с помощью AI-агентов.", en: "Automate conversations and sales with AI agents." },
   smm: { ru: "Контент-план, AI-видео и публикации для ваших проектов.", en: "Content plans, AI video and publishing for your projects." },
+  ads: { ru: "Рекламные кампании и креативы, сгенерированные AI.", en: "AI-generated ad campaigns and creatives." },
   sites: { ru: "AI-лендинги и сайты для вашего бизнеса.", en: "AI landing pages and websites for your business." },
   bundle: { ru: "Всё включено на общем балансе STRIKE Credits.", en: "Everything included on one shared STRIKE Credits balance." },
 };
@@ -54,6 +56,17 @@ export const TIERS: Record<Exclude<ModuleId, "bundle">, Tier[]> = {
     },
     { id: "agency", name: "Agency", price: 89, features: [{ ru: "10 проектов", en: "10 projects" }, sc("8 000")] },
   ],
+  ads: [
+    { id: "start", name: "Start", price: 29, features: [{ ru: "3 рекламных проекта", en: "3 ad projects" }, sc("1 500")] },
+    {
+      id: "pro",
+      name: "Pro",
+      price: 59,
+      popular: true,
+      features: [{ ru: "10 проектов", en: "10 projects" }, { ru: "Экспорт в ZIP", en: "ZIP export" }, sc("4 000")],
+    },
+    { id: "agency", name: "Agency", price: 149, features: [{ ru: "Безлимит проектов", en: "Unlimited projects" }, sc("12 000")] },
+  ],
   sites: [
     { id: "basic", name: "Basic", price: 15, features: [{ ru: "1 сайт", en: "1 website" }] },
     { id: "pro", name: "Pro", price: 29, popular: true, features: [{ ru: "3 сайта", en: "3 websites" }, sc("1 000")] },
@@ -63,11 +76,12 @@ export const TIERS: Record<Exclude<ModuleId, "bundle">, Tier[]> = {
 export const BUNDLE: Tier = {
   id: "bundle",
   name: "STRIKE Business",
-  price: 149,
+  price: 179,
   features: [
     { ru: "5 AI-агентов", en: "5 AI agents" },
     { ru: "3 SMM-проекта", en: "3 SMM projects" },
     { ru: "3 сайта", en: "3 websites" },
+    { ru: "Уровень Pro для Ads & Креативы", en: "Pro tier for Ads & Creatives" },
     { ru: "15 000 SC в месяц на общий баланс", en: "15,000 SC / month on one shared balance" },
   ],
 };

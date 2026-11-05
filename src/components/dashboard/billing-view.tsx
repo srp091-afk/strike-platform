@@ -24,7 +24,7 @@ export type BillingData = {
   renewsAt: string | null;
   balanceUsd: number;
   strikeCredits: number;
-  tiers: { agents: string; smm: string; sites: string };
+  tiers: { agents: string; smm: string; ads: string; sites: string };
   isBundleActive: boolean;
   usage: { key: "messages" | "agents" | "campaigns" | "sites"; used: number; limit: number | null }[];
   hasSubscription: boolean;
@@ -89,6 +89,7 @@ export function BillingView({ data }: { data: BillingData }) {
   const moduleTiers = [
     { label: "Агенты", tier: data.tiers.agents },
     { label: "SMM", tier: data.tiers.smm },
+    { label: "Ads", tier: data.tiers.ads },
     { label: "Сайты", tier: data.tiers.sites },
   ];
 

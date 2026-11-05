@@ -19,7 +19,7 @@ import { cn } from "@/lib/utils";
 
 export type PlansTheme = "dark" | "light";
 
-export type CurrentPlans = { agents: string; smm: string; sites: string; bundle: boolean };
+export type CurrentPlans = { agents: string; smm: string; ads: string; sites: string; bundle: boolean };
 
 const UI = {
   perMonth: { ru: "/мес", en: "/mo" },

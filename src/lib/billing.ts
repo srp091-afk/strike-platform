@@ -29,7 +29,7 @@ export type BillingOverview = {
   renewsAt: string | null;
   balanceUsd: number;
   strikeCredits: number;
-  tiers: { agents: string; smm: string; sites: string };
+  tiers: { agents: string; smm: string; ads: string; sites: string };
   isBundleActive: boolean;
   usage: { messages: number; agents: number; campaigns: number; sites: number };
   /** Есть ли привязанная подписка Lemon Squeezy (для портала управления). */
@@ -56,6 +56,9 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
     .eq("id", userId)
     .maybeSingle();
   const credits = creditsQuery.error ? null : creditsQuery.data;
+  // tier_ads — отдельная миграция (20261106_add_tier_ads): отдельный запрос, чтобы её отсутствие не ломало остальное.
+  const adsQuery = await admin.from("profiles").select("tier_ads").eq("id", userId).maybeSingle();
+  const tierAds = adsQuery.error ? "trial" : String(adsQuery.data?.tier_ads ?? "trial");
 
   const [profile, messages, agents, campaigns, sites, transactions] = await Promise.all([
     admin
@@ -91,6 +94,7 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
     tiers: {
       agents: String(credits?.tier_agents ?? "trial"),
       smm: String(credits?.tier_smm ?? "trial"),
+      ads: tierAds,
       sites: String(credits?.tier_sites ?? "trial"),
     },
     isBundleActive: Boolean(credits?.is_bundle_active),
