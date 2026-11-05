@@ -3,6 +3,8 @@
 export type OutreachStatus = "draft" | "active" | "paused" | "completed";
 export type OutreachChannel = "whatsapp" | "telegram" | "instagram";
 export type OutreachLogStatus = "queued" | "success" | "error";
+export type OutreachMessageType = "ai" | "fixed";
+export type OutreachDelayMode = "random" | "fixed";
 
 export const OUTREACH_CHANNELS: ReadonlyArray<{ value: OutreachChannel; label: string }> = [
   { value: "whatsapp", label: "WhatsApp" },
@@ -32,6 +34,12 @@ export type OutreachCampaign = {
   source_columns: string[];
   contact_column: string | null;
   website_column: string | null;
+  name_column: string | null;
+  social_column: string | null;
+  message_type: OutreachMessageType;
+  fixed_message: string;
+  delay_mode: OutreachDelayMode;
+  fixed_delay_minutes: number;
   webhook_url: string | null;
   created_at: string;
 };
@@ -58,6 +66,8 @@ export type OutreachAgentOption = {
   id: string;
   name: string;
   channels: OutreachChannel[];
+  /** Подключённый аккаунт-отправитель по каналам: номер WhatsApp, @бот Telegram. */
+  accounts: Partial<Record<OutreachChannel, string>>;
 };
 
 export function readOutreachChannel(value: unknown): OutreachChannel | null {
@@ -66,4 +76,39 @@ export function readOutreachChannel(value: unknown): OutreachChannel | null {
 
 export function readOutreachStatus(value: unknown): OutreachStatus {
   return value === "active" || value === "paused" || value === "completed" ? value : "draft";
+}
+
+export type OutreachMapping = {
+  contact: string | null;
+  website: string | null;
+  name: string | null;
+  social: string | null;
+};
+
+const VARIABLE_ALIASES: Array<{ pattern: RegExp; key: keyof OutreachMapping }> = [
+  { pattern: /^(имя|name|first_?name)$/i, key: "name" },
+  { pattern: /^(сайт|site|website|url)$/i, key: "website" },
+  { pattern: /^(соцсети|соцсеть|social|socials)$/i, key: "social" },
+  { pattern: /^(телефон|номер|контакт|phone|contact|email|e-?mail)$/i, key: "contact" },
+];
+
+/**
+ * Подставляет {{Переменные}} в «точный текст». Сначала проверяются алиасы колонок из маппинга
+ * ({{Имя}}, {{Сайт}}, {{Соцсети}}, {{Телефон}}), затем точное название любой колонки базы.
+ * Неизвестная переменная заменяется пустой строкой, чтобы {{...}} никогда не попал клиенту.
+ */
+export function renderFixedMessage(template: string, contact: Record<string, string>, mapping: OutreachMapping) {
+  return template
+    .replace(/\{\{\s*([^{}]+?)\s*\}\}/g, (_match, raw: string) => {
+      const variable = raw.trim();
+      const alias = VARIABLE_ALIASES.find((item) => item.pattern.test(variable));
+      const mapped = alias ? mapping[alias.key] : null;
+      if (mapped && contact[mapped] !== undefined) return contact[mapped].trim();
+      if (contact[variable] !== undefined) return contact[variable].trim();
+      const insensitive = Object.keys(contact).find((column) => column.toLowerCase() === variable.toLowerCase());
+      return insensitive ? contact[insensitive].trim() : "";
+    })
+    .replace(/[ \t]{2,}/g, " ")
+    .replace(/ +([,.!?;:])/g, "$1")
+    .trim();
 }

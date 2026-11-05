@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { AlertTriangle, FileSpreadsheet, Info, UploadCloud } from "lucide-react";
 import Link from "next/link";
@@ -16,7 +16,9 @@ import {
   type OutreachAgentOption,
   type OutreachCampaign,
   type OutreachChannel,
+  type OutreachDelayMode,
   type OutreachLog,
+  type OutreachMessageType,
 } from "@/lib/outreach-types";
 
 const CHUNK = 500;
@@ -92,6 +94,13 @@ export function OutreachSettings({
   const [webhook, setWebhook] = useState(campaign.webhook_url ?? "");
   const [contactColumn, setContactColumn] = useState(campaign.contact_column ?? "");
   const [websiteColumn, setWebsiteColumn] = useState(campaign.website_column ?? "");
+  const [nameColumn, setNameColumn] = useState(campaign.name_column ?? "");
+  const [socialColumn, setSocialColumn] = useState(campaign.social_column ?? "");
+  const [messageType, setMessageType] = useState<OutreachMessageType>(campaign.message_type);
+  const [fixedMessage, setFixedMessage] = useState(campaign.fixed_message);
+  const [delayMode, setDelayMode] = useState<OutreachDelayMode>(campaign.delay_mode);
+  const [fixedDelay, setFixedDelay] = useState(String(campaign.fixed_delay_minutes));
+  const fixedRef = useRef<HTMLTextAreaElement>(null);
   const [saving, startSaving] = useTransition();
 
   const locked = campaign.status === "active";
@@ -117,11 +126,30 @@ export function OutreachSettings({
         daily_limit: Number(dailyLimit),
         contact_column: contactColumn || null,
         website_column: websiteColumn || null,
+        name_column: nameColumn || null,
+        social_column: socialColumn || null,
+        message_type: messageType,
+        fixed_message: fixedMessage,
+        delay_mode: delayMode,
+        fixed_delay_minutes: Number(fixedDelay),
         webhook_url: webhook || null,
       });
       if (result.ok) toast.success("Настройки рассылки сохранены");
       else toast.error(result.error);
       onChanged();
+    });
+  }
+
+  function insertVariable(variable: string) {
+    const area = fixedRef.current;
+    const token = `{{${variable}}}`;
+    if (!area) return setFixedMessage((current) => current + token);
+    const start = area.selectionStart ?? fixedMessage.length;
+    const end = area.selectionEnd ?? fixedMessage.length;
+    setFixedMessage(fixedMessage.slice(0, start) + token + fixedMessage.slice(end));
+    requestAnimationFrame(() => {
+      area.focus();
+      area.setSelectionRange(start + token.length, start + token.length);
     });
   }
 
@@ -135,7 +163,7 @@ export function OutreachSettings({
       </section>
 
       <section className={cardClass}>
-        <SectionTitle index={1} title="База контактов" hint="Загрузите CSV или XLSX и укажите, какая колонка — номер/email, а какая — сайт." />
+        <SectionTitle index={1} title="База контактов" hint="Загрузите CSV или XLSX и сопоставьте колонки: номер/email, сайт, имя и соцсети." />
         <DataSource
           campaignId={campaign.id}
           locked={locked}
@@ -144,12 +172,18 @@ export function OutreachSettings({
           sample={logs.slice(0, 3)}
           contactColumn={contactColumn}
           websiteColumn={websiteColumn}
+          nameColumn={nameColumn}
+          socialColumn={socialColumn}
           columnOptions={columnOptions}
           onContactColumn={setContactColumn}
           onWebsiteColumn={setWebsiteColumn}
-          onImported={(contact, website) => {
-            setContactColumn(contact);
-            setWebsiteColumn(website);
+          onNameColumn={setNameColumn}
+          onSocialColumn={setSocialColumn}
+          onImported={(mapping) => {
+            setContactColumn(mapping.contact);
+            setWebsiteColumn(mapping.website);
+            setNameColumn(mapping.name);
+            setSocialColumn(mapping.social);
             onChanged();
           }}
         />
@@ -204,6 +238,7 @@ export function OutreachSettings({
                           }`}
                         >
                           {item.label}
+                          {selectedAgent.accounts[item.value] ? ` (${selectedAgent.accounts[item.value]})` : ""}
                         </button>
                       );
                     })}
@@ -226,29 +261,119 @@ export function OutreachSettings({
       <section className={cardClass}>
         <SectionTitle
           index={3}
-          title="Инструкция для первого сообщения"
-          hint="Логика только для стартового касания. Например: «Проанализируй сайт, найди главную услугу, составь короткий оффер на 1 абзац и спроси, берут ли они новые объекты»."
+          title="Первое сообщение"
+          hint="Выберите: пусть AI напишет персональный текст по инструкции или отправляйте один и тот же текст с подстановкой переменных."
         />
-        <Textarea value={prompt} disabled={locked} maxLength={6000} onChange={(event) => setPrompt(event.target.value)} placeholder="Что должно быть в первом сообщении?" />
-      </section>
-
-      <section className={cardClass}>
-        <SectionTitle index={4} title="Безопасность и лимиты" hint="Случайные паузы между отправками защищают номер от антиспам-систем." />
-        <div className="grid gap-4 sm:grid-cols-3">
-          <label>
-            <FieldLabel>Пауза от (мин)</FieldLabel>
-            <input className={fieldClass} type="number" min={0} max={1440} value={minDelay} disabled={locked} onChange={(event) => setMinDelay(event.target.value)} />
-          </label>
-          <label>
-            <FieldLabel>Пауза до (мин)</FieldLabel>
-            <input className={fieldClass} type="number" min={0} max={1440} value={maxDelay} disabled={locked} onChange={(event) => setMaxDelay(event.target.value)} />
-          </label>
-          <label>
-            <FieldLabel>Суточный лимит</FieldLabel>
-            <input className={fieldClass} type="number" min={1} max={5000} value={dailyLimit} disabled={locked} onChange={(event) => setDailyLimit(event.target.value)} />
-          </label>
+        <div role="radiogroup" aria-label="Режим первого сообщения" className="mb-4 inline-flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1">
+          {([
+            ["ai", "AI-генерация"],
+            ["fixed", "Точный текст"],
+          ] as const).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              role="radio"
+              aria-checked={messageType === value}
+              disabled={locked}
+              onClick={() => setMessageType(value)}
+              className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+                messageType === value ? "bg-[#ffffff] text-rose-700 shadow-sm ring-1 ring-gray-200" : "text-gray-500 hover:text-gray-900"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
-        <label className="mt-4 block">
+        {messageType === "ai" ? (
+          <>
+            <p className="mb-3 text-sm leading-6 text-zinc-400">
+              Логика только для стартового касания. Например: «Проанализируй сайт, найди главную услугу, составь короткий оффер на 1 абзац и спроси, берут ли они новые объекты». Текст пишет модель выбранного агента.
+            </p>
+            <Textarea value={prompt} disabled={locked} maxLength={6000} onChange={(event) => setPrompt(event.target.value)} placeholder="Что должно быть в первом сообщении?" />
+          </>
+        ) : (
+          <>
+            <p className="mb-3 text-sm leading-6 text-zinc-400">
+              Нейросеть не вызывается: сообщение уходит ровно так, как написано. Переменные подставляются из колонок базы.
+            </p>
+            <Textarea
+              ref={fixedRef}
+              value={fixedMessage}
+              disabled={locked}
+              maxLength={4000}
+              onChange={(event) => setFixedMessage(event.target.value)}
+              placeholder="Здравствуйте, {{Имя}}! Увидел ваш сайт {{Сайт}} и хочу предложить…"
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <span className="text-xs text-zinc-400">Вставить переменную:</span>
+              {["Имя", "Сайт", "Соцсети", ...campaign.source_columns.filter((column) => !["Имя", "Сайт", "Соцсети"].includes(column)).slice(0, 6)].map((variable) => (
+                <button
+                  key={variable}
+                  type="button"
+                  disabled={locked}
+                  onClick={() => insertVariable(variable)}
+                  className="rounded-lg border border-gray-200 bg-[#ffffff] px-2.5 py-1 text-xs font-medium text-gray-700 transition-colors hover:border-rose-300 hover:bg-rose-50 disabled:opacity-50"
+                >
+                  {`{{${variable}}}`}
+                </button>
+              ))}
+            </div>
+            <p className="mt-2 text-xs text-zinc-400">
+              {"{{Имя}}, {{Сайт}}, {{Соцсети}}, {{Телефон}} берутся из выбранных колонок маппинга; любое другое {{Название}} — из одноимённой колонки файла."}
+            </p>
+          </>
+        )}
+      </section>
+      <section className={cardClass}>
+        <SectionTitle index={4} title="Безопасность и лимиты" hint="Паузы между отправками защищают номер от антиспам-систем: случайные в диапазоне или строго фиксированные." />
+        <div className="grid gap-4">
+          <div>
+            <FieldLabel>Пауза между отправками</FieldLabel>
+            <div role="radiogroup" aria-label="Тип паузы" className="inline-flex gap-1 rounded-xl border border-gray-200 bg-gray-50 p-1">
+              {([
+                ["random", "Случайная"],
+                ["fixed", "Фиксированная"],
+              ] as const).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  role="radio"
+                  aria-checked={delayMode === value}
+                  disabled={locked}
+                  onClick={() => setDelayMode(value)}
+                  className={`rounded-lg px-4 py-2 text-sm font-medium transition-colors disabled:opacity-50 ${
+                    delayMode === value ? "bg-[#ffffff] text-rose-700 shadow-sm ring-1 ring-gray-200" : "text-gray-500 hover:text-gray-900"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="grid gap-4 sm:grid-cols-3">
+            {delayMode === "random" ? (
+              <>
+                <label>
+                  <FieldLabel>Пауза от (мин)</FieldLabel>
+                  <input className={fieldClass} type="number" min={0} max={1440} value={minDelay} disabled={locked} onChange={(event) => setMinDelay(event.target.value)} />
+                </label>
+                <label>
+                  <FieldLabel>Пауза до (мин)</FieldLabel>
+                  <input className={fieldClass} type="number" min={0} max={1440} value={maxDelay} disabled={locked} onChange={(event) => setMaxDelay(event.target.value)} />
+                </label>
+              </>
+            ) : (
+              <label>
+                <FieldLabel>Пауза (мин), точно</FieldLabel>
+                <input className={fieldClass} type="number" min={0} max={1440} value={fixedDelay} disabled={locked} onChange={(event) => setFixedDelay(event.target.value)} />
+              </label>
+            )}
+            <label>
+              <FieldLabel>Суточный лимит</FieldLabel>
+              <input className={fieldClass} type="number" min={1} max={5000} value={dailyLimit} disabled={locked} onChange={(event) => setDailyLimit(event.target.value)} />
+            </label>
+          </div>
+        </div>        <label className="mt-4 block">
           <FieldLabel>Вебхук (Make.com, опционально)</FieldLabel>
           <input className={fieldClass} type="url" placeholder="https://hook.eu1.make.com/..." value={webhook} disabled={locked} onChange={(event) => setWebhook(event.target.value)} />
           <span className="mt-1.5 block text-xs text-zinc-400">STRIKE отправит сюда телефон, статус и текст после каждой отправки.</span>
@@ -273,9 +398,13 @@ function DataSource({
   sample,
   contactColumn,
   websiteColumn,
+  nameColumn,
+  socialColumn,
   columnOptions,
   onContactColumn,
   onWebsiteColumn,
+  onNameColumn,
+  onSocialColumn,
   onImported,
 }: {
   campaignId: string;
@@ -285,10 +414,14 @@ function DataSource({
   sample: OutreachLog[];
   contactColumn: string;
   websiteColumn: string;
+  nameColumn: string;
+  socialColumn: string;
   columnOptions: Array<{ value: string; label: string }>;
   onContactColumn: (value: string) => void;
   onWebsiteColumn: (value: string) => void;
-  onImported: (contact: string, website: string) => void;
+  onNameColumn: (value: string) => void;
+  onSocialColumn: (value: string) => void;
+  onImported: (mapping: { contact: string; website: string; name: string; social: string }) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
@@ -296,6 +429,8 @@ function DataSource({
   const [fileError, setFileError] = useState<string | null>(null);
   const [newContact, setNewContact] = useState("");
   const [newWebsite, setNewWebsite] = useState("");
+  const [newName, setNewName] = useState("");
+  const [newSocial, setNewSocial] = useState("");
   const [progress, setProgress] = useState<number | null>(null);
 
   async function handleFile(file: File | undefined) {
@@ -308,6 +443,8 @@ function DataSource({
       setParsed(result);
       setNewContact(guessColumn(result.columns, /phone|тел|whats|номер|mobile|e-?mail|почт/i));
       setNewWebsite(guessColumn(result.columns, /site|сайт|url|web|домен|domain/i));
+      setNewName(guessColumn(result.columns, /^(name|имя|фио|first.?name|contact.?name)$/i) || guessColumn(result.columns, /имя|name|фио/i));
+      setNewSocial(guessColumn(result.columns, /social|соц|insta|telegram|tg|vk|facebook|linkedin|ссылк/i));
     } catch (error) {
       setParsed(null);
       setFileError(error instanceof Error ? error.message : "Не удалось прочитать файл.");
@@ -326,6 +463,8 @@ function DataSource({
           startIndex: start,
           contact_column: newContact,
           website_column: newWebsite || null,
+          name_column: newName || null,
+          social_column: newSocial || null,
         });
         if (!result.ok) {
           toast.error(result.error);
@@ -334,7 +473,7 @@ function DataSource({
         setProgress(Math.min(100, Math.round(((start + CHUNK) / parsed.rows.length) * 100)));
       }
       toast.success(`База загружена: ${parsed.rows.length} контактов`);
-      onImported(newContact, newWebsite);
+      onImported({ contact: newContact, website: newWebsite, name: newName, social: newSocial });
       setParsed(null);
     } finally {
       setProgress(null);
@@ -392,6 +531,14 @@ function DataSource({
               <FieldLabel>Колонка с сайтом</FieldLabel>
               <SelectField value={newWebsite} options={uploadOptions} onChange={setNewWebsite} />
             </div>
+            <div>
+              <FieldLabel>Колонка с именем</FieldLabel>
+              <SelectField value={newName} options={uploadOptions} onChange={setNewName} />
+            </div>
+            <div>
+              <FieldLabel>Колонка с соцсетями</FieldLabel>
+              <SelectField value={newSocial} options={uploadOptions} onChange={setNewSocial} />
+            </div>
           </div>
           <div className="overflow-x-auto rounded-lg border border-zinc-800">
             <table className="w-full min-w-max text-left text-xs">
@@ -438,6 +585,14 @@ function DataSource({
             <div>
               <FieldLabel>Колонка с сайтом</FieldLabel>
               <SelectField value={websiteColumn} options={columnOptions} onChange={onWebsiteColumn} disabled={locked} />
+            </div>
+            <div>
+              <FieldLabel>Колонка с именем</FieldLabel>
+              <SelectField value={nameColumn} options={columnOptions} onChange={onNameColumn} disabled={locked} />
+            </div>
+            <div>
+              <FieldLabel>Колонка с соцсетями</FieldLabel>
+              <SelectField value={socialColumn} options={columnOptions} onChange={onSocialColumn} disabled={locked} />
             </div>
           </div>
           {sample.length > 0 ? (

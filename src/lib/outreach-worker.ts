@@ -34,7 +34,7 @@ export async function processOutreachLog(logId: string): Promise<ProcessResult> 
 
   const { data: campaign } = await supabase
     .from("outreach_campaigns")
-    .select("id, user_id, agent_id, channel_type, outreach_prompt, daily_limit, status, contact_column, website_column, webhook_url")
+    .select("id, user_id, agent_id, channel_type, outreach_prompt, daily_limit, status, contact_column, website_column, name_column, social_column, message_type, fixed_message, webhook_url")
     .eq("id", log.campaign_id)
     .maybeSingle();
   if (!campaign || campaign.status !== "active") {
@@ -64,7 +64,7 @@ export async function processOutreachLog(logId: string): Promise<ProcessResult> 
 
   const { data: agent } = await supabase
     .from("agents")
-    .select("id, name, system_prompt, wa_instance_id, wa_api_token")
+    .select("id, name, system_prompt, model, wa_instance_id, wa_api_token")
     .eq("id", campaign.agent_id)
     .eq("user_id", campaign.user_id)
     .maybeSingle();
@@ -82,7 +82,15 @@ export async function processOutreachLog(logId: string): Promise<ProcessResult> 
     agentPrompt: String(agent.system_prompt ?? ""),
     channelLabel,
     contact,
-    websiteColumn: campaign.website_column,
+    messageType: campaign.message_type === "fixed" ? "fixed" : "ai",
+    fixedMessage: String(campaign.fixed_message ?? ""),
+    mapping: {
+      contact: campaign.contact_column,
+      website: campaign.website_column,
+      name: campaign.name_column,
+      social: campaign.social_column,
+    },
+    model: agent.model,
   });
   if (!generated.ok) return fail(generated.error);
 

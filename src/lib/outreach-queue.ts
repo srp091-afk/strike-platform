@@ -28,7 +28,7 @@ export function outreachQueueConfigured() {
 
 export async function enqueueLogs(
   logIds: string[],
-  delays: { minMinutes: number; maxMinutes: number },
+  delays: { mode: "random" | "fixed"; minMinutes: number; maxMinutes: number; fixedMinutes: number },
 ): Promise<{ queued: number; error?: string }> {
   const token = process.env.QSTASH_TOKEN;
   const secret = process.env.OUTREACH_WORKER_SECRET;
@@ -41,7 +41,11 @@ export async function enqueueLogs(
   let elapsedSeconds = 0;
   let queued = 0;
   for (const logId of logIds) {
-    const gapMinutes = delays.minMinutes + Math.random() * Math.max(0, delays.maxMinutes - delays.minMinutes);
+    // «Фиксированная» пауза — ровно N минут между отправками; «случайная» — значение из [min, max].
+    const gapMinutes =
+      delays.mode === "fixed"
+        ? delays.fixedMinutes
+        : delays.minMinutes + Math.random() * Math.max(0, delays.maxMinutes - delays.minMinutes);
     elapsedSeconds += Math.max(1, Math.round(gapMinutes * 60));
     if (elapsedSeconds > MAX_DELAY_SECONDS) break;
     try {
