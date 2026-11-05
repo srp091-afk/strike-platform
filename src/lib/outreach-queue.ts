@@ -46,13 +46,14 @@ export async function enqueueLogs(
       delays.mode === "fixed"
         ? delays.fixedMinutes
         : delays.minMinutes + Math.random() * Math.max(0, delays.maxMinutes - delays.minMinutes);
-    elapsedSeconds += Math.max(1, Math.round(gapMinutes * 60));
+    // Первое сообщение уходит сразу, пауза отсчитывается только между сообщениями.
+    if (queued > 0) elapsedSeconds += Math.max(1, Math.round(gapMinutes * 60));
     if (elapsedSeconds > MAX_DELAY_SECONDS) break;
     try {
       await client.publishJSON({
         url,
         body: { logId },
-        delay: elapsedSeconds,
+        ...(elapsedSeconds > 0 ? { delay: elapsedSeconds } : {}),
         retries: 2,
         // Дублирующая защита: воркер принимает либо подпись QStash, либо этот секрет.
         headers: { "x-outreach-secret": secret },

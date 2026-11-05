@@ -37,7 +37,10 @@ export async function POST(request: Request) {
   const authorized =
     (await validSignature(request.headers.get("upstash-signature"), body, process.env.OUTREACH_WORKER_URL?.trim() || request.url)) ||
     validSecret(request.headers.get("x-outreach-secret"));
-  if (!authorized) return Response.json({ error: "Forbidden" }, { status: 403 });
+  if (!authorized) {
+    console.error("[outreach-worker] 403: нет валидной подписи QStash или x-outreach-secret");
+    return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
 
   let logId: unknown;
   try {
@@ -48,6 +51,7 @@ export async function POST(request: Request) {
   if (typeof logId !== "string") return Response.json({ error: "logId required" }, { status: 400 });
 
   const result = await processOutreachLog(logId);
+  console.log(`[outreach-worker] ${logId}: ${result.status}${result.detail ? ` (${result.detail})` : ""}`);
   // 429 заставляет QStash повторить задачу позже, когда суточный лимит обнулится.
   if (result.status === "skipped" && result.detail === "daily_limit") {
     return Response.json(result, { status: 429 });
