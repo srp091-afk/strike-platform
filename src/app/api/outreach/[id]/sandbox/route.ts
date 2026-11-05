@@ -40,6 +40,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
       contact: first.contact_data,
       messageType: campaign.message_type,
       fixedMessage: campaign.fixed_message,
+      language: campaign.language,
       mapping: { contact: campaign.contact_column, website: campaign.website_column, name: campaign.name_column, social: campaign.social_column },
       model: agent.model,
     });

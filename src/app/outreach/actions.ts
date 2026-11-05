@@ -6,7 +6,10 @@ import { revalidatePath } from "next/cache";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { getCampaign, listAgentOptions } from "@/lib/outreach";
 import { enqueueLogs, outreachQueueConfigured } from "@/lib/outreach-queue";
+import { getOpenAI } from "@/lib/openai";
 import {
+  DEFAULT_OUTREACH_LANGUAGE,
+  OUTREACH_LANGUAGES,
   OUTREACH_MAX_ROWS,
   readOutreachChannel,
   type OutreachChannel,
@@ -66,6 +69,7 @@ export type CampaignSettingsInput = {
   social_column: string | null;
   message_type: OutreachMessageType;
   fixed_message: string;
+  language: string;
   delay_mode: OutreachDelayMode;
   fixed_delay_minutes: number;
   webhook_url: string | null;
@@ -119,6 +123,7 @@ export async function saveCampaignSettings(id: string, input: CampaignSettingsIn
       social_column: socialColumn,
       message_type: messageType,
       fixed_message: input.fixed_message.slice(0, 4000),
+      language: (OUTREACH_LANGUAGES as readonly string[]).includes(input.language) ? input.language : DEFAULT_OUTREACH_LANGUAGE,
       delay_mode: delayMode,
       fixed_delay_minutes: fixedDelay,
       webhook_url: webhook,
@@ -266,4 +271,43 @@ export async function deleteCampaign(id: string): Promise<Result> {
   if (error) return fail(error.message);
   revalidatePath("/outreach");
   return { ok: true };
+}
+
+/** Предлагает инструкцию для первого холодного сообщения по системному промпту выбранного агента. */
+const bad = (error: string) => ({ ok: false as const, error });
+
+export async function generateOutreachInstruction(agentId: string): Promise<{ ok: true; instruction: string } | { ok: false; error: string }> {
+  try {
+    const userId = await getAuthenticatedUserId();
+    if (!agentId) return bad("Сначала выберите агента.");
+    const { data: agent } = await createSupabaseAdminClient()
+      .from("agents")
+      .select("system_prompt")
+      .eq("id", agentId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (!agent) return bad("Агент не найден.");
+    const systemPrompt = String(agent.system_prompt ?? "").trim().slice(0, 6000);
+    if (!systemPrompt) return bad("У агента пустая системная инструкция: не на что опираться.");
+
+    const completion = await getOpenAI().chat.completions.create({
+      model: "gpt-4o-mini",
+      temperature: 0.9,
+      messages: [
+        {
+          role: "system",
+          content: "Ты помогаешь настроить рассылки для AI-агентов. Отвечай только текстом инструкции, без кавычек, заголовков и пояснений.",
+        },
+        {
+          role: "user",
+          content: `Проанализируй базовую инструкцию этого AI-агента: ${systemPrompt}\n\nНапиши короткую инструкцию (1-2 предложения) для генерации самого первого холодного исходящего сообщения (Outreach), чтобы оно соответствовало стилю агента и плавно переводило диалог в его воронку.`,
+        },
+      ],
+    });
+    const instruction = completion.choices[0]?.message?.content?.trim().replace(/^["«]|["»]$/g, "") ?? "";
+    if (!instruction) return bad("Модель вернула пустой ответ. Попробуйте ещё раз.");
+    return { ok: true, instruction };
+  } catch (error) {
+    return bad(error instanceof Error ? error.message : "Не удалось сгенерировать инструкцию.");
+  }
 }

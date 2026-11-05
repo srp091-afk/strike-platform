@@ -21,6 +21,22 @@ export const OUTREACH_STATUS_LABEL: Record<OutreachStatus, string> = {
 
 export const OUTREACH_MAX_ROWS = 5000;
 
+export const OUTREACH_LANGUAGES = [
+  "Русский",
+  "Английский",
+  "Испанский",
+  "Немецкий",
+  "Французский",
+  "Итальянский",
+  "Португальский",
+  "Арабский",
+  "Турецкий",
+  "Польский",
+  "Украинский",
+  "Китайский",
+] as const;
+export const DEFAULT_OUTREACH_LANGUAGE = "Русский";
+
 export type OutreachCampaign = {
   id: string;
   name: string;
@@ -38,6 +54,7 @@ export type OutreachCampaign = {
   social_column: string | null;
   message_type: OutreachMessageType;
   fixed_message: string;
+  language: string;
   delay_mode: OutreachDelayMode;
   fixed_delay_minutes: number;
   webhook_url: string | null;

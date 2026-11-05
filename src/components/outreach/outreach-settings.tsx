@@ -1,10 +1,10 @@
 "use client";
 
-import { AlertTriangle, FileSpreadsheet, Info, UploadCloud } from "lucide-react";
+import { AlertTriangle, FileSpreadsheet, Info, Loader2, Sparkles, UploadCloud } from "lucide-react";
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 
-import { importContacts, saveCampaignSettings } from "@/app/outreach/actions";
+import { generateOutreachInstruction, importContacts, saveCampaignSettings } from "@/app/outreach/actions";
 import { cardClass, fieldClass } from "@/components/outreach/outreach-ui";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select-field";
@@ -12,6 +12,7 @@ import { toast } from "@/components/ui/toaster";
 import { Textarea } from "@/components/ui/textarea";
 import {
   OUTREACH_CHANNELS,
+  OUTREACH_LANGUAGES,
   OUTREACH_MAX_ROWS,
   type OutreachAgentOption,
   type OutreachCampaign,
@@ -98,6 +99,8 @@ export function OutreachSettings({
   const [socialColumn, setSocialColumn] = useState(campaign.social_column ?? "");
   const [messageType, setMessageType] = useState<OutreachMessageType>(campaign.message_type);
   const [fixedMessage, setFixedMessage] = useState(campaign.fixed_message);
+  const [language, setLanguage] = useState(campaign.language);
+  const [generating, startGenerating] = useTransition();
   const [delayMode, setDelayMode] = useState<OutreachDelayMode>(campaign.delay_mode);
   const [fixedDelay, setFixedDelay] = useState(String(campaign.fixed_delay_minutes));
   const fixedRef = useRef<HTMLTextAreaElement>(null);
@@ -130,6 +133,7 @@ export function OutreachSettings({
         social_column: socialColumn || null,
         message_type: messageType,
         fixed_message: fixedMessage,
+        language,
         delay_mode: delayMode,
         fixed_delay_minutes: Number(fixedDelay),
         webhook_url: webhook || null,
@@ -137,6 +141,18 @@ export function OutreachSettings({
       if (result.ok) toast.success("Настройки рассылки сохранены");
       else toast.error(result.error);
       onChanged();
+    });
+  }
+
+  function generateInstruction() {
+    startGenerating(async () => {
+      const result = await generateOutreachInstruction(agentId);
+      if (result.ok) {
+        setPrompt(result.instruction);
+        toast.success("Инструкция сгенерирована");
+      } else {
+        toast.error(result.error);
+      }
     });
   }
 
@@ -290,6 +306,28 @@ export function OutreachSettings({
               Логика только для стартового касания. Например: «Проанализируй сайт, найди главную услугу, составь короткий оффер на 1 абзац и спроси, берут ли они новые объекты». Текст пишет модель выбранного агента.
             </p>
             <Textarea value={prompt} disabled={locked} maxLength={6000} onChange={(event) => setPrompt(event.target.value)} placeholder="Что должно быть в первом сообщении?" />
+            <div className="mt-3 flex flex-wrap items-center gap-3">
+              <button
+                type="button"
+                onClick={generateInstruction}
+                disabled={locked || generating || !agentId}
+                title={agentId ? undefined : "Сначала выберите агента"}
+                className="inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-4 py-2 text-sm font-semibold text-rose-700 transition-colors hover:border-rose-300 hover:bg-rose-100 disabled:opacity-60"
+              >
+                {generating ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+                {generating ? "Генерируем…" : "Сгенерировать инструкцию"}
+              </button>
+              <span className="text-xs text-zinc-400">AI предложит вариант по системной инструкции агента. Каждый клик даёт новый.</span>
+            </div>
+            <div className="mt-5 max-w-xs">
+              <FieldLabel>Язык сообщения</FieldLabel>
+              <SelectField
+                value={language}
+                disabled={locked}
+                onChange={setLanguage}
+                options={(OUTREACH_LANGUAGES.includes(language as never) ? [...OUTREACH_LANGUAGES] : [language, ...OUTREACH_LANGUAGES]).map((item) => ({ value: item, label: item }))}
+              />
+            </div>
           </>
         ) : (
           <>

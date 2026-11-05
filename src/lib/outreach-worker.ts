@@ -34,7 +34,7 @@ export async function processOutreachLog(logId: string): Promise<ProcessResult> 
 
   const { data: campaign } = await supabase
     .from("outreach_campaigns")
-    .select("id, user_id, agent_id, channel_type, outreach_prompt, daily_limit, status, contact_column, website_column, name_column, social_column, message_type, fixed_message, webhook_url")
+    .select("id, user_id, agent_id, channel_type, outreach_prompt, daily_limit, status, contact_column, website_column, name_column, social_column, message_type, fixed_message, language, webhook_url")
     .eq("id", log.campaign_id)
     .maybeSingle();
   if (!campaign || campaign.status !== "active") {
@@ -84,6 +84,7 @@ export async function processOutreachLog(logId: string): Promise<ProcessResult> 
     contact,
     messageType: campaign.message_type === "fixed" ? "fixed" : "ai",
     fixedMessage: String(campaign.fixed_message ?? ""),
+    language: String(campaign.language ?? "Русский"),
     mapping: {
       contact: campaign.contact_column,
       website: campaign.website_column,
