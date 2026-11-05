@@ -5,6 +5,7 @@ import { CalendarDays, Check, Clapperboard, KeyRound, Link2, Loader2, Mic, Plug,
 
 import { clearSmmKey, saveSmmAvatarId, saveSmmKey, saveSmmStrategy } from "@/app/actions/smm";
 import { ChannelIcon } from "@/components/channel-icons";
+import { VideoPanel } from "@/components/smm/video-panel";
 import { toast } from "@/components/ui/toaster";
 import type { SmmIntegrationsState, SmmKeyField, SmmStrategyState } from "@/lib/smm-types";
 import { cn } from "@/lib/utils";
@@ -498,6 +499,9 @@ function PlanTab() {
               </div>
               <h3 className={cn("mt-3 font-heading text-lg font-bold leading-snug tracking-tight", INK)}>{post.title}</h3>
               <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-500">{post.text}</p>
+              <div className="mt-auto">
+                <VideoPanel defaultScript={post.text} />
+              </div>
             </li>
           );
         })}
