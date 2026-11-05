@@ -28,6 +28,9 @@ export type BillingOverview = {
   subscriptionStatus: string | null;
   renewsAt: string | null;
   balanceUsd: number;
+  strikeCredits: number;
+  tiers: { agents: string; smm: string; sites: string };
+  isBundleActive: boolean;
   usage: { messages: number; agents: number; campaigns: number; sites: number };
   /** Есть ли привязанная подписка Lemon Squeezy (для портала управления). */
   hasSubscription: boolean;
@@ -45,6 +48,14 @@ function startOfMonthIso() {
 
 export async function getBillingOverview(userId: string): Promise<BillingOverview> {
   const admin = createSupabaseAdminClient();
+
+  // Колонки STRIKE Credits из миграции 20261106_user_credits_tiers: до её применения используем значения по умолчанию.
+  const creditsQuery = await admin
+    .from("profiles")
+    .select("strike_credits, tier_agents, tier_smm, tier_sites, is_bundle_active")
+    .eq("id", userId)
+    .maybeSingle();
+  const credits = creditsQuery.error ? null : creditsQuery.data;
 
   const [profile, messages, agents, campaigns, sites, transactions] = await Promise.all([
     admin
@@ -76,6 +87,13 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
     subscriptionStatus: typeof profile.data?.subscription_status === "string" ? profile.data.subscription_status : null,
     renewsAt: typeof profile.data?.plan_renews_at === "string" ? profile.data.plan_renews_at : null,
     balanceUsd: Number(profile.data?.balance_usd ?? 0),
+    strikeCredits: Number(credits?.strike_credits ?? 500),
+    tiers: {
+      agents: String(credits?.tier_agents ?? "trial"),
+      smm: String(credits?.tier_smm ?? "trial"),
+      sites: String(credits?.tier_sites ?? "trial"),
+    },
+    isBundleActive: Boolean(credits?.is_bundle_active),
     usage: {
       messages: messages.count ?? 0,
       agents: agents.count ?? 0,

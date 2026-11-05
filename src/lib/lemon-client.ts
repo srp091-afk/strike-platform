@@ -113,3 +113,30 @@ export async function openTopUpCheckout(amount: number): Promise<CheckoutResult>
   openLemonOverlay(overlay.toString());
   return "opened";
 }
+
+// Модульные тарифы: ссылки на чекаут из env (NEXT_PUBLIC_LEMON_PLAN_<КЛЮЧ>_URL).
+const PLAN_CHECKOUT_URLS: Record<string, string | undefined> = {
+  agents_start: process.env.NEXT_PUBLIC_LEMON_PLAN_AGENTS_START_URL,
+  agents_pro: process.env.NEXT_PUBLIC_LEMON_PLAN_AGENTS_PRO_URL,
+  agents_agency: process.env.NEXT_PUBLIC_LEMON_PLAN_AGENTS_AGENCY_URL,
+  smm_start: process.env.NEXT_PUBLIC_LEMON_PLAN_SMM_START_URL,
+  smm_creator: process.env.NEXT_PUBLIC_LEMON_PLAN_SMM_CREATOR_URL,
+  smm_agency: process.env.NEXT_PUBLIC_LEMON_PLAN_SMM_AGENCY_URL,
+  sites_basic: process.env.NEXT_PUBLIC_LEMON_PLAN_SITES_BASIC_URL,
+  sites_pro: process.env.NEXT_PUBLIC_LEMON_PLAN_SITES_PRO_URL,
+  bundle: process.env.NEXT_PUBLIC_LEMON_PLAN_BUNDLE_URL,
+};
+
+/** Чекаут модульного тарифа по ключу из каталога (agents_pro, bundle, ...). */
+export async function openPlanCheckout(key: string): Promise<CheckoutResult> {
+  const base = PLAN_CHECKOUT_URLS[key];
+  if (!base) return "missing";
+  const user = await currentUser();
+  if (!user) return "login";
+  const url = new URL(base);
+  url.searchParams.set("embed", "1");
+  url.searchParams.set("checkout[custom][user_id]", user.id);
+  if (user.email) url.searchParams.set("checkout[email]", user.email);
+  openLemonOverlay(url.toString());
+  return "opened";
+}

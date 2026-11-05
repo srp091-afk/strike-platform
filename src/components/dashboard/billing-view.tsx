@@ -1,6 +1,6 @@
 "use client";
 
-import { Bitcoin, Check, CreditCard, Loader2, Copy, QrCode, Zap } from "lucide-react";
+import { Bitcoin, Check, Copy, CreditCard, Loader2, QrCode, Zap } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 
 import { useRouter } from "next/navigation";
@@ -8,12 +8,12 @@ import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/toaster";
 import { ConsentCheckbox } from "@/components/consent-checkbox";
 import { BillingPlans } from "@/components/dashboard/billing-plans";
+import { formatSc, TOP_UPS, tierLabel } from "@/lib/billing-catalog";
 import { openCustomerPortal, openTopUpCheckout, watchCheckoutSuccess } from "@/lib/lemon-client";
 import { cn } from "@/lib/utils";
 
-const MIN_TOPUP = 10;
-const DEFAULT_TOPUP = 50;
 const WALLET_ADDRESS = "TКошелекЗаглушка123456789";
+const DEFAULT_TOPUP_INDEX = 1;
 
 type Method = "card" | "crypto";
 
@@ -23,13 +23,13 @@ export type BillingData = {
   status: string | null;
   renewsAt: string | null;
   balanceUsd: number;
+  strikeCredits: number;
+  tiers: { agents: string; smm: string; sites: string };
+  isBundleActive: boolean;
   usage: { key: "messages" | "agents" | "campaigns" | "sites"; used: number; limit: number | null }[];
   hasSubscription: boolean;
   transactions: { id: string; createdAt: string; description: string; method: string; amountUsd: number; status: string }[];
 };
-
-const USAGE_LABELS = { messages: "Сообщения", agents: "AI-агенты", sites: "AI-сайты", campaigns: "AI-кампании" } as const;
-const PLAN_TITLES = { free: "Flex (Pay-as-you-go)", starter: "Starter Plan", pro: "Pro Plan", agency: "Agency Plan" } as const;
 
 const DATE_FORMAT = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" });
 
@@ -42,12 +42,6 @@ function formatUsd(value: number) {
   return `$${value.toFixed(2)}`;
 }
 
-function statusBadge(status: string | null, plan: BillingData["plan"]) {
-  if (plan === "free" || !status) return { label: "Без подписки", tone: "muted" as const };
-  if (status === "active" || status === "on_trial") return { label: "Активен", tone: "ok" as const };
-  if (status === "past_due" || status === "unpaid") return { label: "Просрочен", tone: "warn" as const };
-  return { label: "Отменён", tone: "muted" as const };
-}
 /** Подсветка границы и фона следом за курсором (как в pricing). */
 function trackPointer(event: MouseEvent<HTMLElement>) {
   const box = event.currentTarget.getBoundingClientRect();
@@ -76,7 +70,7 @@ function Card({ children, className }: { children: React.ReactNode; className?: 
 
 export function BillingView({ data }: { data: BillingData }) {
   const [method, setMethod] = useState<Method>("card");
-  const [amountInput, setAmountInput] = useState(String(DEFAULT_TOPUP));
+  const [topUpIndex, setTopUpIndex] = useState(DEFAULT_TOPUP_INDEX);
   const [copied, setCopied] = useState(false);
   const [paying, setPaying] = useState(false);
   const [managing, setManaging] = useState(false);
@@ -91,14 +85,16 @@ export function BillingView({ data }: { data: BillingData }) {
     };
   }, []);
 
-  const badge = statusBadge(data.status, data.plan);
-  const parsed = Number(amountInput);
-  const amountValid = Number.isFinite(parsed) && parsed >= MIN_TOPUP;
-  const amountLabel = amountValid ? parsed : DEFAULT_TOPUP;
+  const selected = TOP_UPS[topUpIndex];
+  const moduleTiers = [
+    { label: "Агенты", tier: data.tiers.agents },
+    { label: "SMM", tier: data.tiers.smm },
+    { label: "Сайты", tier: data.tiers.sites },
+  ];
 
-  /** Оверлей Lemon Squeezy с точной суммой из поля; user_id уходит в custom data вебхука. */
+  /** Оверлей Lemon Squeezy с суммой выбранного пакета; user_id уходит в custom data вебхука. */
   async function payByCard() {
-    if (!amountValid || paying) return;
+    if (paying) return;
     if (!agreed) {
       setConsentMissing(true);
       return;
@@ -110,7 +106,7 @@ export function BillingView({ data }: { data: BillingData }) {
         setTimeout(() => router.refresh(), 3000);
         setTimeout(() => router.refresh(), 8000);
       });
-      const result = await openTopUpCheckout(parsed);
+      const result = await openTopUpCheckout(selected.usd);
       if (result === "login") router.push("/login");
       else if (result === "missing") toast.error("Чекаут пополнения пока не настроен.");
     } catch (error) {
@@ -160,153 +156,98 @@ export function BillingView({ data }: { data: BillingData }) {
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Биллинг</p>
           <h1 className="mt-2 pb-1 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Тариф и баланс</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-            Управляйте подпиской, следите за лимитами и пополняйте баланс для оплаты по факту использования.
+            Единая валюта платформы — STRIKE Credits (100 SC = $1): ею оплачиваются любые генерации во всех модулях.
           </p>
         </header>
 
         <div className="mt-8 grid items-stretch gap-5 lg:grid-cols-2">
-          {/* Текущий тариф и лимиты */}
+          {/* Баланс и тарифы по модулям */}
           <Card>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Текущий тариф</p>
-                <h2 className="mt-2 text-2xl font-semibold text-white">{PLAN_TITLES[data.plan]}</h2>
-                <p className="mt-1 text-sm text-zinc-400">
-                  {data.plan === "free"
-                    ? "Оплата по факту использования с баланса"
-                    : `$${data.priceUsd} / мес${
-                        data.renewsAt
-                          ? ` · ${data.status === "cancelled" ? "доступ до" : "следующее списание"} ${formatDate(data.renewsAt)}`
-                          : ""
-                      }`}
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Текущий баланс</p>
+            <p className="mt-3 flex items-baseline gap-2">
+              <span className="text-5xl font-semibold tracking-tight text-[#0b0b0f] tabular-nums sm:text-6xl">{formatSc(data.strikeCredits)}</span>
+              <span className="text-xl font-semibold text-strike">SC</span>
+            </p>
+            <p className="mt-1 text-sm text-gray-500">≈ {formatUsd(data.strikeCredits / 100)} · STRIKE Credits</p>
+
+            <div className="mt-7 border-t border-gray-100 pt-6">
+              <h3 className="text-sm font-semibold text-[#0b0b0f]">Активные тарифы</h3>
+              {data.isBundleActive ? (
+                <p className="mt-3 inline-flex items-center gap-2 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2 text-sm font-semibold text-strike">
+                  <Check className="size-4" strokeWidth={2.5} />
+                  Бандл STRIKE Business активен
                 </p>
-              </div>
-              <span
-                className={cn(
-                  "shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold",
-                  badge.tone === "ok" && "border-strike/30 bg-strike/10 text-strike-soft",
-                  badge.tone === "warn" && "border-amber-400/30 bg-amber-400/10 text-amber-300",
-                  badge.tone === "muted" && "border-white/15 bg-white/5 text-zinc-300",
-                )}
-              >
-                {badge.label}
-              </span>
+              ) : null}
+              <ul className="mt-3 flex flex-wrap gap-2">
+                {moduleTiers.map((item) => (
+                  <li
+                    key={item.label}
+                    className="rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2 text-sm text-gray-500"
+                  >
+                    {item.label}: <span className="font-semibold text-[#0b0b0f]">{data.isBundleActive ? "Business" : tierLabel(item.tier)}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
 
             <button
               type="button"
               onClick={() => void manageSubscription()}
-              className="mt-6 inline-flex w-full items-center justify-center rounded-xl border border-white/15 bg-white/5 px-4 py-3 text-sm font-semibold text-white transition-all duration-200 hover:border-white/30 hover:bg-white/10 active:scale-[0.98] sm:w-auto"
+              className="mt-7 inline-flex w-full items-center justify-center rounded-xl border border-gray-200 bg-[#ffffff] px-4 py-3 text-sm font-semibold text-[#0b0b0f] transition-colors hover:border-rose-300 hover:bg-rose-50/50 active:scale-[0.98] sm:w-auto"
             >
               {managing ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-              Управлять подпиской
+              {data.hasSubscription ? "Управлять подпиской" : "Выбрать тариф"}
             </button>
-
-            <div className="mt-8 border-t border-white/10 pt-6">
-              <h3 className="text-sm font-semibold text-white">Использование в этом месяце</h3>
-              <ul className="mt-5 grid gap-5">
-                {data.usage.map((item) => {
-                  const label = USAGE_LABELS[item.key];
-                  const percent = item.limit ? Math.min(100, Math.round((item.used / item.limit) * 100)) : 0;
-                  return (
-                    <li key={item.key}>
-                      <div className="flex items-baseline justify-between gap-3 text-sm">
-                        <span className="text-zinc-300">{label}</span>
-                        <span className="tabular-nums text-zinc-400">
-                          <span className="text-white">{item.used.toLocaleString("en-US")}</span>
-                          {item.limit ? ` / ${item.limit.toLocaleString("en-US")}` : " · без лимита"}
-                        </span>
-                      </div>
-                      {item.limit ? (
-                        <div
-                          role="progressbar"
-                          aria-label={label}
-                          aria-valuemin={0}
-                          aria-valuemax={item.limit}
-                          aria-valuenow={item.used}
-                          className="mt-2 h-1 overflow-hidden rounded-full bg-white/10"
-                        >
-                          <div
-                            className={cn(
-                              "h-full rounded-full transition-[width] duration-500",
-                              percent >= 90
-                                ? "bg-amber-400 shadow-[0_0_10px_rgba(251,191,36,0.7)]"
-                                : "bg-strike shadow-[0_0_10px_rgba(207,2,52,0.7)]",
-                            )}
-                            style={{ width: `${percent}%` }}
-                          />
-                        </div>
-                      ) : null}
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
           </Card>
 
           {/* Пополнение баланса */}
           <Card>
             <div className="flex items-center gap-3">
-              <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-strike/25 bg-strike/10 text-strike-soft shadow-[0_0_24px_-6px_rgba(207,2,52,0.7)]">
+              <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-rose-50 text-strike">
                 <Zap className="size-5" strokeWidth={2} />
               </span>
               <div>
                 <h2 className="text-lg font-semibold text-white">Пополнение баланса</h2>
-                <p className="text-sm text-zinc-400">Pay-as-you-go: платите только за использование.</p>
+                <p className="text-sm text-zinc-400">Пакеты STRIKE Credits: кредиты не сгорают.</p>
               </div>
             </div>
-            <p className="mt-5 text-sm text-zinc-400">
-              Текущий баланс:{" "}
-              <span className="text-lg font-semibold text-strike-soft tabular-nums">{formatUsd(data.balanceUsd)}</span>
-            </p>
 
-            <label htmlFor="topup-amount" className="mt-6 block text-sm font-medium text-zinc-300">
-              Сумма пополнения
-            </label>
-            <div className="relative mt-2">
-              <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-zinc-500">$</span>
-              <input
-                id="topup-amount"
-                type="number"
-                inputMode="decimal"
-                min={MIN_TOPUP}
-                step={1}
-                value={amountInput}
-                onChange={(event) => setAmountInput(event.target.value)}
-                className={cn(
-                  "h-12 w-full rounded-xl border bg-white/5 pr-4 pl-8 text-base text-white tabular-nums outline-none transition-colors focus:border-strike/50",
-                  amountValid ? "border-gray-800" : "border-red-500/50",
-                )}
-              />
+            <div role="radiogroup" aria-label="Пакет пополнения" className="mt-6 grid gap-3 sm:grid-cols-3">
+              {TOP_UPS.map((pack, index) => {
+                const active = index === topUpIndex;
+                return (
+                  <button
+                    key={pack.usd}
+                    type="button"
+                    role="radio"
+                    aria-checked={active}
+                    onClick={() => setTopUpIndex(index)}
+                    className={cn(
+                      "rounded-2xl border bg-[#ffffff] p-4 text-left transition-colors",
+                      active ? "border-strike ring-1 ring-strike" : "border-gray-200 hover:border-rose-300 hover:bg-rose-50/40",
+                    )}
+                  >
+                    <span className="block text-lg font-bold tabular-nums text-[#0b0b0f]">+ {formatSc(pack.credits)} SC</span>
+                    <span className="mt-1 block text-sm text-gray-500">${pack.usd}</span>
+                  </button>
+                );
+              })}
             </div>
-            <p className={cn("mt-2 text-xs", amountValid ? "text-zinc-500" : "text-red-300")}>
-              Минимальная сумма: ${MIN_TOPUP}
-            </p>
 
-            <div role="radiogroup" aria-label="Метод оплаты" className="mt-6 grid gap-3 sm:grid-cols-2">
+            <div role="radiogroup" aria-label="Метод оплаты" className="mt-5 grid gap-3 sm:grid-cols-2">
               <MethodButton
                 active={method === "card"}
                 onClick={() => setMethod("card")}
                 icon={<CreditCard className="size-5" strokeWidth={1.75} />}
                 title="Bank Card"
-                hint={
-                  <span className="flex items-center gap-1.5">
-                    <span className="rounded border border-white/15 px-1.5 py-0.5 text-[10px] font-bold tracking-wider text-zinc-300 italic">
-                      VISA
-                    </span>
-                    <span className="relative flex h-5 w-8 items-center justify-center" aria-label="Mastercard">
-                      <span className="absolute left-0.5 size-4 rounded-full bg-red-500/80" />
-                      <span className="absolute right-0.5 size-4 rounded-full bg-amber-400/80 mix-blend-screen" />
-                    </span>
-                  </span>
-                }
+                hint={<span className="text-xs text-gray-500">Visa · Mastercard</span>}
               />
               <MethodButton
                 active={method === "crypto"}
                 onClick={() => setMethod("crypto")}
                 icon={<Bitcoin className="size-5" strokeWidth={1.75} />}
                 title="Crypto (USDT / BTC)"
-                hint={<span className="text-xs text-zinc-500">TRC-20 · BTC</span>}
+                hint={<span className="text-xs text-gray-500">TRC-20 · BTC</span>}
               />
             </div>
 
@@ -325,15 +266,14 @@ export function BillingView({ data }: { data: BillingData }) {
             {method === "card" ? (
               <button
                 type="button"
-                disabled={!amountValid || paying}
+                disabled={paying}
                 onClick={() => void payByCard()}
                 className="mt-4 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-strike px-4 py-3 text-sm font-semibold text-white shadow-[0_0_30px_-6px_rgba(207,2,52,0.7)] transition-all duration-200 hover:brightness-110 hover:shadow-[0_0_40px_-4px_rgba(207,2,52,0.8)] active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50 disabled:shadow-none"
               >
                 {paying ? <Loader2 className="size-4 animate-spin" /> : null}
-                Оплатить картой
+                Оплатить картой · ${selected.usd}
               </button>
             ) : null}
-
             {/* Accordion: плавное раскрытие блока с оплатой криптой */}
             <div
               className={cn(
@@ -354,7 +294,7 @@ export function BillingView({ data }: { data: BillingData }) {
                     <div className="min-w-0 flex-1 text-center sm:text-left">
                       <p className="text-sm leading-6 text-zinc-300">
                         Отправьте точно{" "}
-                        <span className="font-semibold text-white tabular-nums">{amountLabel} USDT</span> (сеть TRC-20)
+                        <span className="font-semibold text-white tabular-nums">{selected.usd} USDT</span> (сеть TRC-20)
                         на этот адрес
                       </p>
                       <div className="mt-3 flex items-center gap-2 rounded-lg border border-gray-800 bg-black/60 p-1.5 pl-3">
@@ -381,8 +321,10 @@ export function BillingView({ data }: { data: BillingData }) {
           </Card>
         </div>
 
-        <BillingPlans currentPlan={data.plan} subscriptionActive={data.plan !== "free" && data.status === "active"} />
-
+        <BillingPlans
+          current={{ ...data.tiers, bundle: data.isBundleActive }}
+          subscriptionActive={data.hasSubscription}
+        />
         {/* История транзакций */}
         <section className="mt-5">
           <Card>
@@ -459,15 +401,13 @@ function MethodButton({
       aria-checked={active}
       onClick={onClick}
       className={cn(
-        "flex flex-col items-start gap-3 rounded-xl border p-4 text-left transition-all duration-200",
-        active
-          ? "border-strike/50 bg-strike/10 text-white shadow-[0_0_30px_-10px_rgba(207,2,52,0.7)]"
-          : "border-gray-800 bg-white/[0.03] text-zinc-300 hover:border-white/20 hover:bg-white/5",
+        "flex flex-col items-start gap-3 rounded-xl border bg-[#ffffff] p-4 text-left transition-colors duration-200",
+        active ? "border-strike ring-1 ring-strike" : "border-gray-200 hover:border-rose-300 hover:bg-rose-50/40",
       )}
     >
-      <span className={cn("flex items-center gap-2.5 text-sm font-semibold", active && "text-strike-soft")}>
+      <span className={cn("flex items-center gap-2.5 text-sm font-semibold", active ? "text-strike" : "text-[#0b0b0f]")}>
         {icon}
-        <span className={active ? "text-white" : undefined}>{title}</span>
+        <span className="text-[#0b0b0f]">{title}</span>
       </span>
       {hint}
     </button>

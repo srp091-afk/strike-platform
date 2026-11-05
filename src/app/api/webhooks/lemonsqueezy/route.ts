@@ -188,6 +188,15 @@ export async function POST(request: NextRequest) {
       p_amount: totalCents / 100,
     });
     if (error) throw new Error(error.message);
+    if (topup) {
+      // 100 SC = $1 → число центов равно числу кредитов; идемпотентно по ID заказа.
+      const { error: grantError } = await admin.rpc("grant_strike_credits", {
+        p_user_id: customUserId,
+        p_order_id: text(data.id),
+        p_credits: Math.round(totalCents),
+      });
+      if (grantError) console.error("[lemonsqueezy] grant_strike_credits failed (миграция применена?)", grantError.message);
+    }
     return Response.json({ ok: true });
   } catch (error) {
     console.error("[lemonsqueezy] webhook failed", event, error);

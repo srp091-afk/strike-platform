@@ -30,6 +30,9 @@ async function LiveBilling() {
     status: overview.subscriptionStatus,
     renewsAt: overview.renewsAt,
     balanceUsd: overview.balanceUsd,
+    strikeCredits: overview.strikeCredits,
+    tiers: overview.tiers,
+    isBundleActive: overview.isBundleActive,
     usage: [
       { key: "messages", used: overview.usage.messages, limit: limits.messages },
       { key: "agents", used: overview.usage.agents, limit: limits.agents },
