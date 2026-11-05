@@ -4,7 +4,15 @@ import { revalidatePath } from "next/cache";
 
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { getOwnedProject } from "@/lib/smm-projects";
-import { SMM_PROJECTS_LIMIT, SMM_PROJECT_NAME_MAX, type SmmProject } from "@/lib/smm-project-types";
+import {
+  SMM_BRAND_COLOR_PATTERN,
+  SMM_BRAND_FONTS,
+  SMM_BRAND_TEXT_MAX,
+  SMM_PROJECTS_LIMIT,
+  SMM_PROJECT_NAME_MAX,
+  type SmmProject,
+  type SmmProjectSettings,
+} from "@/lib/smm-project-types";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 type Failure = { ok: false; error: string };
@@ -14,7 +22,7 @@ function failure(error: unknown): Failure {
 }
 
 function friendly(message: string) {
-  return message.includes("smm_projects") ? "Примените миграцию 20261106_smm_projects.sql в Supabase." : message;
+  return message.includes("smm_projects") || message.includes("brand_") || message.includes("tone_of_voice") ? "Примените миграции 20261106_smm_projects.sql и 20261106_project_brand_settings.sql в Supabase." : message;
 }
 
 export async function getProjects(): Promise<{ ok: true; projects: SmmProject[] } | Failure> {
@@ -75,6 +83,66 @@ export async function deleteProject(projectId: string): Promise<{ ok: true } | F
     if (error) return { ok: false, error: error.message };
     revalidatePath("/smm");
     return { ok: true };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function getProjectSettings(projectId: string): Promise<{ ok: true; settings: SmmProjectSettings } | Failure> {
+  try {
+    const userId = await getAuthenticatedUserId();
+    const project = await getOwnedProject(userId, String(projectId));
+    if (!project) return { ok: false, error: "Проект не найден." };
+    const { data, error } = await createSupabaseAdminClient()
+      .from("smm_projects")
+      .select("tone_of_voice, target_audience, brand_color, brand_font")
+      .eq("id", project.id)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (error) return { ok: false, error: friendly(error.message) };
+    return {
+      ok: true,
+      settings: {
+        toneOfVoice: String(data?.tone_of_voice ?? ""),
+        targetAudience: String(data?.target_audience ?? ""),
+        brandColor: String(data?.brand_color ?? "#000000"),
+        brandFont: String(data?.brand_font ?? "Inter"),
+      },
+    };
+  } catch (error) {
+    return failure(error);
+  }
+}
+
+export async function updateProjectSettings(projectId: string, data: SmmProjectSettings): Promise<{ ok: true; settings: SmmProjectSettings } | Failure> {
+  try {
+    const userId = await getAuthenticatedUserId();
+    const project = await getOwnedProject(userId, String(projectId));
+    if (!project) return { ok: false, error: "Проект не найден." };
+
+    const toneOfVoice = String(data?.toneOfVoice ?? "").trim();
+    const targetAudience = String(data?.targetAudience ?? "").trim();
+    const brandColor = String(data?.brandColor ?? "").trim();
+    const brandFont = String(data?.brandFont ?? "").trim();
+    if (toneOfVoice.length > SMM_BRAND_TEXT_MAX || targetAudience.length > SMM_BRAND_TEXT_MAX) {
+      return { ok: false, error: `Текст слишком длинный: максимум ${SMM_BRAND_TEXT_MAX} символов.` };
+    }
+    if (!SMM_BRAND_COLOR_PATTERN.test(brandColor)) return { ok: false, error: "Некорректный цвет: ожидается формат #RRGGBB." };
+    if (!(SMM_BRAND_FONTS as readonly string[]).includes(brandFont)) return { ok: false, error: "Недопустимый шрифт." };
+
+    const { error } = await createSupabaseAdminClient()
+      .from("smm_projects")
+      .update({
+        tone_of_voice: toneOfVoice || null,
+        target_audience: targetAudience || null,
+        brand_color: brandColor.toLowerCase(),
+        brand_font: brandFont,
+      })
+      .eq("id", project.id)
+      .eq("user_id", userId);
+    if (error) return { ok: false, error: friendly(error.message) };
+    revalidatePath(`/smm/p/${project.id}/settings`);
+    return { ok: true, settings: { toneOfVoice, targetAudience, brandColor: brandColor.toLowerCase(), brandFont } };
   } catch (error) {
     return failure(error);
   }

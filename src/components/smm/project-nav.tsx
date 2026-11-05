@@ -1,8 +1,8 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ArrowLeft, CalendarDays, Clapperboard, FolderOpen, Lightbulb, Plug } from "lucide-react";
+import { ArrowLeft, CalendarDays, Clapperboard, FolderOpen, Lightbulb, Palette, Plug } from "lucide-react";
 
 import { projectInitial } from "@/components/smm/smm-projects-view";
 import { cn } from "@/lib/utils";
@@ -14,6 +14,7 @@ const TABS = [
   { slug: "plan", label: "Контент-план", icon: CalendarDays },
   { slug: "studio", label: "AI-Видеостудия", icon: Clapperboard },
   { slug: "assets", label: "Медиатека", icon: FolderOpen },
+  { slug: "settings", label: "Настройки бренда", icon: Palette },
 ] as const;
 
 export function ProjectHeader({ project }: { project: SmmProject }) {

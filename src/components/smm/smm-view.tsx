@@ -42,7 +42,33 @@ function FacebookIcon({ className }: { className?: string }) {
   );
 }
 
+function TikTokIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
+      <path d="M16.6 3c.3 2.4 1.7 3.9 4 4.1v3.1c-1.4.1-2.7-.3-4-1.1v5.9c0 3.7-2.6 6-5.7 6-3.3 0-5.7-2.6-5.4-5.9.3-3.1 3-5.2 6.1-4.8v3.2c-1.5-.4-3 .4-3.2 1.9-.2 1.4.9 2.6 2.3 2.6 1.4 0 2.3-1 2.3-2.5V3h3.6Z" />
+    </svg>
+  );
+}
+
+function ThreadsIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" className={className}>
+      <path d="M17.5 11.3c-.3-3-2.1-4.6-5.2-4.6-2.8 0-4.8 1.8-4.8 5.3 0 3.6 2 5.6 5 5.6 2.4 0 3.8-1.2 3.8-2.8 0-3-4.9-3.2-6.2-1.6-.8 1 0 2.2 1.6 2.2 2.6 0 3.2-2.7 3.2-4.4" />
+      <path d="M12 21.3c-5.2 0-8.3-3-8.3-9.3S6.8 2.7 12 2.7s8.3 3 8.3 9.3" />
+    </svg>
+  );
+}
+
+function YouTubeIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true" className={className}>
+      <path d="M21.6 7.2a2.5 2.5 0 0 0-1.8-1.8C18.2 5 12 5 12 5s-6.2 0-7.8.4A2.5 2.5 0 0 0 2.4 7.2C2 8.8 2 12 2 12s0 3.2.4 4.8a2.5 2.5 0 0 0 1.8 1.8C5.8 19 12 19 12 19s6.2 0 7.8-.4a2.5 2.5 0 0 0 1.8-1.8c.4-1.6.4-4.8.4-4.8s0-3.2-.4-4.8ZM10 15V9l5.2 3L10 15Z" />
+    </svg>
+  );
+}
+
 /* ----------------------------- Подключения ----------------------------- */
+
 
 export function ConnectionsTab() {
   const providers = [
@@ -60,12 +86,33 @@ export function ConnectionsTab() {
       icon: <FacebookIcon className="size-7" />,
       perks: ["Публикации на страницу", "Видео и фото", "Кросспостинг"],
     },
+    {
+      id: "tiktok",
+      name: "TikTok",
+      text: "Кросспостинг коротких вертикальных видео в аккаунт TikTok.",
+      icon: <TikTokIcon className="size-7" />,
+      perks: ["Публикация коротких видео", "Описание и хэштеги", "Отложенный постинг"],
+    },
+    {
+      id: "threads",
+      name: "Threads",
+      text: "Текстовые посты и видео в Threads вместе с публикациями в Instagram.",
+      icon: <ThreadsIcon className="size-7" />,
+      perks: ["Текстовые посты и медиа", "Связка с Instagram", "Автопубликация по расписанию"],
+    },
+    {
+      id: "youtube",
+      name: "YouTube Shorts",
+      text: "Выгрузка Reels как YouTube Shorts на ваш канал.",
+      icon: <YouTubeIcon className="size-7" />,
+      perks: ["Публикация Shorts", "Заголовок и описание", "Кросспостинг из AI-Видеостудии"],
+    },
   ];
 
   return (
     <div>
       <SectionTitle title="Подключения" text="Привяжите аккаунты через безопасный OAuth. Мы не храним ваши пароли." />
-      <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2">
+      <div className="mt-6 grid grid-cols-1 gap-6 md:grid-cols-2 xl:grid-cols-3">
         {providers.map((provider) => (
           <div key={provider.id} className={cn(CARD, "flex flex-col p-6 sm:p-8")}>
             <div className="flex items-start justify-between gap-4">
