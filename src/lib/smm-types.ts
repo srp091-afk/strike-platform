@@ -25,11 +25,13 @@ export const DEFAULT_SMM_STRATEGY: SmmStrategyState = {
 
 export const EMPTY_SMM_STUDIO: SmmStudioState = { avatarId: "", credits: 0 };
 
-export type SmmPostStatus = "draft" | "scheduled" | "publishing" | "published" | "failed";
+export type SmmPostStatus = "idea" | "in_progress" | "ready" | "published";
 
 export type SmmPostItem = {
   id: string;
+  title: string;
   text: string;
+  voiceover: string;
   status: SmmPostStatus;
   scheduledTime: string | null;
   hasMedia: boolean;

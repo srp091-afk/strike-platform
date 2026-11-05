@@ -361,11 +361,10 @@ function CreditsCard({ credits }: { credits: number }) {
 
 type PostStatus = SmmPostItem["status"];
 const STATUS: Record<PostStatus, { label: string; className: string }> = {
-  draft: { label: "Черновик", className: "border-gray-200 bg-gray-50 text-gray-600" },
-  scheduled: { label: "Запланирован", className: "border-amber-200 bg-amber-50 text-amber-700" },
-  publishing: { label: "Публикуется", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  idea: { label: "Идея", className: "border-gray-200 bg-gray-50 text-gray-600" },
+  in_progress: { label: "В работе", className: "border-sky-200 bg-sky-50 text-sky-700" },
+  ready: { label: "Запланирован", className: "border-amber-200 bg-amber-50 text-amber-700" },
   published: { label: "Опубликован", className: "border-emerald-200 bg-emerald-50 text-emerald-700" },
-  failed: { label: "Ошибка", className: "border-rose-200 bg-rose-50 text-rose-700" },
 };
 
 function formatPostDate(value: string | null) {
@@ -385,7 +384,7 @@ export function PlanTab({ projectId, initialCredits, posts }: { projectId: strin
             <CalendarDays className="size-7" strokeWidth={1.75} />
           </span>
           <h3 className={cn("mt-6 font-heading text-2xl font-bold tracking-tight", INK)}>Контент-план пуст</h3>
-          <p className="mt-2 max-w-md text-sm leading-6 text-gray-500">Сформируйте темы и сценарии во вкладке «Идеи и стратегия».</p>
+          <p className="mt-2 max-w-md text-sm leading-6 text-gray-500">Запланируйте посты на вкладке «Идеи и стратегия» — они появятся здесь.</p>
           <Link href={`/smm/p/${projectId}/strategy`} className={cn(BTN_PRIMARY, "mt-8")}>
             <Lightbulb className="size-4" strokeWidth={2} />
             Перейти к идеям и стратегии
@@ -400,9 +399,8 @@ export function PlanTab({ projectId, initialCredits, posts }: { projectId: strin
       <SectionTitle title="Контент-план" text="Посты проекта: текст, медиа и время публикации." />
       <ul className="mt-6 grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
         {posts.map((post) => {
-          const status = STATUS[post.status] ?? STATUS.draft;
-          const [firstLine = ""] = post.text.split("\n");
-          const title = firstLine.length > 80 ? `${firstLine.slice(0, 80)}…` : firstLine || "Без названия";
+          const status = STATUS[post.status] ?? STATUS.idea;
+          const title = post.title || "Без названия";
           return (
             <li key={post.id} className={cn(CARD, "flex flex-col p-6")}>
               <div className="grid aspect-video place-items-center rounded-2xl border border-gray-200 bg-gradient-to-br from-rose-50 to-gray-50 text-rose-300">
@@ -415,7 +413,7 @@ export function PlanTab({ projectId, initialCredits, posts }: { projectId: strin
               <h3 className={cn("mt-3 font-heading text-lg font-bold leading-snug tracking-tight", INK)}>{title}</h3>
               <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-500">{post.text}</p>
               <div className="mt-auto">
-                <VideoPanel projectId={projectId} defaultScript={post.text} credits={credits} onCredits={onCredits} />
+                <VideoPanel projectId={projectId} defaultScript={post.voiceover || post.text} credits={credits} onCredits={onCredits} />
               </div>
             </li>
           );
@@ -431,6 +429,20 @@ export function EmptySection({ title, text }: { title: string; text: string }) {
       <SectionTitle title={title} text={text} />
       <div className="mt-6 grid place-items-center rounded-3xl border border-dashed border-gray-200 bg-gray-50 px-6 py-20 text-center">
         <p className="text-sm text-gray-500">Раздел появится в одном из ближайших обновлений.</p>
+      </div>
+    </div>
+  );
+}
+
+export function StudioPostPanel({ projectId, title, script, initialCredits }: { projectId: string; title: string; script: string; initialCredits: number }) {
+  const [credits, setCredits] = useState(initialCredits);
+  return (
+    <div className={cn(CARD, "mb-8 p-6 sm:p-8")}>
+      <p className="text-xs font-semibold uppercase tracking-widest text-gray-500">Видео для поста</p>
+      <h3 className={cn("mt-2 font-heading text-xl font-bold tracking-tight", INK)}>{title || "Без названия"}</h3>
+      <p className="mt-3 whitespace-pre-line text-sm leading-6 text-gray-600">{script}</p>
+      <div className="mt-4">
+        <VideoPanel projectId={projectId} defaultScript={script} credits={credits} onCredits={setCredits} />
       </div>
     </div>
   );

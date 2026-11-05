@@ -146,9 +146,10 @@ export async function getSmmPosts(projectId: string): Promise<SmmActionResult<{ 
     if (!project) return NO_PROJECT;
     const { data, error } = await createSupabaseAdminClient()
       .from("smm_posts")
-      .select("id, content_text, media_urls, scheduled_time, status, created_at")
+      .select("id, title, content, voiceover_text, video_format, scheduled_time, status")
       .eq("project_id", project)
       .eq("user_id", userId)
+      .in("status", ["ready", "published"])
       .order("scheduled_time", { ascending: true, nullsFirst: false })
       .limit(200);
     if (error) return { ok: false, error: error.message };
@@ -156,10 +157,12 @@ export async function getSmmPosts(projectId: string): Promise<SmmActionResult<{ 
       ok: true,
       posts: (data ?? []).map((row) => ({
         id: String(row.id),
-        text: String(row.content_text ?? ""),
+        title: String(row.title ?? ""),
+        text: String(row.content ?? ""),
+        voiceover: String(row.voiceover_text ?? ""),
         status: String(row.status) as SmmPostItem["status"],
         scheduledTime: (row.scheduled_time as string | null) ?? null,
-        hasMedia: Array.isArray(row.media_urls) && row.media_urls.length > 0,
+        hasMedia: row.video_format !== "none",
       })),
     };
   } catch (error) {
