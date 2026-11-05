@@ -41,3 +41,14 @@ export type SmmIdeaEdit = {
   voiceoverText: string;
   visualPrompt: string;
 };
+
+export type SmmPlanItem = {
+  id: string;
+  title: string;
+  content: string;
+  status: "ready" | "published";
+  scheduledTime: string | null;
+  channels: SmmChannelId[];
+  videoFormat: SmmVideoFormat;
+  mediaUrl: string | null;
+};
