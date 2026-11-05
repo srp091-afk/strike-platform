@@ -134,6 +134,7 @@ export function OutreachSettings({
   const [socialColumn, setSocialColumn] = useState(campaign.social_column ?? "");
   const [messageType, setMessageType] = useState<OutreachMessageType>(campaign.message_type);
   const [fixedMessage, setFixedMessage] = useState(campaign.fixed_message);
+  const [fallbackMessage, setFallbackMessage] = useState(campaign.fallback_message);
   const [language, setLanguage] = useState(campaign.language);
   const [generating, startGenerating] = useTransition();
   const [delayMode, setDelayMode] = useState<OutreachDelayMode>(campaign.delay_mode);
@@ -168,6 +169,7 @@ export function OutreachSettings({
         social_column: socialColumn || null,
         message_type: messageType,
         fixed_message: fixedMessage,
+        fallback_message: fallbackMessage,
         language,
         delay_mode: delayMode,
         fixed_delay_minutes: Number(fixedDelay),
@@ -353,6 +355,19 @@ export function OutreachSettings({
                 {generating ? "Генерируем…" : "Сгенерировать инструкцию"}
               </button>
               <span className="text-xs text-zinc-400">AI предложит вариант по системной инструкции агента. Каждый клик даёт новый.</span>
+            </div>
+            <div className="mt-5">
+              <FieldLabel>Что отправить, если сайт недоступен</FieldLabel>
+              <Textarea
+                value={fallbackMessage}
+                disabled={locked}
+                maxLength={4000}
+                onChange={(event) => setFallbackMessage(event.target.value)}
+                placeholder="Здравствуйте, {{Имя}}! Подскажите, вы сейчас берёте новые проекты?"
+              />
+              <p className="mt-2 text-xs text-zinc-400">
+                Если поле заполнено, при недоступном сайте сообщение уйдёт этим текстом без анализа сайта (переменные вида {"{{Имя}}"} подставляются). Если пусто — строка получит ошибку и будет пропущена.
+              </p>
             </div>
             <div className="mt-5 max-w-xs">
               <FieldLabel>Язык сообщения</FieldLabel>

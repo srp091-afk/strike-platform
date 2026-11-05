@@ -15,6 +15,8 @@ export type GenerateInput = {
   contact: Record<string, string>;
   messageType: OutreachMessageType;
   fixedMessage: string;
+  /** Текст на случай недоступного сайта (AI-режим): отправляется без анализа сайта. Пусто — строка пропускается с ошибкой. */
+  fallbackMessage?: string;
   /** Язык первого сообщения (AI-режим), например «Русский». */
   language: string;
   mapping: OutreachMapping;
@@ -54,7 +56,10 @@ export async function generateOutreachMessage(input: GenerateInput): Promise<Gen
     const parsed = await fetchSiteMarkdown(site);
     if (!parsed.ok) {
       steps.push({ label: `Парсинг сайта ${site}`, ok: false, detail: parsed.error });
-      return { ok: false, error: parsed.error, steps };
+      const fallback = renderFixedMessage(input.fallbackMessage ?? "", input.contact, input.mapping);
+      if (!fallback) return { ok: false, error: parsed.error, steps };
+      steps.push({ label: "Запасной текст", ok: true, detail: "сайт недоступен — отправлен без анализа сайта" });
+      return { ok: true, message: fallback, steps };
     }
     steps.push({ label: `Парсинг сайта ${site}`, ok: true, detail: `${parsed.markdown.length} символов Markdown` });
     siteBlock = `Содержимое сайта (${parsed.url}):\n${parsed.markdown}`;

@@ -15,7 +15,7 @@ import {
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const CAMPAIGN_COLUMNS =
-  "id, name, agent_id, channel_type, outreach_prompt, min_delay_minutes, max_delay_minutes, daily_limit, status, source_columns, contact_column, website_column, name_column, social_column, message_type, fixed_message, language, delay_mode, fixed_delay_minutes, webhook_url, created_at";
+  "id, name, agent_id, channel_type, outreach_prompt, min_delay_minutes, max_delay_minutes, daily_limit, status, source_columns, contact_column, website_column, name_column, social_column, message_type, fixed_message, fallback_message, language, delay_mode, fixed_delay_minutes, webhook_url, created_at";
 
 export function mapCampaign(row: Record<string, unknown>): OutreachCampaign {
   return {
@@ -35,6 +35,7 @@ export function mapCampaign(row: Record<string, unknown>): OutreachCampaign {
     social_column: typeof row.social_column === "string" ? row.social_column : null,
     message_type: row.message_type === "fixed" ? "fixed" : "ai",
     fixed_message: typeof row.fixed_message === "string" ? row.fixed_message : "",
+    fallback_message: typeof row.fallback_message === "string" ? row.fallback_message : "",
     language: typeof row.language === "string" && row.language.trim() ? row.language : "Русский",
     delay_mode: row.delay_mode === "fixed" ? "fixed" : "random",
     fixed_delay_minutes: Number(row.fixed_delay_minutes ?? 5),

@@ -69,6 +69,7 @@ export type CampaignSettingsInput = {
   social_column: string | null;
   message_type: OutreachMessageType;
   fixed_message: string;
+  fallback_message: string;
   language: string;
   delay_mode: OutreachDelayMode;
   fixed_delay_minutes: number;
@@ -123,6 +124,7 @@ export async function saveCampaignSettings(id: string, input: CampaignSettingsIn
       social_column: socialColumn,
       message_type: messageType,
       fixed_message: input.fixed_message.slice(0, 4000),
+      fallback_message: String(input.fallback_message ?? "").slice(0, 4000),
       language: (OUTREACH_LANGUAGES as readonly string[]).includes(input.language) ? input.language : DEFAULT_OUTREACH_LANGUAGE,
       delay_mode: delayMode,
       fixed_delay_minutes: fixedDelay,

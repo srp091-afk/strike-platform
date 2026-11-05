@@ -54,6 +54,7 @@ export type OutreachCampaign = {
   social_column: string | null;
   message_type: OutreachMessageType;
   fixed_message: string;
+  fallback_message: string;
   language: string;
   delay_mode: OutreachDelayMode;
   fixed_delay_minutes: number;
