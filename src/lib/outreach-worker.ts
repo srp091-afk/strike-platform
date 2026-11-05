@@ -14,6 +14,33 @@ type ProcessResult = { status: "skipped" | "success" | "error"; detail?: string 
  */
 export async function processOutreachLog(logId: string): Promise<ProcessResult> {
   const supabase = createSupabaseAdminClient();
+  const markFailed = async (message: string): Promise<ProcessResult> => {
+    // Только захваченная нами строка (processing) переводится в ошибку: чужие статусы не трогаем.
+    await supabase
+      .from("outreach_logs")
+      .update({ strike_status: "error", strike_error: message })
+      .eq("id", logId)
+      .eq("strike_status", "queued")
+      .eq("strike_error", "processing");
+    return { status: "error", detail: message };
+  };
+
+  // Предохранитель: функция живёт максимум 120 с, поэтому на 100-й секунде фиксируем ошибку, а не оставляем «В очереди».
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<ProcessResult>((resolve) => {
+    timer = setTimeout(() => void markFailed("Превышено время обработки (100 с): сайт или модель не ответили").then(resolve), 100_000);
+  });
+  try {
+    return await Promise.race([runOutreachLog(logId), deadline]);
+  } catch (error) {
+    return markFailed(`Внутренняя ошибка: ${error instanceof Error ? error.message : "неизвестная"}`);
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+async function runOutreachLog(logId: string): Promise<ProcessResult> {
+  const supabase = createSupabaseAdminClient();
   const { data: log } = await supabase
     .from("outreach_logs")
     .select("id, campaign_id, contact_data, strike_status")

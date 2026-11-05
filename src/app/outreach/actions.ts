@@ -238,6 +238,9 @@ export async function controlCampaign(id: string, action: "start" | "pause" | "s
   const remaining = campaign.daily_limit - (sentToday ?? 0);
   if (remaining <= 0) return fail("Суточный лимит на сегодня уже выбран. Запустите рассылку завтра или увеличьте лимит.");
 
+  // Строки, зависшие в обработке после сбоя функции, возвращаем в очередь (кампания не активна, воркеры их пропускают).
+  await supabase.from("outreach_logs").update({ strike_error: null }).eq("campaign_id", id).eq("strike_status", "queued").eq("strike_error", "processing");
+
   const { data: queued, error } = await supabase
     .from("outreach_logs")
     .select("id")
