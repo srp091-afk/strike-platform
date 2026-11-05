@@ -23,10 +23,12 @@ const MODES: Array<{ value: VideoMode; label: string; hint: string; icon: typeof
 
 /** Кнопка «Сгенерировать AI-Reels» с диалогом сценария, опросом статуса и скачиванием результата. */
 export function VideoPanel({
+  projectId,
   defaultScript,
   credits,
   onCredits,
 }: {
+  projectId: string;
   defaultScript: string;
   credits: number;
   onCredits: (credits: number) => void;
@@ -146,16 +148,18 @@ export function VideoPanel({
         </p>
       ) : null}
 
-      {open ? <VideoDialog defaultScript={defaultScript} onClose={() => setOpen(false)} onStarted={started} /> : null}
+      {open ? <VideoDialog projectId={projectId} defaultScript={defaultScript} onClose={() => setOpen(false)} onStarted={started} /> : null}
     </div>
   );
 }
 
 function VideoDialog({
+  projectId,
   defaultScript,
   onClose,
   onStarted,
 }: {
+  projectId: string;
   defaultScript: string;
   onClose: () => void;
   onStarted: (jobId: string, credits: number) => void;
@@ -180,7 +184,7 @@ function VideoDialog({
 
   function submit() {
     startTransition(async () => {
-      const result = await startVideoGeneration(text, mode, videoPrompt);
+      const result = await startVideoGeneration(projectId, text, mode, videoPrompt);
       if (result.ok) {
         toast.success(`Рендеринг запущен. Осталось генераций: ${result.credits}`);
         onStarted(result.jobId, result.credits);

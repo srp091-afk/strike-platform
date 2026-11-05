@@ -1,6 +1,7 @@
 "use server";
 
 import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getOwnedProject } from "@/lib/smm-projects";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { VIDEO_JOB_ID_PATTERN, type VideoMode, type VideoStatus } from "@/lib/video-types";
 
@@ -41,13 +42,16 @@ function unreachable(error: unknown) {
   return timeout ? "Видеодвижок не отвечает: превышено время ожидания." : "Видеодвижок недоступен. Проверьте, что он запущен и VIDEO_ENGINE_URL указан верно.";
 }
 
-export async function startVideoGeneration(text: string, mode: string, videoPrompt?: string): Promise<StartResult> {
+export async function startVideoGeneration(projectId: string, text: string, mode: string, videoPrompt?: string): Promise<StartResult> {
   let userId: string;
   try {
     userId = await getAuthenticatedUserId();
   } catch (error) {
     return { ok: false, error: error instanceof Error ? error.message : "Нужно войти в аккаунт." };
   }
+
+  const project = await getOwnedProject(userId, String(projectId)).catch(() => null);
+  if (!project) return { ok: false, error: "Проект не найден." };
 
   const config = engineConfig();
   if (!config) return { ok: false, error: "Видеодвижок не настроен: добавьте VIDEO_ENGINE_URL и VIDEO_ENGINE_API_KEY." };
@@ -67,7 +71,7 @@ export async function startVideoGeneration(text: string, mode: string, videoProm
   if (missing) return { ok: false, error: "Генерация видео временно недоступна: на платформе не настроены ключи сервиса." };
 
   const supabase = createSupabaseAdminClient();
-  const { data: integration } = await supabase.from("smm_integrations").select("default_avatar_id").eq("user_id", userId).maybeSingle();
+  const { data: integration } = await supabase.from("smm_integrations").select("default_avatar_id").eq("project_id", project.id).eq("user_id", userId).maybeSingle();
   const avatarId = (integration?.default_avatar_id as string | null | undefined) ?? null;
 
   // Атомарное списание 1 кредита (-1 = кредитов нет). Гонка двух запусков невозможна: это один UPDATE в БД.

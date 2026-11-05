@@ -1,6 +1,7 @@
 "use server";
 
 import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getOwnedProject } from "@/lib/smm-projects";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
   DEFAULT_SMM_STRATEGY,
@@ -39,12 +40,22 @@ function readStrategy(row: Record<string, unknown> | null): SmmStrategyState {
   };
 }
 
-export async function getSmmStrategy(): Promise<SmmActionResult<{ strategy: SmmStrategyState }>> {
+async function ownedProjectId(userId: string, projectId: string) {
+  const project = await getOwnedProject(userId, String(projectId));
+  return project ? project.id : null;
+}
+
+const NO_PROJECT = { ok: false as const, error: "Проект не найден." };
+
+export async function getSmmStrategy(projectId: string): Promise<SmmActionResult<{ strategy: SmmStrategyState }>> {
   try {
     const userId = await getAuthenticatedUserId();
+    const project = await ownedProjectId(userId, projectId);
+    if (!project) return NO_PROJECT;
     const { data, error } = await createSupabaseAdminClient()
       .from("smm_strategy")
       .select("project_description, tone_of_voice, posting_schedule")
+      .eq("project_id", project)
       .eq("user_id", userId)
       .maybeSingle();
     if (error) return { ok: false, error: error.message };
@@ -54,9 +65,11 @@ export async function getSmmStrategy(): Promise<SmmActionResult<{ strategy: SmmS
   }
 }
 
-export async function saveSmmStrategy(input: SmmStrategyState): Promise<SmmActionResult<{ strategy: SmmStrategyState }>> {
+export async function saveSmmStrategy(projectId: string, input: SmmStrategyState): Promise<SmmActionResult<{ strategy: SmmStrategyState }>> {
   try {
     const userId = await getAuthenticatedUserId();
+    const project = await ownedProjectId(userId, projectId);
+    if (!project) return NO_PROJECT;
     const description = String(input?.description ?? "").trim();
     if (description.length > MAX_DESCRIPTION) {
       return { ok: false, error: `Описание слишком длинное: максимум ${MAX_DESCRIPTION} символов.` };
@@ -71,11 +84,12 @@ export async function saveSmmStrategy(input: SmmStrategyState): Promise<SmmActio
       .upsert(
         {
           user_id: userId,
+          project_id: project,
           project_description: description,
           tone_of_voice: input.tone,
           posting_schedule: { days, time: input.time, posts_per_week: days.length },
         },
-        { onConflict: "user_id" },
+        { onConflict: "project_id" },
       );
     if (error) return { ok: false, error: error.message };
     return { ok: true, strategy: { description, tone: input.tone, days: [...days], time: input.time } };
@@ -84,12 +98,14 @@ export async function saveSmmStrategy(input: SmmStrategyState): Promise<SmmActio
   }
 }
 
-export async function getSmmStudio(): Promise<SmmActionResult<{ studio: SmmStudioState }>> {
+export async function getSmmStudio(projectId: string): Promise<SmmActionResult<{ studio: SmmStudioState }>> {
   try {
     const userId = await getAuthenticatedUserId();
+    const project = await ownedProjectId(userId, projectId);
+    if (!project) return NO_PROJECT;
     const supabase = createSupabaseAdminClient();
     const [integrations, profile] = await Promise.all([
-      supabase.from("smm_integrations").select("default_avatar_id").eq("user_id", userId).maybeSingle(),
+      supabase.from("smm_integrations").select("default_avatar_id").eq("project_id", project).eq("user_id", userId).maybeSingle(),
       supabase.from("profiles").select("video_credits").eq("id", userId).maybeSingle(),
     ]);
     if (integrations.error) return { ok: false, error: integrations.error.message };
@@ -106,14 +122,16 @@ export async function getSmmStudio(): Promise<SmmActionResult<{ studio: SmmStudi
   }
 }
 
-export async function saveSmmAvatarId(value: string): Promise<SmmActionResult<{ avatarId: string }>> {
+export async function saveSmmAvatarId(projectId: string, value: string): Promise<SmmActionResult<{ avatarId: string }>> {
   try {
     const userId = await getAuthenticatedUserId();
+    const project = await ownedProjectId(userId, projectId);
+    if (!project) return NO_PROJECT;
     const avatarId = String(value ?? "").trim();
     if (avatarId.length > 200) return { ok: false, error: "ID аватара слишком длинный." };
     const { error } = await createSupabaseAdminClient()
       .from("smm_integrations")
-      .upsert({ user_id: userId, default_avatar_id: avatarId || null }, { onConflict: "user_id" });
+      .upsert({ user_id: userId, project_id: project, default_avatar_id: avatarId || null }, { onConflict: "project_id" });
     if (error) return { ok: false, error: error.message };
     return { ok: true, avatarId };
   } catch (error) {

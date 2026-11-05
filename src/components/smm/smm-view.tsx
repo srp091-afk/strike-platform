@@ -1,19 +1,19 @@
 "use client";
 
 import { useState, useTransition, type ReactNode } from "react";
-import { CalendarDays, Check, Clapperboard, Link2, Loader2, Plug, Sparkles, Target, TrendingUp, Video } from "lucide-react";
+import { Check, Link2, Loader2, Sparkles, TrendingUp, Video } from "lucide-react";
 
 import { saveSmmAvatarId, saveSmmStrategy } from "@/app/actions/smm";
 import { ChannelIcon } from "@/components/channel-icons";
 import { VideoPanel } from "@/components/smm/video-panel";
 import { toast } from "@/components/ui/toaster";
-import type { SmmStrategyState, SmmStudioState } from "@/lib/smm-types";
+import type { SmmStrategyState } from "@/lib/smm-types";
 import { cn } from "@/lib/utils";
 
 /* Явные цвета: светлая тема портала строится инверсией переменных, white/zinc здесь не используем. */
-const CARD =
+export const CARD =
   "rounded-3xl border border-gray-200 bg-[#ffffff] shadow-[0_1px_2px_rgba(16,24,40,0.04),0_12px_32px_-12px_rgba(16,24,40,0.08)]";
-const INK = "text-[#0b0b0f]";
+export const INK = "text-[#0b0b0f]";
 const BTN_PRIMARY =
   "inline-flex items-center justify-center gap-2 rounded-xl bg-strike px-6 py-3 text-sm font-semibold text-[#ffffff] shadow-[0_8px_24px_-8px_rgba(207,2,52,0.55)] transition-all duration-200 hover:brightness-110 active:scale-[0.98]";
 const BTN_OUTLINE =
@@ -22,84 +22,7 @@ const INPUT =
   "w-full rounded-xl border border-gray-200 bg-[#ffffff] px-4 py-3 text-sm text-[#0b0b0f] outline-none transition-colors placeholder:text-gray-400 focus:border-rose-500 focus:ring-2 focus:ring-rose-100";
 const LABEL = "text-xs font-semibold uppercase tracking-widest text-gray-500";
 
-const TABS = [
-  { id: "connections", label: "Подключения", icon: Plug },
-  { id: "strategy", label: "Стратегия", icon: Target },
-  { id: "studio", label: "AI-Студия", icon: Clapperboard },
-  { id: "plan", label: "Контент-план", icon: CalendarDays },
-] as const;
-type TabId = (typeof TABS)[number]["id"];
-
-export function SmmView({
-  strategy,
-  studio,
-  loadError,
-}: {
-  strategy: SmmStrategyState;
-  studio: SmmStudioState;
-  loadError: string | null;
-}) {
-  const [tab, setTab] = useState<TabId>("connections");
-  const [credits, setCredits] = useState(studio.credits);
-
-  return (
-    <div className="min-h-full bg-[#ffffff]">
-      <div className="mx-auto w-full max-w-7xl px-4 py-8 sm:px-6 sm:py-12">
-        <header>
-          <p className="text-xs font-semibold uppercase tracking-[0.2em] text-gray-500">Портал · SMM</p>
-          <h1 className={cn("mt-3 font-heading text-4xl font-bold tracking-tight sm:text-5xl", INK)}>SMM-автоматизация</h1>
-          <p className="mt-3 max-w-2xl text-base leading-7 text-gray-500">
-            Подключайте соцсети, задавайте стратегию и получайте контент-план с AI-видео, который публикуется сам.
-          </p>
-        </header>
-
-        {loadError ? (
-          <p className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">
-            Не удалось загрузить настройки: {loadError}
-          </p>
-        ) : null}
-
-        <div className="mt-10 overflow-x-auto pb-1">
-          <div role="tablist" aria-label="Разделы SMM" className="inline-flex min-w-full gap-1 rounded-2xl border border-gray-200 bg-gray-50 p-1 sm:min-w-0">
-            {TABS.map((item) => {
-              const Icon = item.icon;
-              const selected = item.id === tab;
-              return (
-                <button
-                  key={item.id}
-                  type="button"
-                  role="tab"
-                  id={`smm-tab-${item.id}`}
-                  aria-selected={selected}
-                  aria-controls={`smm-panel-${item.id}`}
-                  onClick={() => setTab(item.id)}
-                  className={cn(
-                    "inline-flex flex-1 items-center justify-center gap-2 whitespace-nowrap rounded-xl px-4 py-2.5 text-sm font-semibold transition-all sm:flex-none",
-                    selected
-                      ? "bg-[#ffffff] text-rose-700 shadow-[0_1px_3px_rgba(16,24,40,0.1)] ring-1 ring-gray-200"
-                      : "text-gray-500 hover:text-[#0b0b0f]",
-                  )}
-                >
-                  <Icon className="size-4" strokeWidth={2} />
-                  {item.label}
-                </button>
-              );
-            })}
-          </div>
-        </div>
-
-        <div role="tabpanel" id={`smm-panel-${tab}`} aria-labelledby={`smm-tab-${tab}`} className="mt-8">
-          {tab === "connections" ? <ConnectionsTab /> : null}
-          {tab === "strategy" ? <StrategyTab initial={strategy} /> : null}
-          {tab === "studio" ? <StudioTab initialAvatarId={studio.avatarId} credits={credits} /> : null}
-          {tab === "plan" ? <PlanTab credits={credits} onCredits={setCredits} /> : null}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function SectionTitle({ title, text, action }: { title: string; text: string; action?: ReactNode }) {
+export function SectionTitle({ title, text, action }: { title: string; text: string; action?: ReactNode }) {
   return (
     <div className="flex flex-wrap items-end justify-between gap-4">
       <div>
@@ -121,7 +44,7 @@ function FacebookIcon({ className }: { className?: string }) {
 
 /* ----------------------------- Подключения ----------------------------- */
 
-function ConnectionsTab() {
+export function ConnectionsTab() {
   const providers = [
     {
       id: "instagram",
@@ -197,7 +120,7 @@ function Spinner() {
   return <Loader2 className="size-4 animate-spin" strokeWidth={2} aria-hidden />;
 }
 
-function StrategyTab({ initial }: { initial: SmmStrategyState }) {
+export function StrategyTab({ projectId, initial }: { projectId: string; initial: SmmStrategyState }) {
   const [description, setDescription] = useState(initial.description);
   const [tone, setTone] = useState(initial.tone);
   const [days, setDays] = useState<string[]>(initial.days);
@@ -206,7 +129,7 @@ function StrategyTab({ initial }: { initial: SmmStrategyState }) {
 
   function save() {
     startTransition(async () => {
-      const result = await saveSmmStrategy({ description, tone, days, time });
+      const result = await saveSmmStrategy(projectId, { description, tone, days, time });
       if (result.ok) {
         toast.success("Стратегия сохранена");
       } else {
@@ -307,13 +230,13 @@ function StrategyTab({ initial }: { initial: SmmStrategyState }) {
 
 /* ------------------------------- AI-Студия ------------------------------ */
 
-function StudioTab({ initialAvatarId, credits }: { initialAvatarId: string; credits: number }) {
+export function StudioTab({ projectId, initialAvatarId, credits }: { projectId: string; initialAvatarId: string; credits: number }) {
   const [avatarId, setAvatarId] = useState(initialAvatarId);
   const [isSaving, startSaving] = useTransition();
 
   function saveAvatar() {
     startSaving(async () => {
-      const result = await saveSmmAvatarId(avatarId);
+      const result = await saveSmmAvatarId(projectId, avatarId);
       if (result.ok) {
         setAvatarId(result.avatarId);
         toast.success("ID аватара сохранён");
@@ -404,7 +327,8 @@ const POSTS: { id: number; date: string; title: string; text: string; status: Po
   { id: 6, date: "Пт, 7 ноя · 12:00", title: "Ответы на частые вопросы", text: "Собрали самые популярные вопросы клиентов и дали на них честные ответы.", status: "published", video: true },
 ];
 
-function PlanTab({ credits, onCredits }: { credits: number; onCredits: (credits: number) => void }) {
+export function PlanTab({ projectId, initialCredits }: { projectId: string; initialCredits: number }) {
+  const [credits, onCredits] = useState(initialCredits);
   return (
     <div>
       <SectionTitle
@@ -432,12 +356,23 @@ function PlanTab({ credits, onCredits }: { credits: number; onCredits: (credits:
               <h3 className={cn("mt-3 font-heading text-lg font-bold leading-snug tracking-tight", INK)}>{post.title}</h3>
               <p className="mt-2 line-clamp-3 text-sm leading-6 text-gray-500">{post.text}</p>
               <div className="mt-auto">
-                <VideoPanel defaultScript={post.text} credits={credits} onCredits={onCredits} />
+                <VideoPanel projectId={projectId} defaultScript={post.text} credits={credits} onCredits={onCredits} />
               </div>
             </li>
           );
         })}
       </ul>
+    </div>
+  );
+}
+
+export function EmptySection({ title, text }: { title: string; text: string }) {
+  return (
+    <div>
+      <SectionTitle title={title} text={text} />
+      <div className="mt-6 grid place-items-center rounded-3xl border border-dashed border-gray-200 bg-gray-50 px-6 py-20 text-center">
+        <p className="text-sm text-gray-500">Раздел появится в одном из ближайших обновлений.</p>
+      </div>
     </div>
   );
 }
