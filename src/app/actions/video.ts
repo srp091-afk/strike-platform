@@ -5,11 +5,12 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { VIDEO_JOB_ID_PATTERN, type VideoMode, type VideoStatus } from "@/lib/video-types";
 
 /*
- * Ключи нейросетей пользователя читаются из smm_integrations на сервере и уходят только в видеодвижок.
- * В браузер возвращаются лишь job_id и статус, VIDEO_ENGINE_API_KEY тоже остаётся на сервере.
+ * Внутренняя экономика: платформа использует мастер-ключи из env (MASTER_*), пользователь тратит
+ * кредиты profiles.video_credits. Ключи и токен движка остаются на сервере: в браузер уходят
+ * только job_id, статус и остаток кредитов.
  */
 
-type StartResult = { ok: true; jobId: string } | { ok: false; error: string };
+type StartResult = { ok: true; jobId: string; credits: number } | { ok: false; error: string };
 type StatusResult = { ok: true; status: VideoStatus } | { ok: false; error: string };
 
 const MAX_TEXT = 4000;
@@ -41,37 +42,45 @@ function unreachable(error: unknown) {
 }
 
 export async function startVideoGeneration(text: string, mode: string, videoPrompt?: string): Promise<StartResult> {
+  let userId: string;
   try {
-    const userId = await getAuthenticatedUserId();
-    const config = engineConfig();
-    if (!config) return { ok: false, error: "Видеодвижок не настроен: добавьте VIDEO_ENGINE_URL и VIDEO_ENGINE_API_KEY." };
+    userId = await getAuthenticatedUserId();
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Нужно войти в аккаунт." };
+  }
 
-    const script = String(text ?? "").trim();
-    if (!script) return { ok: false, error: "Введите сценарий ролика." };
-    if (script.length > MAX_TEXT) return { ok: false, error: `Сценарий слишком длинный: максимум ${MAX_TEXT} символов.` };
-    if (mode !== "avatar" && mode !== "broll") return { ok: false, error: "Выберите режим: аватар или B-Roll." };
-    const videoMode: VideoMode = mode;
+  const config = engineConfig();
+  if (!config) return { ok: false, error: "Видеодвижок не настроен: добавьте VIDEO_ENGINE_URL и VIDEO_ENGINE_API_KEY." };
 
-    const { data, error } = await createSupabaseAdminClient()
-      .from("smm_integrations")
-      .select("heygen_api_key, runway_api_key, elevenlabs_api_key, default_avatar_id")
-      .eq("user_id", userId)
-      .maybeSingle();
-    if (error) return { ok: false, error: error.message };
+  const script = String(text ?? "").trim();
+  if (!script) return { ok: false, error: "Введите сценарий ролика." };
+  if (script.length > MAX_TEXT) return { ok: false, error: `Сценарий слишком длинный: максимум ${MAX_TEXT} символов.` };
+  if (mode !== "avatar" && mode !== "broll") return { ok: false, error: "Выберите режим: аватар или B-Roll." };
+  const videoMode: VideoMode = mode;
 
-    const heygen = data?.heygen_api_key as string | null | undefined;
-    const runway = data?.runway_api_key as string | null | undefined;
-    const elevenlabs = data?.elevenlabs_api_key as string | null | undefined;
-    const avatarId = (data?.default_avatar_id as string | null | undefined) ?? null;
+  // Мастер-ключи платформы (не пользовательские).
+  const elevenlabs = process.env.MASTER_ELEVENLABS_KEY?.trim();
+  const runway = process.env.MASTER_RUNWAY_KEY?.trim();
+  const heygen = process.env.MASTER_HEYGEN_KEY?.trim();
+  const missing =
+    !elevenlabs || (videoMode === "avatar" && !heygen) || (videoMode === "broll" && !runway);
+  if (missing) return { ok: false, error: "Генерация видео временно недоступна: на платформе не настроены ключи сервиса." };
 
-    if (!elevenlabs) return { ok: false, error: "Добавьте ключ ElevenLabs во вкладке «AI-Студия»." };
-    if (videoMode === "avatar") {
-      if (!heygen) return { ok: false, error: "Добавьте ключ HeyGen во вкладке «AI-Студия»." };
-      if (!avatarId) return { ok: false, error: "Укажите ID аватара по умолчанию во вкладке «AI-Студия»." };
-    } else if (!runway) {
-      return { ok: false, error: "Добавьте ключ RunwayML во вкладке «AI-Студия»." };
-    }
+  const supabase = createSupabaseAdminClient();
+  const { data: integration } = await supabase.from("smm_integrations").select("default_avatar_id").eq("user_id", userId).maybeSingle();
+  const avatarId = (integration?.default_avatar_id as string | null | undefined) ?? null;
 
+  // Атомарное списание 1 кредита (-1 = кредитов нет). Гонка двух запусков невозможна: это один UPDATE в БД.
+  const spent = await supabase.rpc("consume_video_credit", { p_user_id: userId });
+  if (spent.error) return { ok: false, error: spent.error.message };
+  const remaining = Number(spent.data ?? -1);
+  if (remaining < 0) return { ok: false, error: "Недостаточно кредитов. Пополните баланс." };
+
+  const refund = async () => {
+    await supabase.rpc("refund_video_credit", { p_user_id: userId });
+  };
+
+  try {
     const response = await fetch(`${config.url}/api/v1/render`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${config.key}` },
@@ -79,30 +88,34 @@ export async function startVideoGeneration(text: string, mode: string, videoProm
         mode: videoMode,
         text: script,
         video_prompt: videoMode === "broll" && videoPrompt?.trim() ? videoPrompt.trim().slice(0, 1000) : undefined,
-        avatar_id: videoMode === "avatar" ? avatarId : undefined,
+        avatar_id: videoMode === "avatar" && avatarId ? avatarId : undefined,
         credentials: {
-          heygen_api_key: heygen ?? undefined,
-          runway_api_key: runway ?? undefined,
+          heygen_api_key: videoMode === "avatar" ? heygen : undefined,
+          runway_api_key: videoMode === "broll" ? runway : undefined,
           elevenlabs_api_key: elevenlabs,
-          // Движку нужен OpenAI (транскрибация субтитров): используем ключ платформы.
+          // Движку нужен OpenAI (транскрибация субтитров): ключ платформы.
           openai_api_key: process.env.OPENAI_API_KEY || undefined,
         },
       }),
       cache: "no-store",
       signal: AbortSignal.timeout(START_TIMEOUT_MS),
     });
-    if (!response.ok) return { ok: false, error: await engineError(response) };
+    if (!response.ok) {
+      await refund();
+      return { ok: false, error: await engineError(response) };
+    }
 
     const body = (await response.json()) as { job_id?: unknown };
     if (typeof body.job_id !== "string" || !VIDEO_JOB_ID_PATTERN.test(body.job_id)) {
+      await refund();
       return { ok: false, error: "Видеодвижок вернул некорректный job_id." };
     }
-    return { ok: true, jobId: body.job_id };
+    return { ok: true, jobId: body.job_id, credits: remaining };
   } catch (error) {
-    return { ok: false, error: error instanceof Error && error.message.includes("Нужно войти") ? error.message : unreachable(error) };
+    await refund();
+    return { ok: false, error: unreachable(error) };
   }
 }
-
 export async function checkVideoStatus(jobId: string): Promise<StatusResult> {
   try {
     await getAuthenticatedUserId();

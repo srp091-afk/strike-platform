@@ -22,7 +22,15 @@ const MODES: Array<{ value: VideoMode; label: string; hint: string; icon: typeof
 ];
 
 /** Кнопка «Сгенерировать AI-Reels» с диалогом сценария, опросом статуса и скачиванием результата. */
-export function VideoPanel({ defaultScript }: { defaultScript: string }) {
+export function VideoPanel({
+  defaultScript,
+  credits,
+  onCredits,
+}: {
+  defaultScript: string;
+  credits: number;
+  onCredits: (credits: number) => void;
+}) {
   const [open, setOpen] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<VideoStatus | null>(null);
@@ -73,7 +81,8 @@ export function VideoPanel({ defaultScript }: { defaultScript: string }) {
     };
   }, [jobId, isGenerating]);
 
-  function started(id: string) {
+  function started(id: string, remaining: number) {
+    onCredits(remaining);
     errorsRef.current = 0;
     setJobId(id);
     setStatus(null);
@@ -131,6 +140,12 @@ export function VideoPanel({ defaultScript }: { defaultScript: string }) {
         <p className="mt-2 text-center text-xs text-gray-400">Файл можно скачать один раз: после скачивания движок удаляет его.</p>
       ) : null}
 
+      {!isGenerating && !completed ? (
+        <p className={cn("mt-2 text-center text-xs", credits > 0 ? "text-gray-400" : "text-rose-600")}>
+          {credits > 0 ? `Осталось генераций: ${credits}` : "Кредиты закончились: улучшите тариф"}
+        </p>
+      ) : null}
+
       {open ? <VideoDialog defaultScript={defaultScript} onClose={() => setOpen(false)} onStarted={started} /> : null}
     </div>
   );
@@ -143,7 +158,7 @@ function VideoDialog({
 }: {
   defaultScript: string;
   onClose: () => void;
-  onStarted: (jobId: string) => void;
+  onStarted: (jobId: string, credits: number) => void;
 }) {
   const [text, setText] = useState(defaultScript);
   const [mode, setMode] = useState<VideoMode>("avatar");
@@ -167,8 +182,8 @@ function VideoDialog({
     startTransition(async () => {
       const result = await startVideoGeneration(text, mode, videoPrompt);
       if (result.ok) {
-        toast.success("Рендеринг запущен");
-        onStarted(result.jobId);
+        toast.success(`Рендеринг запущен. Осталось генераций: ${result.credits}`);
+        onStarted(result.jobId, result.credits);
       } else {
         toast.error(result.error);
       }
