@@ -15,6 +15,7 @@ import {
   type SmmPeriod,
   type SmmVideoFormat,
 } from "@/lib/smm-strategy-types";
+import type { StudioPostData } from "@/lib/smm-studio-types";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 type Failure = { ok: false; error: string };
@@ -275,21 +276,28 @@ export async function schedulePost(postId: string, scheduledTime: string, channe
   }
 }
 
-/** Пост для автозаполнения сценария в AI-Видеостудии (?postId=). */
-export async function getPostForStudio(projectId: string, postId: string): Promise<{ title: string; script: string } | null> {
+/** Пост для автозаполнения AI-Видеостудии (?postId=). */
+export async function getPostForStudio(projectId: string, postId: string): Promise<StudioPostData | null> {
   try {
     const userId = await getAuthenticatedUserId();
     const project = await getOwnedProject(userId, String(projectId));
     if (!project || !/^[0-9a-f-]{36}$/i.test(String(postId))) return null;
     const { data } = await createSupabaseAdminClient()
       .from("smm_posts")
-      .select("title, content, voiceover_text")
+      .select("id, title, voiceover_text, visual_prompt, video_format")
       .eq("id", postId)
       .eq("project_id", project.id)
       .eq("user_id", userId)
       .maybeSingle();
     if (!data) return null;
-    return { title: String(data.title ?? ""), script: String(data.voiceover_text || data.content || "") };
+    const format = String(data.video_format);
+    return {
+      id: String(data.id),
+      title: String(data.title ?? ""),
+      style: format === "avatar" ? "avatar" : format === "overlay" ? "overlay" : "captions",
+      voiceoverText: String(data.voiceover_text ?? ""),
+      visualPrompt: String(data.visual_prompt ?? ""),
+    };
   } catch {
     return null;
   }

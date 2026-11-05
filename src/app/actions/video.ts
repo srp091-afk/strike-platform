@@ -2,6 +2,8 @@
 
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { getOwnedProject } from "@/lib/smm-projects";
+import { STUDIO_STYLES, type StudioRenderOptions } from "@/lib/smm-studio-types";
+import { getSupabaseUrl } from "@/lib/supabase";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { VIDEO_JOB_ID_PATTERN, type VideoMode, type VideoStatus } from "@/lib/video-types";
 
@@ -42,7 +44,13 @@ function unreachable(error: unknown) {
   return timeout ? "Видеодвижок не отвечает: превышено время ожидания." : "Видеодвижок недоступен. Проверьте, что он запущен и VIDEO_ENGINE_URL указан верно.";
 }
 
-export async function startVideoGeneration(projectId: string, text: string, mode: string, videoPrompt?: string): Promise<StartResult> {
+export async function startVideoGeneration(
+  projectId: string,
+  text: string,
+  mode: string,
+  videoPrompt?: string,
+  options?: StudioRenderOptions,
+): Promise<StartResult> {
   let userId: string;
   try {
     userId = await getAuthenticatedUserId();
@@ -62,12 +70,26 @@ export async function startVideoGeneration(projectId: string, text: string, mode
   if (mode !== "avatar" && mode !== "broll") return { ok: false, error: "Выберите режим: аватар или B-Roll." };
   const videoMode: VideoMode = mode;
 
+  // Параметры студии: стиль, загруженный фон (только из папки этого проекта в нашем бакете), плашка и пост.
+  const style = options && (STUDIO_STYLES as readonly string[]).includes(options.style) ? options.style : null;
+  const overlayText = String(options?.overlayText ?? "").trim().slice(0, 300);
+  let backgroundUrl: string | null = null;
+  if (options?.backgroundUrl) {
+    const allowedPrefix = `${getSupabaseUrl()}/storage/v1/object/public/smm_media/${project.id}/`;
+    const candidate = String(options.backgroundUrl);
+    if (!candidate.startsWith(allowedPrefix) || candidate.includes("..") || candidate.length > 500) {
+      return { ok: false, error: "Недопустимый адрес фонового видео." };
+    }
+    if (videoMode !== "broll") return { ok: false, error: "Свой фон можно использовать только в форматах «Титры» и «Оверлей»." };
+    backgroundUrl = candidate;
+  }
+
   // Мастер-ключи платформы (не пользовательские).
   const elevenlabs = process.env.MASTER_ELEVENLABS_KEY?.trim();
   const runway = process.env.MASTER_RUNWAY_KEY?.trim();
   const heygen = process.env.MASTER_HEYGEN_KEY?.trim();
   const missing =
-    !elevenlabs || (videoMode === "avatar" && !heygen) || (videoMode === "broll" && !runway);
+    !elevenlabs || (videoMode === "avatar" && !heygen) || (videoMode === "broll" && !runway && !backgroundUrl);
   if (missing) return { ok: false, error: "Генерация видео временно недоступна: на платформе не настроены ключи сервиса." };
 
   const supabase = createSupabaseAdminClient();
@@ -93,6 +115,9 @@ export async function startVideoGeneration(projectId: string, text: string, mode
         text: script,
         video_prompt: videoMode === "broll" && videoPrompt?.trim() ? videoPrompt.trim().slice(0, 1000) : undefined,
         avatar_id: videoMode === "avatar" && avatarId ? avatarId : undefined,
+        style: style ?? undefined,
+        background_url: backgroundUrl ?? undefined,
+        overlay_text: overlayText || undefined,
         credentials: {
           heygen_api_key: videoMode === "avatar" ? heygen : undefined,
           runway_api_key: videoMode === "broll" ? runway : undefined,
@@ -113,6 +138,16 @@ export async function startVideoGeneration(projectId: string, text: string, mode
     if (typeof body.job_id !== "string" || !VIDEO_JOB_ID_PATTERN.test(body.job_id)) {
       await refund();
       return { ok: false, error: "Видеодвижок вернул некорректный job_id." };
+    }
+    // Привязанный пост уходит в работу (только свой пост этого проекта).
+    if (options?.postId && /^[0-9a-f-]{36}$/i.test(String(options.postId))) {
+      await supabase
+        .from("smm_posts")
+        .update({ status: "in_progress" })
+        .eq("id", options.postId)
+        .eq("project_id", project.id)
+        .eq("user_id", userId)
+        .in("status", ["idea", "in_progress"]);
     }
     return { ok: true, jobId: body.job_id, credits: remaining };
   } catch (error) {
