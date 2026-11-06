@@ -122,8 +122,8 @@ export async function GET(request: NextRequest) {
         body: new URLSearchParams({ subscribed_fields: "messages", access_token: page.access_token }),
       });
     } catch (error) {
+      // Без pages_manage_metadata подписка страницы может быть недоступна: события приходят и по подписке приложения (Webhooks → Instagram → messages).
       console.error("[instagram callback] subscribed_apps", error instanceof Error ? error.message : error);
-      return fail("Аккаунт подключён, но не удалось подписаться на входящие сообщения.");
     }
 
     return finish("ig=connected");

@@ -4,8 +4,8 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 
 export const GRAPH = "https://graph.facebook.com/v21.0";
 
-/** pages_show_list нужен, чтобы получить список страниц пользователя и токен страницы. */
-export const INSTAGRAM_SCOPES = ["instagram_basic", "instagram_manage_messages", "pages_manage_metadata", "pages_show_list"];
+/** Валидные права Meta Login for Business: директ-сообщения, список страниц (токен страницы) и базовый профиль. */
+export const INSTAGRAM_SCOPES = ["instagram_manage_messages", "pages_show_list", "public_profile"];
 
 export const OAUTH_COOKIE = "ig_oauth_nonce";
 export const OAUTH_COOKIE_PATH = "/api/auth/instagram";
