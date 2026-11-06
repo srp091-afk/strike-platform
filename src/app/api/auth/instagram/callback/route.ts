@@ -201,18 +201,7 @@ export async function GET(request: NextRequest) {
       return fail("Не удалось сохранить подключение. Применена ли миграция Instagram?");
     }
 
-    // Подписка страницы на входящие сообщения (webhook приложения → /api/webhooks/instagram).
-    try {
-      await graphJson(`${GRAPH}/${page.id}/subscribed_apps`, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: new URLSearchParams({ subscribed_fields: "messages", access_token: page.access_token }),
-      });
-    } catch (error) {
-      // Без pages_manage_metadata подписка страницы может быть недоступна: события приходят и по подписке приложения (Webhooks → Instagram → messages).
-      console.error("[instagram callback] subscribed_apps", error instanceof Error ? error.message : error);
-    }
-
+    // Подписка страницы (subscribed_apps) не нужна: вебхук приложения подписан на объект Instagram → messages в панели Meta.
     return finish("ig=connected");
   } catch (error) {
     console.error("[instagram callback]", error instanceof Error ? error.message : error);

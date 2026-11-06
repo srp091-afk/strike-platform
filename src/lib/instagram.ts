@@ -10,7 +10,7 @@ export const INSTAGRAM_SCOPES = (process.env.INSTAGRAM_SCOPES ?? "")
   .split(",")
   .map((scope) => scope.trim())
   .filter(Boolean);
-if (INSTAGRAM_SCOPES.length === 0) INSTAGRAM_SCOPES.push("instagram_manage_messages", "pages_show_list", "public_profile");
+if (INSTAGRAM_SCOPES.length === 0) INSTAGRAM_SCOPES.push("instagram_manage_messages", "pages_show_list", "pages_read_engagement", "public_profile");
 
 export const OAUTH_COOKIE = "ig_oauth_nonce";
 export const OAUTH_COOKIE_PATH = "/api/auth/instagram";
