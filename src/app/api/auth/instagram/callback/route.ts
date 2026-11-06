@@ -108,7 +108,9 @@ export async function GET(request: NextRequest) {
             `${GRAPH}/${item.id}?${new URLSearchParams({ fields: IG_FIELDS, access_token: item.access_token })}`,
           );
           candidate = detail.instagram_business_account ?? detail.connected_instagram_account ?? null;
-        } catch {
+        } catch (lookupError) {
+          // Текст ошибки Graph (без токенов) подсказывает, каких прав не хватает.
+          console.log("[INSTAGRAM_PAGE_LOOKUP]", item.id, lookupError instanceof Error ? lookupError.message : lookupError);
           candidate = null;
         }
       }

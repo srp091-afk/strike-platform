@@ -5,7 +5,12 @@ import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 export const GRAPH = "https://graph.facebook.com/v21.0";
 
 /** Валидные права Meta Login for Business: директ-сообщения, список страниц (токен страницы) и базовый профиль. */
-export const INSTAGRAM_SCOPES = ["instagram_manage_messages", "pages_show_list", "public_profile"];
+/** Можно переопределить через INSTAGRAM_SCOPES (через запятую), когда в приложении Meta добавлены нужные права. */
+export const INSTAGRAM_SCOPES = (process.env.INSTAGRAM_SCOPES ?? "")
+  .split(",")
+  .map((scope) => scope.trim())
+  .filter(Boolean);
+if (INSTAGRAM_SCOPES.length === 0) INSTAGRAM_SCOPES.push("instagram_manage_messages", "pages_show_list", "public_profile");
 
 export const OAUTH_COOKIE = "ig_oauth_nonce";
 export const OAUTH_COOKIE_PATH = "/api/auth/instagram";
