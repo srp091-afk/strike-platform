@@ -179,6 +179,24 @@ export async function listAgents(): Promise<AgentRecord[]> {
     orderRows.error ? [] : (orderRows.data ?? []).map((row) => [String(row.id), Number(row.order_index ?? 0)] as const),
   );
 
+  // Колонки Instagram лежат в отдельном запросе: пока миграция agent_instagram не применена, список работает как раньше.
+  const igRows = await supabase
+    .from("agents")
+    .select("id, instagram_account_id, instagram_username, instagram_avatar_url")
+    .eq("user_id", userId);
+  const instagram = new Map<string, { id: string | null; username: string | null; avatar: string | null }>(
+    igRows.error
+      ? []
+      : (igRows.data ?? []).map((row) => [
+          String(row.id),
+          {
+            id: row.instagram_account_id ? String(row.instagram_account_id) : null,
+            username: row.instagram_username ? String(row.instagram_username) : null,
+            avatar: row.instagram_avatar_url ? String(row.instagram_avatar_url) : null,
+          },
+        ] as const),
+  );
+
   const records = (listed.data ?? []).map((row) => ({
     id: row.id as string,
     order_index: orders.get(String(row.id)) ?? 0,
@@ -207,6 +225,9 @@ export async function listAgents(): Promise<AgentRecord[]> {
     waIsActive: "wa_is_active" in row ? row.wa_is_active === true : false,
     tgBotUsername: "tg_bot_username" in row && row.tg_bot_username ? String(row.tg_bot_username) : null,
     tgIsActive: "tg_is_active" in row ? row.tg_is_active === true : false,
+    igAccountId: instagram.get(String(row.id))?.id ?? null,
+    igUsername: instagram.get(String(row.id))?.username ?? null,
+    igAvatarUrl: instagram.get(String(row.id))?.avatar ?? null,
     telegram_type: readTelegramType("telegram_type" in row ? row.telegram_type : undefined),
     telegram_bot_token: "telegram_bot_token" in row && row.telegram_bot_token ? String(row.telegram_bot_token) : null,
     telegram_phone: "telegram_phone" in row && row.telegram_phone ? String(row.telegram_phone) : null,

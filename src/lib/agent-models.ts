@@ -172,6 +172,10 @@ export type AgentRecord = {
   waIsActive: boolean;
   tgBotUsername: string | null;
   tgIsActive: boolean;
+  /** Instagram Direct: токен в клиент не отдаётся. */
+  igAccountId: string | null;
+  igUsername: string | null;
+  igAvatarUrl: string | null;
   telegram_type: TelegramType;
   telegram_bot_token: string | null;
   telegram_phone: string | null;

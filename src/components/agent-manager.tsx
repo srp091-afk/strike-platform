@@ -18,13 +18,13 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { startTransition, useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { startTransition, Suspense, useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { mutate as swrMutate } from "swr";
 import { PlaygroundChat } from "@/components/playground-chat";
 import { deleteAgent, reorderAgents, saveAgent, saveAgentDirect, type SaveState } from "@/app/agents/actions";
-import { disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
+import { disconnectInstagram, disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
 import { TelegramConnectModal } from "@/components/TelegramConnectModal";
 import { WidgetConnectModal } from "@/components/WidgetConnectModal";
 import { ChannelIcon } from "@/components/channel-icons";
@@ -614,6 +614,16 @@ function AgentDialog({
     return true;
   }
 
+  /** «Подключить Instagram»: новый агент сначала автосохраняется, затем переходим на OAuth Meta. */
+  async function handleInstagramConnect(): Promise<boolean> {
+    const agentId = await ensureAgentSaved();
+    if (!agentId) return false;
+    // Это API-роут (полная навигация на OAuth), а не страница Next.js.
+    // eslint-disable-next-line @next/next/no-location-assign-relative-destination
+    window.location.assign(`/api/auth/instagram/connect?agentId=${encodeURIComponent(agentId)}`);
+    return true;
+  }
+
   return (
     <div className="fixed inset-0 z-[60]">
       <DialogContent aria-labelledby="agent-dialog-title" className="flex flex-col overflow-hidden">
@@ -716,6 +726,7 @@ function AgentDialog({
                     initialOpenChannel={initialConnectChannel}
                     connectError={connectError}
                     onConnectChannel={handleChannelConnect}
+                    onConnectInstagram={handleInstagramConnect}
                     credentials={{ instanceId: draft.wa_instance_id, apiToken: draft.wa_api_token }}
                     phone={draft.wa_phone_number}
                     greenDefaults={greenDefaults}
@@ -966,6 +977,7 @@ function ChannelSettings({
   initialOpenChannel,
   connectError,
   onConnectChannel,
+  onConnectInstagram,
   credentials,
   phone,
   greenDefaults,
@@ -983,6 +995,7 @@ function ChannelSettings({
   connectError: string | null;
   /** Автосейв нового агента перед модалкой; false — сейв не удался, модалку не открываем. */
   onConnectChannel: (channel: "whatsapp" | "telegram" | "widget") => Promise<boolean>;
+  onConnectInstagram: () => Promise<boolean>;
   credentials: GreenDefaults;
   phone: string;
   greenDefaults: GreenDefaults;
@@ -1003,6 +1016,20 @@ function ChannelSettings({
   // Пока канала нет, его тумблер заблокирован и принудительно выключен.
   const whatsappConnected = Boolean(credentials.instanceId || phone || agent?.waIsActive);
   const telegramConnected = agent ? isTelegramConnected(agent) : false;
+  const instagramConnected = Boolean(agent?.igAccountId);
+  const [instagramConnecting, setInstagramConnecting] = useState(false);
+
+  async function handleInstagramConnect() {
+    if (instagramConnecting) return;
+    setInstagramConnecting(true);
+    try {
+      const started = await onConnectInstagram();
+      // Успех — браузер уходит на Meta; сбрасываем флаг только если переход не начался.
+      if (!started) setInstagramConnecting(false);
+    } catch {
+      setInstagramConnecting(false);
+    }
+  }
 
   async function handleConnect(channel: "whatsapp" | "telegram" | "widget") {
     if (connectingChannel) return;
@@ -1033,6 +1060,7 @@ function ChannelSettings({
           ...channels,
           whatsapp: whatsappConnected && channels.whatsapp,
           telegram: telegramConnected && channels.telegram,
+          instagram: instagramConnected && channels.instagram,
         })}
       />
       <input type="hidden" name="channel_delays" value={JSON.stringify(delays)} />
@@ -1092,22 +1120,28 @@ function ChannelSettings({
           <TelegramChannel agent={agent} connecting={connectingChannel === "telegram"} onConnect={() => void handleConnect("telegram")} />
         </div>
         <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
-        <label className="flex items-center justify-between gap-3">
-          <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
-            <span className={`grid size-9 place-items-center rounded-xl ${channelTone.instagram}`}>
-              <ChannelIcon provider="instagram" className="size-4" />
+          <label className="flex items-center justify-between gap-3">
+            <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
+              <span className={`grid size-9 place-items-center rounded-xl ${channelTone.instagram}`}>
+                <ChannelIcon provider="instagram" className="size-4" />
+              </span>
+              Instagram
             </span>
-            Instagram
-          </span>
-          <Switch
-            checked={channels.instagram}
-            onCheckedChange={(checked) => onChannelsChange({ ...channels, instagram: checked })}
-            aria-label="Instagram"
-          />
-        </label>
-        {channels.instagram ? (
-          <ChannelDelay value={delays.instagram} onChange={(instagram) => onDelaysChange({ ...delays, instagram })} />
-        ) : null}
+            <Switch
+              checked={instagramConnected && channels.instagram}
+              disabled={!instagramConnected}
+              onCheckedChange={(checked) => onChannelsChange({ ...channels, instagram: checked })}
+              aria-label="Instagram"
+              title={instagramConnected ? undefined : "Сначала подключите Instagram"}
+            />
+          </label>
+          {instagramConnected && channels.instagram ? (
+            <ChannelDelay value={delays.instagram} onChange={(instagram) => onDelaysChange({ ...delays, instagram })} />
+          ) : null}
+          <InstagramChannel agent={agent} connecting={instagramConnecting} onConnect={() => void handleInstagramConnect()} />
+          <Suspense fallback={null}>
+            <InstagramNotice />
+          </Suspense>
         </div>
         <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
           <label className="flex items-center justify-between gap-3">
@@ -1320,6 +1354,51 @@ function TelegramChannel({
   );
 }
 
+function InstagramChannel({ agent, connecting, onConnect }: { agent: AgentRecord | null; connecting: boolean; onConnect: () => void }) {
+  if (!agent?.igAccountId) {
+    return (
+      <button
+        type="button"
+        className="w-full rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
+        disabled={connecting}
+        onClick={onConnect}
+      >
+        {connecting ? "Переход в Meta…" : "Подключить Instagram"}
+      </button>
+    );
+  }
+  const username = agent.igUsername ? `@${agent.igUsername.replace(/^@/, "")}` : "Instagram";
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black px-3 py-2.5">
+      <div className="flex min-w-0 items-center gap-3">
+        {agent.igAvatarUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={agent.igAvatarUrl} alt="" referrerPolicy="no-referrer" className="size-9 shrink-0 rounded-full border border-zinc-800 object-cover" />
+        ) : (
+          <span className="grid size-9 shrink-0 place-items-center rounded-full border border-zinc-800 bg-zinc-900 text-zinc-400">
+            <ChannelIcon provider="instagram" className="size-4" />
+          </span>
+        )}
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium text-white">{username}</p>
+          <p className="text-xs text-zinc-400">Instagram Direct</p>
+        </div>
+      </div>
+      <DisconnectButton agentId={agent.id} kind="instagram" label={`Отключить Instagram ${username}`} />
+    </div>
+  );
+}
+
+/** Результат OAuth после возврата с Meta: ?ig=connected или ?ig_error=... */
+function InstagramNotice() {
+  const params = useSearchParams();
+  const error = params.get("ig_error");
+  const connected = params.get("ig") === "connected";
+  if (error) return <p className="text-sm text-red-400">{error}</p>;
+  if (connected) return <p className="text-sm text-emerald-400">Instagram подключён.</p>;
+  return null;
+}
+
 function DisconnectButton({
   agentId,
   kind,
@@ -1327,7 +1406,7 @@ function DisconnectButton({
   onDisconnected,
 }: {
   agentId: string;
-  kind: "whatsapp" | "telegram" | "widget";
+  kind: "whatsapp" | "telegram" | "instagram" | "widget";
   label: string;
   onDisconnected?: () => void;
 }) {
@@ -1339,7 +1418,12 @@ function DisconnectButton({
     setError(null);
     startTransition(async () => {
       if (agentId) {
-        const result = kind === "whatsapp" ? await disconnectWhatsApp(agentId) : await disconnectTelegram(agentId);
+        const result =
+          kind === "whatsapp"
+            ? await disconnectWhatsApp(agentId)
+            : kind === "instagram"
+              ? await disconnectInstagram(agentId)
+              : await disconnectTelegram(agentId);
         if (!result.ok) {
           setError(result.error);
           return;
@@ -1364,7 +1448,9 @@ function DisconnectButton({
             <AlertDialogDescription>
               {kind === "whatsapp"
                 ? "Номер будет снят с этого агента. История чатов сохранится."
-                : "Подключение Telegram (токен бота или данные личного аккаунта) будет очищено у этого агента. История чатов сохранится."}
+                : kind === "instagram"
+                  ? "Instagram-аккаунт будет отвязан от этого агента. История чатов сохранится."
+                  : "Подключение Telegram (токен бота или данные личного аккаунта) будет очищено у этого агента. История чатов сохранится."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

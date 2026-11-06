@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
+import { readActiveChannels } from "@/lib/agent-models";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import {
   ensureGreenIncomingWebhook,
@@ -175,6 +176,39 @@ export async function disconnectWhatsApp(agentId: string) {
     return { ok: true as const, error: null };
   } catch (error) {
     return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось отключить номер." };
+  }
+}
+
+export async function disconnectInstagram(agentId: string) {
+  if (!UUID_PATTERN.test(agentId)) return { ok: false as const, error: "Агент не найден." };
+  try {
+    if (!(await agentInWorkspace(agentId))) return { ok: false as const, error: "Агент не найден." };
+    const supabase = createSupabaseAdminClient();
+    const userId = await getAuthenticatedUserId();
+    const { data } = await supabase
+      .from("agents")
+      .select("active_channels")
+      .eq("id", agentId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    const channels = readActiveChannels(data?.active_channels);
+    const { error } = await supabase
+      .from("agents")
+      .update({
+        instagram_account_id: null,
+        instagram_access_token: null,
+        instagram_username: null,
+        instagram_page_id: null,
+        instagram_avatar_url: null,
+        active_channels: { ...channels, instagram: false },
+      })
+      .eq("id", agentId)
+      .eq("user_id", userId);
+    if (error) return { ok: false as const, error: error.message };
+    revalidatePath("/agents");
+    return { ok: true as const, error: null };
+  } catch (error) {
+    return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось отключить Instagram." };
   }
 }
 
