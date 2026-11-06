@@ -10,6 +10,15 @@ export async function middleware(request: NextRequest) {
 
   const { pathname } = request.nextUrl;
 
+  // Supabase при неразрешённом redirectTo возвращает на Site URL (/) с ?code=...: доводим вход до конца в /auth/callback,
+  // иначе пользователь оказывается на лендинге без сессии.
+  if (pathname === "/" && request.nextUrl.searchParams.has("code")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/auth/callback";
+    url.searchParams.set("next", "/");
+    return NextResponse.redirect(url);
+  }
+
   // Не трогаем callback авторизации
   if (pathname.startsWith("/auth/callback")) {
     return response;
