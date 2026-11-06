@@ -6,14 +6,17 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { createSupabaseServerClient } from "@/lib/supabase-server";
 
 type TokenResponse = { access_token: string };
-type PagesResponse = {
-  data?: {
-    id: string;
-    name?: string;
-    access_token?: string;
-    instagram_business_account?: { id: string; username?: string; profile_picture_url?: string };
-  }[];
+type InstagramAccount = { id: string; username?: string; profile_picture_url?: string };
+type PageItem = {
+  id: string;
+  name?: string;
+  access_token?: string;
+  instagram_business_account?: InstagramAccount;
+  connected_instagram_account?: InstagramAccount;
 };
+type PagesResponse = { data?: PageItem[] };
+
+const IG_FIELDS = "instagram_business_account{id,username,profile_picture_url},connected_instagram_account{id,username,profile_picture_url}";
 
 /** Возврат с Facebook Login: код → long-lived токен → токен страницы + Instagram Business аккаунт → agents. */
 export async function GET(request: NextRequest) {
@@ -74,20 +77,55 @@ export async function GET(request: NextRequest) {
       })}`,
     );
     // Токены страниц, полученные по long-lived пользовательскому токену, не истекают.
-    const pages = await graphJson<PagesResponse>(
+    const pagesResponse = await graphJson<PagesResponse>(
       `${GRAPH}/me/accounts?${new URLSearchParams({
-        fields: "id,name,access_token,instagram_business_account{id,username,profile_picture_url}",
-        limit: "50",
+        fields: `id,name,access_token,${IG_FIELDS}`,
+        limit: "100",
         access_token: long.access_token,
       })}`,
     );
+    const pages = pagesResponse.data ?? [];
+    // Токены страниц в лог не попадают.
+    console.log(
+      "[INSTAGRAM_PAGES]",
+      JSON.stringify(
+        pages.map(({ access_token, ...rest }) => ({ ...rest, has_page_token: Boolean(access_token) })),
+        null,
+        2,
+      ),
+    );
 
-    const page = (pages.data ?? []).find((item) => item.access_token && item.instagram_business_account?.id);
-    const account = page?.instagram_business_account;
-    if (!page || !account || !page.access_token) {
-      return fail("Не найден Instagram Business аккаунт, привязанный к вашей Facebook-странице.");
+    // Перебираем ВСЕ страницы: берём первую, у которой есть привязанный Instagram-аккаунт.
+    let page: PageItem | null = null;
+    let account: InstagramAccount | null = null;
+    for (const item of pages) {
+      if (!item.access_token) continue;
+      let candidate = item.instagram_business_account ?? item.connected_instagram_account ?? null;
+      if (!candidate?.id) {
+        // Запасной запрос напрямую по странице (токеном страницы) — иногда поле не приходит списком.
+        try {
+          const detail = await graphJson<PageItem>(
+            `${GRAPH}/${item.id}?${new URLSearchParams({ fields: IG_FIELDS, access_token: item.access_token })}`,
+          );
+          candidate = detail.instagram_business_account ?? detail.connected_instagram_account ?? null;
+        } catch {
+          candidate = null;
+        }
+      }
+      if (candidate?.id) {
+        page = item;
+        account = candidate;
+        break;
+      }
     }
 
+    if (!page || !account || !page.access_token) {
+      return fail(
+        pages.length === 0
+          ? "Meta не вернула ни одной Facebook-страницы. При входе выберите страницу и аккаунт Instagram в окне разрешений."
+          : "Ни у одной из ваших Facebook-страниц нет привязанного Instagram Business аккаунта.",
+      );
+    }
     const { data: taken } = await admin
       .from("agents")
       .select("id")
