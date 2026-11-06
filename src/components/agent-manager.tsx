@@ -33,6 +33,7 @@ import { DialogContent } from "@/components/ui/dialog";
 import { SelectField } from "@/components/ui/select-field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
+import { toast } from "@/components/ui/toaster";
 import { WhatsAppConnectDialog } from "@/components/whatsapp-connect-dialog";
 import {
   AlertDialog,
@@ -90,6 +91,9 @@ function sameChannelState(a: AgentRecord, b: AgentRecord) {
       a.tgBotUsername === b.tgBotUsername &&
       a.waIsActive === b.waIsActive &&
       a.tgIsActive === b.tgIsActive &&
+      a.igAccountId === b.igAccountId &&
+      a.igUsername === b.igUsername &&
+      a.igAvatarUrl === b.igAvatarUrl &&
       a.telegram_type === b.telegram_type &&
       a.telegram_bot_token === b.telegram_bot_token &&
       a.telegram_phone === b.telegram_phone &&
@@ -1428,6 +1432,7 @@ function DisconnectButton({
           setError(result.error);
           return;
         }
+        toast.success(kind === "instagram" ? "Instagram отключён" : "Подключение удалено");
         void swrMutate("/api/agents");
         router.refresh();
       }
