@@ -36,6 +36,8 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("state", state);
   url.searchParams.set("response_type", "code");
   url.searchParams.set("scope", INSTAGRAM_SCOPES.join(","));
+  // Всегда показывать диалог выбора страниц/аккаунтов: иначе Meta молча использует прошлую (возможно, пустую) выдачу доступа.
+  url.searchParams.set("auth_type", "rerequest");
 
   const response = NextResponse.redirect(url);
   response.cookies.set(OAUTH_COOKIE, nonce, {

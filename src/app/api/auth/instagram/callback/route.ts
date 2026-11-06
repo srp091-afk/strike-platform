@@ -95,6 +95,18 @@ export async function GET(request: NextRequest) {
       ),
     );
 
+    if (pages.length === 0) {
+      // Диагностика: какие права реально выданы (без токенов).
+      try {
+        const perms = await graphJson<{ data?: { permission: string; status: string }[] }>(
+          `${GRAPH}/me/permissions?${new URLSearchParams({ access_token: long.access_token })}`,
+        );
+        console.log("[INSTAGRAM_PERMISSIONS]", JSON.stringify(perms.data ?? []));
+      } catch (permError) {
+        console.log("[INSTAGRAM_PERMISSIONS] failed", permError instanceof Error ? permError.message : permError);
+      }
+    }
+
     // Перебираем ВСЕ страницы: берём первую, у которой есть привязанный Instagram-аккаунт.
     let page: PageItem | null = null;
     let account: InstagramAccount | null = null;
