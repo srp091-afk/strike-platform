@@ -44,6 +44,7 @@ export async function POST(request: NextRequest) {
   }
 
   const events = readEvents(body);
+  console.log("[instagram webhook] received", JSON.stringify({ object: asRecord(body).object, events: events.length }));
   if (events.length > 0) {
     after(async () => {
       for (const event of events) {
@@ -98,7 +99,10 @@ async function handleMessage(message: IncomingEvent) {
     : withDelays;
   const agent = loaded.data as ((typeof withDelays)["data"] & { channel_delays?: unknown }) | null;
   if (loaded.error) throw new Error(loaded.error.message);
-  if (!agent?.user_id || !agent.instagram_access_token || !agent.instagram_page_id) return;
+  if (!agent?.user_id || !agent.instagram_access_token || !agent.instagram_page_id) {
+    console.log("[instagram webhook] agent not found for account", message.accountId);
+    return;
+  }
 
   const externalId = `ig:${message.messageId}`;
   const { data: duplicate, error: duplicateError } = await supabase
