@@ -84,7 +84,42 @@ export async function GET(request: NextRequest) {
         access_token: long.access_token,
       })}`,
     );
-    const pages = pagesResponse.data ?? [];
+    const pages = [...(pagesResponse.data ?? [])];
+
+    // /me/accounts при выборочном доступе иногда пуст, хотя страницы выбраны в диалоге Meta:
+    // берём их ID из granular_scopes токена (debug_token) и запрашиваем страницы напрямую.
+    if (pages.length === 0) {
+      try {
+        const debug = await graphJson<{ data?: { granular_scopes?: { scope: string; target_ids?: string[] }[] } }>(
+          `${GRAPH}/debug_token?${new URLSearchParams({
+            input_token: long.access_token,
+            access_token: `${app.appId}|${app.appSecret}`,
+          })}`,
+        );
+        const granular = debug.data?.granular_scopes ?? [];
+        console.log("[INSTAGRAM_GRANULAR]", JSON.stringify(granular));
+        const pageIds = new Set(
+          granular
+            .filter((item) => item.scope === "pages_show_list" || item.scope === "pages_read_engagement")
+            .flatMap((item) => item.target_ids ?? []),
+        );
+        for (const pageId of pageIds) {
+          try {
+            const direct = await graphJson<PageItem>(
+              `${GRAPH}/${pageId}?${new URLSearchParams({
+                fields: `id,name,access_token,${IG_FIELDS}`,
+                access_token: long.access_token,
+              })}`,
+            );
+            pages.push(direct);
+          } catch (directError) {
+            console.log("[INSTAGRAM_DIRECT_PAGE]", pageId, directError instanceof Error ? directError.message : directError);
+          }
+        }
+      } catch (debugError) {
+        console.log("[INSTAGRAM_GRANULAR] failed", debugError instanceof Error ? debugError.message : debugError);
+      }
+    }
     // Токены страниц в лог не попадают.
     console.log(
       "[INSTAGRAM_PAGES]",
