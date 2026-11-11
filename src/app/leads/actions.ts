@@ -4,8 +4,9 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { getAuthenticatedUserId } from "@/lib/auth-user";
-import { getCampaign, listAgentOptions } from "@/lib/outreach";
-import { enqueueLogs, outreachQueueConfigured } from "@/lib/outreach-queue";
+import { getCampaign, listAgentOptions, scheduleOpenBatch } from "@/lib/outreach";
+import { outreachQueueConfigured } from "@/lib/outreach-queue";
+import { readTimeZone, readWorkTime } from "@/lib/outreach-schedule";
 import { getOpenAI } from "@/lib/openai";
 import {
   DEFAULT_OUTREACH_LANGUAGE,
@@ -41,13 +42,20 @@ async function nextDraftName(userId: string) {
 }
 
 /** «+ Новая кампания»: создаёт черновик в БД и переводит на рабочую область кампании. */
-export async function createCampaignDraft() {
+export async function createCampaignDraft(timezoneInput?: string) {
   const userId = await getAuthenticatedUserId();
-  const { data, error } = await createSupabaseAdminClient()
+  const supabase = createSupabaseAdminClient();
+  const name = await nextDraftName(userId);
+  const timezone = readTimeZone(timezoneInput);
+  let result = await supabase
     .from("outreach_campaigns")
-    .insert({ user_id: userId, name: await nextDraftName(userId), status: "draft" })
+    .insert({ user_id: userId, name, status: "draft", work_time_start: "09:00", work_time_end: "18:00", timezone })
     .select("id")
     .single();
+  if (result.error && /work_time_start|timezone/.test(result.error.message)) {
+    result = await supabase.from("outreach_campaigns").insert({ user_id: userId, name, status: "draft" }).select("id").single();
+  }
+  const { data, error } = result;
   if (error || !data) {
     throw new Error(error?.message.includes("outreach_campaigns") ? "Примените миграцию 20261104_outreach.sql." : (error?.message ?? "Не удалось создать кампанию."));
   }
@@ -74,6 +82,9 @@ export type CampaignSettingsInput = {
   delay_mode: OutreachDelayMode;
   fixed_delay_minutes: number;
   webhook_url: string | null;
+  work_time_start: string;
+  work_time_end: string;
+  timezone: string;
 };
 
 export async function saveCampaignSettings(id: string, input: CampaignSettingsInput): Promise<Result> {
@@ -89,6 +100,12 @@ export async function saveCampaignSettings(id: string, input: CampaignSettingsIn
   const delayMode: OutreachDelayMode = input.delay_mode === "fixed" ? "fixed" : "random";
   const messageType: OutreachMessageType = input.message_type === "fixed" ? "fixed" : "ai";
   const daily = Math.max(1, Math.min(5000, Math.round(Number(input.daily_limit) || 1)));
+  const workStart = readWorkTime(input.work_time_start, "");
+  const workEnd = readWorkTime(input.work_time_end, "");
+  if (!workStart || !workEnd) return fail("Укажите время начала и окончания.");
+  if (workStart >= workEnd) return fail("Время окончания должно быть позже времени начала.");
+  const timezone = readTimeZone(input.timezone);
+  if (input.timezone.trim() && timezone !== input.timezone.trim()) return fail("Неизвестный часовой пояс.");
 
   const channel = readOutreachChannel(input.channel_type);
   if (input.agent_id) {
@@ -129,11 +146,14 @@ export async function saveCampaignSettings(id: string, input: CampaignSettingsIn
       delay_mode: delayMode,
       fixed_delay_minutes: fixedDelay,
       webhook_url: webhook,
+      work_time_start: workStart,
+      work_time_end: workEnd,
+      timezone,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
     .eq("user_id", userId);
-  if (error) return fail(error.message);
+  if (error) return fail(/work_time_start|timezone/.test(error.message) ? "Примените миграцию 20261111_outreach_work_schedule.sql." : error.message);
 
   revalidatePath("/leads");
   return { ok: true };
@@ -227,52 +247,32 @@ export async function controlCampaign(id: string, action: "start" | "pause" | "s
     return fail("Очередь фоновых задач не настроена: добавьте QSTASH_TOKEN, OUTREACH_WORKER_SECRET и OUTREACH_WORKER_URL.");
   }
 
-  // Суточный лимит (UTC-сутки, как в воркере): вычитаем уже отправленное сегодня.
-  const dayStart = new Date();
-  dayStart.setUTCHours(0, 0, 0, 0);
-  const { count: sentToday } = await supabase
-    .from("outreach_logs")
-    .select("id", { count: "exact", head: true })
-    .eq("campaign_id", id)
-    .eq("strike_status", "success")
-    .gte("strike_sent_time", dayStart.toISOString());
-  const remaining = campaign.daily_limit - (sentToday ?? 0);
-  if (remaining <= 0) return fail("Суточный лимит на сегодня уже выбран. Запустите кампанию завтра или увеличьте лимит.");
-
   // Строки, зависшие в обработке после сбоя функции, возвращаем в очередь (кампания не активна, воркеры их пропускают).
   await supabase.from("outreach_logs").update({ strike_error: null }).eq("campaign_id", id).eq("strike_status", "queued").eq("strike_error", "processing");
 
-  const { data: queued, error } = await supabase
-    .from("outreach_logs")
-    .select("id")
-    .eq("campaign_id", id)
-    .eq("strike_status", "queued")
-    .order("row_index", { ascending: true })
-    .is("strike_error", null)
-    .limit(remaining);
-  if (error) return fail(error.message);
-  if (!queued?.length) return fail("В базе нет строк в очереди.");
+  const countWaiting = (marker: "scheduled" | null) => {
+    const query = supabase.from("outreach_logs").select("id", { count: "exact", head: true }).eq("campaign_id", id).eq("strike_status", "queued");
+    return marker ? query.eq("strike_error", marker) : query.is("strike_error", null);
+  };
+  const [unscheduled, alreadyScheduled] = await Promise.all([countWaiting(null), countWaiting("scheduled")]);
+  if (unscheduled.error) return fail(unscheduled.error.message);
+  if (alreadyScheduled.error) return fail(alreadyScheduled.error.message);
+  if (!(unscheduled.count || alreadyScheduled.count)) return fail("В базе нет строк в очереди.");
 
   // Статус ставится ДО публикации в очередь: первое сообщение уходит без задержки,
   // и воркер иначе успевает увидеть ещё не активную кампанию и пропустить строку навсегда.
   const { error: statusError } = await supabase.from("outreach_campaigns").update({ status: "active" }).eq("id", id).eq("user_id", userId);
   if (statusError) return fail(statusError.message);
 
-  const result = await enqueueLogs(
-    queued.map((row) => String(row.id)),
-    {
-      mode: campaign.delay_mode,
-      minMinutes: campaign.min_delay_minutes,
-      maxMinutes: campaign.max_delay_minutes,
-      fixedMinutes: campaign.fixed_delay_minutes,
-    },
-  );
+  const result = await scheduleOpenBatch(id);
   if (result.error && result.queued === 0) {
     await supabase.from("outreach_campaigns").update({ status: campaign.status }).eq("id", id).eq("user_id", userId);
     return fail(result.error);
   }
   revalidatePath("/leads");
-  return { ok: true, message: `Кампания запущена: в очереди ${result.queued} сообщений` };
+  if (result.opensAt) return { ok: true, message: "Кампания запущена. Отправка начнётся в рабочем окне." };
+  if (result.queued > 0) return { ok: true, message: `Кампания запущена: в очереди ${result.queued} сообщений` };
+  return { ok: true, message: "Кампания запущена" };
 }
 
 export async function deleteCampaign(id: string): Promise<Result> {

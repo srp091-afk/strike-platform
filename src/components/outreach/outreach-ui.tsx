@@ -1,4 +1,9 @@
-﻿import type { OutreachLogStatus, OutreachStatus } from "@/lib/outreach-types";
+﻿"use client";
+
+import { useSyncExternalStore } from "react";
+
+import { campaignHold, type CampaignHold } from "@/lib/outreach-schedule";
+import type { OutreachLogStatus, OutreachStatus } from "@/lib/outreach-types";
 import { OUTREACH_STATUS_LABEL } from "@/lib/outreach-types";
 import { cn } from "@/lib/utils";
 
@@ -13,12 +18,53 @@ const STATUS_TONE: Record<OutreachStatus, string> = {
   completed: "border-sky-200 bg-sky-50 text-sky-700",
 };
 
-export function CampaignStatusBadge({ status }: { status: OutreachStatus }) {
-  return (
-    <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", STATUS_TONE[status])}>
-      {OUTREACH_STATUS_LABEL[status]}
-    </span>
+const HOLD_BADGE: Record<CampaignHold, { label: string; tone: string }> = {
+  daily_limit: { label: "Суточный лимит", tone: "border-orange-200 bg-orange-50 text-orange-700" },
+  outside_hours: { label: "Вне рабочего времени", tone: "border-blue-200 bg-blue-50 text-blue-700" },
+};
+
+function useClientNow() {
+  return useSyncExternalStore(
+    (onStoreChange) => {
+      const id = setInterval(onStoreChange, 30_000);
+      return () => clearInterval(id);
+    },
+    () => Date.now(),
+    () => 0,
   );
+}
+
+export function CampaignStatusBadge({
+  status,
+  sentToday = 0,
+  dailyLimit = 0,
+  workTimeStart,
+  workTimeEnd,
+  timezone,
+}: {
+  status: OutreachStatus;
+  sentToday?: number;
+  dailyLimit?: number;
+  workTimeStart?: string;
+  workTimeEnd?: string;
+  timezone?: string;
+}) {
+  const now = useClientNow();
+  const hold =
+    now > 0
+      ? campaignHold({
+          status,
+          sentToday,
+          dailyLimit,
+          workTimeStart,
+          workTimeEnd,
+          timezone,
+          now: new Date(now),
+        })
+      : null;
+  const tone = hold ? HOLD_BADGE[hold].tone : STATUS_TONE[status];
+  const label = hold ? HOLD_BADGE[hold].label : OUTREACH_STATUS_LABEL[status];
+  return <span className={cn("inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium", tone)}>{label}</span>;
 }
 
 const LOG_TONE: Record<OutreachLogStatus, { label: string; tone: string }> = {

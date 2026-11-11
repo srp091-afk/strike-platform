@@ -2,6 +2,8 @@ import "server-only";
 
 import { effectiveActiveChannels, telegramChannelLabel } from "@/lib/agent-models";
 import { listAgents } from "@/lib/agents";
+import { enqueueAt } from "@/lib/outreach-queue";
+import { normalizeSchedule, planSendDelays, zonedDayStart } from "@/lib/outreach-schedule";
 import {
   readOutreachChannel,
   readOutreachStatus,
@@ -16,6 +18,12 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const CAMPAIGN_COLUMNS =
   "id, name, agent_id, channel_type, outreach_prompt, min_delay_minutes, max_delay_minutes, daily_limit, status, source_columns, contact_column, website_column, name_column, social_column, message_type, fixed_message, fallback_message, language, delay_mode, fixed_delay_minutes, webhook_url, created_at";
+
+const SCHEDULE_COLUMNS = `${CAMPAIGN_COLUMNS}, work_time_start, work_time_end, timezone`;
+
+function missingScheduleColumn(message: string) {
+  return /work_time_start|work_time_end|timezone/.test(message);
+}
 
 export function mapCampaign(row: Record<string, unknown>): OutreachCampaign {
   return {
@@ -40,6 +48,9 @@ export function mapCampaign(row: Record<string, unknown>): OutreachCampaign {
     delay_mode: row.delay_mode === "fixed" ? "fixed" : "random",
     fixed_delay_minutes: Number(row.fixed_delay_minutes ?? 5),
     webhook_url: typeof row.webhook_url === "string" ? row.webhook_url : null,
+    work_time_start: typeof row.work_time_start === "string" ? row.work_time_start : "00:00",
+    work_time_end: typeof row.work_time_end === "string" ? row.work_time_end : "23:59",
+    timezone: typeof row.timezone === "string" && row.timezone.trim() ? row.timezone : "UTC",
     created_at: typeof row.created_at === "string" ? row.created_at : "",
   };
 }
@@ -54,7 +65,10 @@ export function mapLog(row: Record<string, unknown>): OutreachLog {
     strike_status: status as OutreachLogStatus,
     strike_sent_time: typeof row.strike_sent_time === "string" ? row.strike_sent_time : null,
     strike_message: typeof row.strike_message === "string" ? row.strike_message : null,
-    strike_error: typeof row.strike_error === "string" ? row.strike_error : null,
+    strike_error:
+      row.strike_error === "processing" || row.strike_error === "scheduled" || typeof row.strike_error !== "string"
+        ? null
+        : row.strike_error,
   };
 }
 
@@ -76,7 +90,7 @@ export async function listAgentOptions(): Promise<OutreachAgentOption[]> {
 }
 
 export async function countLogs(campaignIds: string[]): Promise<Map<string, OutreachCounts>> {
-  const counts = new Map<string, OutreachCounts>(campaignIds.map((id) => [id, { total: 0, sent: 0, failed: 0 }]));
+  const counts = new Map<string, OutreachCounts>(campaignIds.map((id) => [id, { total: 0, sent: 0, failed: 0, sent_today: 0 }]));
   if (campaignIds.length === 0) return counts;
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
@@ -95,39 +109,159 @@ export async function countLogs(campaignIds: string[]): Promise<Map<string, Outr
   return counts;
 }
 
+async function campaignRows(load: (columns: string) => PromiseLike<{ data: unknown; error: { message: string } | null }>) {
+  const primary = await load(SCHEDULE_COLUMNS);
+  if (!primary.error) return primary.data;
+  if (!missingScheduleColumn(primary.error.message)) throw new Error(primary.error.message);
+  const fallback = await load(CAMPAIGN_COLUMNS);
+  if (fallback.error) throw new Error(fallback.error.message);
+  return fallback.data;
+}
+
 export async function listCampaignCards(userId: string): Promise<OutreachCampaignCard[]> {
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
-    .from("outreach_campaigns")
-    .select(CAMPAIGN_COLUMNS)
-    .eq("user_id", userId)
-    .order("created_at", { ascending: false });
-  if (error) throw new Error(error.message);
-
-  const campaigns = (data ?? []).map((row) => mapCampaign(row as Record<string, unknown>));
-  const [counts, nameRows] = await Promise.all([
+  const data = await campaignRows((columns) =>
+    supabase.from("outreach_campaigns").select(columns).eq("user_id", userId).order("created_at", { ascending: false }),
+  );
+  const campaigns = (Array.isArray(data) ? data : []).map((row) => mapCampaign(row as Record<string, unknown>));
+  const [counts, sentToday, nameRows] = await Promise.all([
     countLogs(campaigns.map((c) => c.id)),
+    countSentToday(campaigns.filter((campaign) => campaign.status === "active")),
     supabase.from("agents").select("id, name").eq("user_id", userId),
   ]);
   if (nameRows.error) throw new Error(nameRows.error.message);
   const names = new Map((nameRows.data ?? []).map((agent) => [String(agent.id), String(agent.name ?? "")]));
   return campaigns.map((campaign) => ({
     ...campaign,
-    ...(counts.get(campaign.id) ?? { total: 0, sent: 0, failed: 0 }),
+    ...(counts.get(campaign.id) ?? { total: 0, sent: 0, failed: 0, sent_today: 0 }),
+    sent_today: sentToday.get(campaign.id) ?? 0,
     agent_name: campaign.agent_id ? (names.get(campaign.agent_id) ?? null) : null,
   }));
 }
 
+function oneRow(data: unknown) {
+  return data && typeof data === "object" && !Array.isArray(data) ? mapCampaign(data as Record<string, unknown>) : null;
+}
+
 export async function getCampaign(userId: string, id: string): Promise<OutreachCampaign | null> {
   const supabase = createSupabaseAdminClient();
-  const { data, error } = await supabase
-    .from("outreach_campaigns")
-    .select(CAMPAIGN_COLUMNS)
-    .eq("id", id)
-    .eq("user_id", userId)
-    .maybeSingle();
-  if (error) throw new Error(error.message);
-  return data ? mapCampaign(data as Record<string, unknown>) : null;
+  const data = await campaignRows((columns) =>
+    supabase.from("outreach_campaigns").select(columns).eq("id", id).eq("user_id", userId).maybeSingle(),
+  );
+  return oneRow(data);
+}
+
+async function getCampaignById(id: string): Promise<OutreachCampaign | null> {
+  const supabase = createSupabaseAdminClient();
+  const data = await campaignRows((columns) => supabase.from("outreach_campaigns").select(columns).eq("id", id).maybeSingle());
+  return oneRow(data);
+}
+
+export async function countSentToday(campaigns: Array<Pick<OutreachCampaign, "id" | "timezone">>) {
+  const counts = new Map<string, number>(campaigns.map((campaign) => [campaign.id, 0]));
+  const active = campaigns.filter((campaign) => campaign.id);
+  if (active.length === 0) return counts;
+  const supabase = createSupabaseAdminClient();
+  await Promise.all(
+    active.map(async (campaign) => {
+      const since = zonedDayStart(new Date(), normalizeSchedule({ timezone: campaign.timezone }).timezone).toISOString();
+      const { count, error } = await supabase
+        .from("outreach_logs")
+        .select("id", { count: "exact", head: true })
+        .eq("campaign_id", campaign.id)
+        .eq("strike_status", "success")
+        .gte("strike_sent_time", since);
+      if (error) throw new Error(error.message);
+      counts.set(campaign.id, count ?? 0);
+    }),
+  );
+  return counts;
+}
+
+const SCHEDULE_BATCH = 80;
+
+/**
+ * Ставит в очередь ещё не запланированные строки: не больше суточного лимита в сутки
+ * и только внутри окна работы. Повторный вызов ничего не дублирует, пока прошлые
+ * строки висят в очереди со служебной пометкой scheduled.
+ */
+export async function scheduleOpenBatch(campaignId: string): Promise<{ queued: number; error?: string; opensAt: string | null }> {
+  const campaign = await getCampaignById(campaignId);
+  if (!campaign || campaign.status !== "active") return { queued: 0, opensAt: null };
+  const supabase = createSupabaseAdminClient();
+  const { count: scheduled, error: scheduledError } = await supabase
+    .from("outreach_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("campaign_id", campaignId)
+    .eq("strike_status", "queued")
+    .eq("strike_error", "scheduled");
+  if (scheduledError) return { queued: 0, error: scheduledError.message, opensAt: null };
+  if ((scheduled ?? 0) > 0) return { queued: 0, opensAt: null };
+
+  const { data: waiting, error } = await supabase
+    .from("outreach_logs")
+    .select("id, row_index")
+    .eq("campaign_id", campaignId)
+    .eq("strike_status", "queued")
+    .is("strike_error", null)
+    .order("row_index", { ascending: true })
+    .limit(SCHEDULE_BATCH);
+  if (error) return { queued: 0, error: error.message, opensAt: null };
+  if (!waiting?.length) return { queued: 0, opensAt: null };
+
+  const sentToday = (await countSentToday([campaign])).get(campaignId) ?? 0;
+  const schedule = normalizeSchedule({
+    workTimeStart: campaign.work_time_start,
+    workTimeEnd: campaign.work_time_end,
+    timezone: campaign.timezone,
+  });
+  const delays = planSendDelays({
+    count: waiting.length,
+    sentToday,
+    dailyLimit: campaign.daily_limit,
+    delay: {
+      mode: campaign.delay_mode,
+      minMinutes: campaign.min_delay_minutes,
+      maxMinutes: campaign.max_delay_minutes,
+      fixedMinutes: campaign.fixed_delay_minutes,
+    },
+    schedule,
+  });
+  if (delays.length === 0) return { queued: 0, error: "В режиме работы нет окна для отправки.", opensAt: null };
+
+  const chosen = waiting.slice(0, delays.length);
+  const ids = chosen.map((row) => String(row.id));
+  const { data: marked, error: markError } = await supabase
+    .from("outreach_logs")
+    .update({ strike_error: "scheduled" })
+    .in("id", ids)
+    .eq("strike_status", "queued")
+    .is("strike_error", null)
+    .select("id");
+  if (markError) return { queued: 0, error: markError.message, opensAt: null };
+  const markedIds = new Set((marked ?? []).map((row) => String(row.id)));
+  const items = chosen
+    .map((row, index) => ({ logId: String(row.id), delaySeconds: delays[index] ?? 0 }))
+    .filter((item) => markedIds.has(item.logId));
+  if (items.length === 0) return { queued: 0, opensAt: null };
+
+  const result = await enqueueAt(items);
+  if (result.queued < items.length) {
+    await supabase
+      .from("outreach_logs")
+      .update({ strike_error: null })
+      .in(
+        "id",
+        items.slice(result.queued).map((item) => item.logId),
+      )
+      .eq("strike_error", "scheduled");
+  }
+  const firstDelay = items[0]?.delaySeconds ?? 0;
+  return {
+    queued: result.queued,
+    error: result.error,
+    opensAt: firstDelay > 15 ? new Date(Date.now() + firstDelay * 1000).toISOString() : null,
+  };
 }
 
 /** Случайная строка базы кампании (для тестовой генерации). */
@@ -166,6 +300,10 @@ export async function listLogs(campaignId: string, limit = 500): Promise<Outreac
 export async function loadCampaignState(userId: string, id: string) {
   const campaign = await getCampaign(userId, id);
   if (!campaign) return null;
-  const [logs, counts] = await Promise.all([listLogs(id), countLogs([id])]);
-  return { campaign, logs, counts: counts.get(id) ?? { total: 0, sent: 0, failed: 0 } };
+  const [logs, counts, sentToday] = await Promise.all([listLogs(id), countLogs([id]), countSentToday([campaign])]);
+  return {
+    campaign,
+    logs,
+    counts: { ...(counts.get(id) ?? { total: 0, sent: 0, failed: 0, sent_today: 0 }), sent_today: sentToday.get(id) ?? 0 },
+  };
 }

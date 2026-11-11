@@ -2,14 +2,14 @@
 
 import { Loader2, Pause, Play, Send, Square, Trash2 } from "lucide-react";
 import Link from "next/link";
-import { useState } from "react";
-import { useFormStatus } from "react-dom";
+import { useState, useTransition } from "react";
 import useSWR, { type KeyedMutator } from "swr";
 
 import { controlCampaign, createCampaignDraft, deleteCampaign } from "@/app/leads/actions";
 import { CampaignStatusBadge, ProgressBar, cardClass } from "@/components/outreach/outreach-ui";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toaster";
+import { browserTimeZone } from "@/lib/outreach-schedule";
 import { OUTREACH_CHANNELS, type OutreachCampaignCard, type OutreachStatus } from "@/lib/outreach-types";
 import { jsonFetcher, useClientReady } from "@/lib/swr";
 
@@ -23,9 +23,14 @@ const NEXT_STATUS: Record<ControlAction, OutreachStatus> = {
 };
 
 function NewCampaignButton() {
-  const { pending } = useFormStatus();
+  const [pending, startTransition] = useTransition();
   return (
-    <Button type="submit" disabled={pending} className="shrink-0 bg-strike text-white hover:brightness-110 hover:shadow-none">
+    <Button
+      type="button"
+      disabled={pending}
+      className="shrink-0 bg-strike text-white hover:brightness-110 hover:shadow-none"
+      onClick={() => startTransition(() => createCampaignDraft(browserTimeZone()))}
+    >
       {pending ? "Создаём..." : "+ Новая кампания"}
     </Button>
   );
@@ -40,6 +45,7 @@ export function OutreachPageClient() {
   const { data, error, isLoading, mutate } = useSWR<CampaignList>("/api/leads", jsonFetcher, {
     revalidateOnFocus: false,
     keepPreviousData: true,
+    refreshInterval: (latest) => (latest?.campaigns.some((item) => item.status === "active") ? 20_000 : 0),
   });
   const campaigns = ready ? (data?.campaigns ?? []) : [];
 
@@ -61,9 +67,7 @@ export function OutreachPageClient() {
             Ответы клиентов подхватит агент.
           </p>
         </div>
-        <form action={createCampaignDraft}>
-          <NewCampaignButton />
-        </form>
+        <NewCampaignButton />
       </header>
 
       {error ? (
@@ -93,7 +97,14 @@ export function OutreachPageClient() {
                       <Link href={`/leads/${campaign.id}`} className="truncate font-heading text-xl font-semibold text-white hover:underline">
                         {campaign.name}
                       </Link>
-                      <CampaignStatusBadge status={campaign.status} />
+                      <CampaignStatusBadge
+                        status={campaign.status}
+                        sentToday={campaign.sent_today}
+                        dailyLimit={campaign.daily_limit}
+                        workTimeStart={campaign.work_time_start}
+                        workTimeEnd={campaign.work_time_end}
+                        timezone={campaign.timezone}
+                      />
                     </div>
                     <p className="mt-2 text-sm text-zinc-400">
                       Агент: {campaign.agent_name ?? "не выбран"} · Канал: {channel ?? "не выбран"} · {formatDate(campaign.created_at)}

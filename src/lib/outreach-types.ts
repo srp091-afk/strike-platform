@@ -59,10 +59,14 @@ export type OutreachCampaign = {
   delay_mode: OutreachDelayMode;
   fixed_delay_minutes: number;
   webhook_url: string | null;
+  /** HH:MM в часовом поясе кампании. Пустое значение на клиенте трактуется как весь день. */
+  work_time_start: string;
+  work_time_end: string;
+  timezone: string;
   created_at: string;
 };
 
-export type OutreachCounts = { total: number; sent: number; failed: number };
+export type OutreachCounts = { total: number; sent: number; failed: number; sent_today: number };
 
 export type OutreachCampaignCard = OutreachCampaign &
   OutreachCounts & {

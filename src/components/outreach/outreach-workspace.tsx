@@ -33,7 +33,14 @@ export function OutreachWorkspace({ initial, agents }: { initial: CampaignState;
       </Link>
       <header className="mt-4 flex flex-wrap items-center gap-3">
         <h1 className="text-3xl font-bold text-white">{state.campaign.name}</h1>
-        <CampaignStatusBadge status={state.campaign.status} />
+        <CampaignStatusBadge
+          status={state.campaign.status}
+          sentToday={state.counts.sent_today}
+          dailyLimit={state.campaign.daily_limit}
+          workTimeStart={state.campaign.work_time_start}
+          workTimeEnd={state.campaign.work_time_end}
+          timezone={state.campaign.timezone}
+        />
       </header>
 
       <Tabs defaultValue="settings" className="mt-8">

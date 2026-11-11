@@ -1,11 +1,14 @@
 import "server-only";
 
-import { generateOutreachMessage } from "@/lib/outreach-generate";
-import { OUTREACH_CHANNELS } from "@/lib/outreach-types";
 import { sendGreenMessage } from "@/lib/green-api";
+import { generateOutreachMessage } from "@/lib/outreach-generate";
+import { scheduleOpenBatch } from "@/lib/outreach";
+import { enqueueAt } from "@/lib/outreach-queue";
+import { isWithinWorkWindow, normalizeSchedule, planSendDelays, zonedDayStart, type WorkSchedule } from "@/lib/outreach-schedule";
+import { OUTREACH_CHANNELS } from "@/lib/outreach-types";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
-type ProcessResult = { status: "skipped" | "success" | "error"; detail?: string };
+type ProcessResult = { status: "skipped" | "success" | "error"; detail?: string; rescheduled?: boolean; followUpCampaignId?: string };
 
 /**
  * Обрабатывает ОДНУ строку базы: парсинг сайта -> генерация -> отправка -> запись в outreach_logs.
@@ -31,7 +34,12 @@ export async function processOutreachLog(logId: string): Promise<ProcessResult> 
     timer = setTimeout(() => void markFailed("Превышено время обработки (100 с): сайт или модель не ответили").then(resolve), 100_000);
   });
   try {
-    return await Promise.race([runOutreachLog(logId), deadline]);
+    const result = await Promise.race([runOutreachLog(logId), deadline]);
+    if (result.followUpCampaignId) {
+      const followUp = await scheduleOpenBatch(result.followUpCampaignId);
+      if (followUp.error) console.error(`[outreach-worker] не удалось поставить следующую пачку: ${followUp.error}`);
+    }
+    return result;
   } catch (error) {
     return markFailed(`Внутренняя ошибка: ${error instanceof Error ? error.message : "неизвестная"}`);
   } finally {
@@ -43,27 +51,34 @@ async function runOutreachLog(logId: string): Promise<ProcessResult> {
   const supabase = createSupabaseAdminClient();
   const { data: log } = await supabase
     .from("outreach_logs")
-    .select("id, campaign_id, contact_data, strike_status")
+    .select("id, campaign_id, row_index, contact_data, strike_status")
     .eq("id", logId)
     .maybeSingle();
   if (!log || log.strike_status !== "queued") return { status: "skipped", detail: "строка уже обработана или удалена" };
 
   // Атомарный захват строки: повторная доставка QStash или повторный запуск после паузы не отправят дубль.
-  const { data: claimed } = await supabase
-    .from("outreach_logs")
-    .update({ strike_error: "processing" })
-    .eq("id", logId)
-    .eq("strike_status", "queued")
-    .is("strike_error", null)
-    .select("id");
+  const claim = (marker: "scheduled" | null) => {
+    const query = supabase.from("outreach_logs").update({ strike_error: "processing" }).eq("id", logId).eq("strike_status", "queued");
+    return (marker ? query.eq("strike_error", marker) : query.is("strike_error", null)).select("id");
+  };
+  let { data: claimed } = await claim("scheduled");
+  if (!claimed?.length) ({ data: claimed } = await claim(null));
   if (!claimed?.length) return { status: "skipped", detail: "строка уже в обработке" };
   const release = () => supabase.from("outreach_logs").update({ strike_error: null }).eq("id", logId);
 
-  const { data: campaign } = await supabase
-    .from("outreach_campaigns")
-    .select("id, user_id, agent_id, channel_type, outreach_prompt, daily_limit, status, contact_column, website_column, name_column, social_column, message_type, fixed_message, fallback_message, language, webhook_url")
-    .eq("id", log.campaign_id)
-    .maybeSingle();
+  const scheduleSelect =
+    "id, user_id, agent_id, channel_type, outreach_prompt, daily_limit, status, contact_column, website_column, name_column, social_column, message_type, fixed_message, fallback_message, language, webhook_url, min_delay_minutes, max_delay_minutes, delay_mode, fixed_delay_minutes, work_time_start, work_time_end, timezone";
+  let campaignResult = await supabase.from("outreach_campaigns").select(scheduleSelect).eq("id", log.campaign_id).maybeSingle();
+  if (campaignResult.error && /work_time_start|work_time_end|timezone/.test(campaignResult.error.message)) {
+    campaignResult = await supabase
+      .from("outreach_campaigns")
+      .select(
+        "id, user_id, agent_id, channel_type, outreach_prompt, daily_limit, status, contact_column, website_column, name_column, social_column, message_type, fixed_message, fallback_message, language, webhook_url, min_delay_minutes, max_delay_minutes, delay_mode, fixed_delay_minutes",
+      )
+      .eq("id", log.campaign_id)
+      .maybeSingle();
+  }
+  const campaign = campaignResult.data;
   if (!campaign || campaign.status !== "active") {
     await release();
     return { status: "skipped", detail: `кампания не активна (${campaign?.status ?? "не найдена"})` };
@@ -75,18 +90,27 @@ async function runOutreachLog(logId: string): Promise<ProcessResult> {
     return { status: "error", detail: message };
   };
 
-  // Суточный лимит: строка остаётся в очереди, QStash повторит её позже (ответ 429 в роуте).
-  const dayStart = new Date();
-  dayStart.setUTCHours(0, 0, 0, 0);
+  const schedule = normalizeSchedule({
+    workTimeStart: campaign.work_time_start,
+    workTimeEnd: campaign.work_time_end,
+    timezone: campaign.timezone,
+  });
+  const now = new Date();
   const { count } = await supabase
     .from("outreach_logs")
     .select("id", { count: "exact", head: true })
     .eq("campaign_id", campaign.id)
     .eq("strike_status", "success")
-    .gte("strike_sent_time", dayStart.toISOString());
-  if ((count ?? 0) >= Number(campaign.daily_limit)) {
-    await release();
-    return { status: "skipped", detail: "daily_limit" };
+    .gte("strike_sent_time", zonedDayStart(now, schedule.timezone).toISOString());
+  const limitReached = (count ?? 0) >= Number(campaign.daily_limit);
+  const outside = !isWithinWorkWindow(now, schedule);
+  if (limitReached || outside) {
+    const deferred = await deferUntilWindow(logId, Number(log.row_index ?? 0), campaign, schedule, limitReached, count ?? 0);
+    if (!deferred.ok) {
+      await release();
+      return { status: "skipped", detail: limitReached ? "daily_limit" : "outside_hours" };
+    }
+    return { status: "skipped", detail: limitReached ? "daily_limit" : "outside_hours", rescheduled: true };
   }
 
   const { data: agent } = await supabase
@@ -145,15 +169,69 @@ async function runOutreachLog(logId: string): Promise<ProcessResult> {
     .eq("id", logId);
   await notifyWebhook(campaign.webhook_url, { status: "success", sent_at: sentAt, message: generated.message, contact });
 
-  // Все строки обработаны -> кампания завершена.
-  const { count: left } = await supabase
+  const [scheduledLeft, waiting, processing] = await Promise.all([
+    countQueued(campaign.id, "scheduled"),
+    countQueued(campaign.id, null),
+    countQueued(campaign.id, "processing"),
+  ]);
+  if (scheduledLeft === 0 && waiting === 0 && processing === 0) {
+    await supabase.from("outreach_campaigns").update({ status: "completed" }).eq("id", campaign.id);
+  }
+  return { status: "success", followUpCampaignId: scheduledLeft === 0 && waiting > 0 ? campaign.id : undefined };
+}
+
+async function countQueued(campaignId: string, marker: "scheduled" | "processing" | null) {
+  const query = createSupabaseAdminClient()
+    .from("outreach_logs")
+    .select("id", { count: "exact", head: true })
+    .eq("campaign_id", campaignId)
+    .eq("strike_status", "queued");
+  const { count, error } = await (marker ? query.eq("strike_error", marker) : query.is("strike_error", null));
+  if (error) throw new Error(error.message);
+  return count ?? 0;
+}
+
+async function deferUntilWindow(
+  logId: string,
+  rowIndex: number,
+  campaign: {
+    id: string;
+    daily_limit: number;
+    delay_mode: string | null;
+    min_delay_minutes: number | null;
+    max_delay_minutes: number | null;
+    fixed_delay_minutes: number | null;
+  },
+  schedule: WorkSchedule,
+  limitReached: boolean,
+  sentToday: number,
+) {
+  const supabase = createSupabaseAdminClient();
+  const { count: ahead } = await supabase
     .from("outreach_logs")
     .select("id", { count: "exact", head: true })
     .eq("campaign_id", campaign.id)
-    .eq("strike_status", "queued");
-  if (!left) await supabase.from("outreach_campaigns").update({ status: "completed" }).eq("id", campaign.id);
-
-  return { status: "success" };
+    .eq("strike_status", "queued")
+    .lt("row_index", rowIndex);
+  const delays = planSendDelays({
+    count: Math.min(1000, (ahead ?? 0) + 1),
+    sentToday: limitReached ? Number(campaign.daily_limit) : sentToday,
+    dailyLimit: Number(campaign.daily_limit),
+    delay: {
+      mode: campaign.delay_mode === "fixed" ? "fixed" : "random",
+      minMinutes: Number(campaign.min_delay_minutes ?? 3),
+      maxMinutes: Number(campaign.max_delay_minutes ?? 8),
+      fixedMinutes: Number(campaign.fixed_delay_minutes ?? 5),
+    },
+    schedule,
+    random: () => 0,
+  });
+  const delaySeconds = delays.length > 0 ? delays[delays.length - 1] : 24 * 60 * 60;
+  const published = await enqueueAt([{ logId, delaySeconds: Math.max(30, delaySeconds) }]);
+  if (published.queued === 0) return { ok: false as const, error: published.error };
+  const { error } = await supabase.from("outreach_logs").update({ strike_error: "scheduled" }).eq("id", logId).eq("strike_error", "processing");
+  if (error) return { ok: false as const, error: error.message };
+  return { ok: true as const };
 }
 
 async function notifyWebhook(url: unknown, payload: Record<string, unknown>) {

@@ -42,19 +42,27 @@ export function outreachQueueConfigured() {
   return Boolean(process.env.QSTASH_TOKEN && process.env.OUTREACH_WORKER_SECRET && workerUrl());
 }
 
-export async function enqueueLogs(
-  logIds: string[],
-  delays: { mode: "random" | "fixed"; minMinutes: number; maxMinutes: number; fixedMinutes: number },
-): Promise<{ queued: number; error?: string }> {
+async function publisher() {
   const token = process.env.QSTASH_TOKEN;
   const secret = process.env.OUTREACH_WORKER_SECRET;
   const configuredUrl = workerUrl();
   const url = configuredUrl ? await resolveFinalUrl(configuredUrl) : null;
   if (!token || !secret || !url) {
-    return { queued: 0, error: "Очередь не настроена (QSTASH_TOKEN, OUTREACH_WORKER_SECRET, OUTREACH_WORKER_URL)." };
+    return { error: "Очередь не настроена (QSTASH_TOKEN, OUTREACH_WORKER_SECRET, OUTREACH_WORKER_URL)." as const };
   }
+  return { client: new Client({ token }), url, secret };
+}
 
-  const client = new Client({ token });
+export async function enqueueLogs(
+  logIds: string[],
+  delays: { mode: "random" | "fixed"; minMinutes: number; maxMinutes: number; fixedMinutes: number },
+  options?: { notBeforeSeconds?: number },
+): Promise<{ queued: number; error?: string }> {
+  const published = await publisher();
+  if ("error" in published) return { queued: 0, error: published.error };
+  const { client, url, secret } = published;
+  const notBefore = Math.max(0, Math.round(options?.notBeforeSeconds ?? 0));
+
   let elapsedSeconds = 0;
   let queued = 0;
   for (const logId of logIds) {
@@ -65,14 +73,40 @@ export async function enqueueLogs(
         : delays.minMinutes + Math.random() * Math.max(0, delays.maxMinutes - delays.minMinutes);
     // Первое сообщение уходит сразу, пауза отсчитывается только между сообщениями.
     if (queued > 0) elapsedSeconds += Math.max(1, Math.round(gapMinutes * 60));
-    if (elapsedSeconds > MAX_DELAY_SECONDS) break;
+    const delay = elapsedSeconds + notBefore;
+    if (delay > MAX_DELAY_SECONDS) break;
     try {
       await client.publishJSON({
         url,
         body: { logId },
-        ...(elapsedSeconds > 0 ? { delay: elapsedSeconds } : {}),
+        ...(delay > 0 ? { delay } : {}),
         retries: 2,
         // Дублирующая защита: воркер принимает либо подпись QStash, либо этот секрет.
+        headers: { "x-outreach-secret": secret },
+      });
+      queued += 1;
+    } catch (error) {
+      return { queued, error: `QStash: ${error instanceof Error ? error.message : "ошибка публикации"}` };
+    }
+  }
+  return { queued };
+}
+
+/** Публикует уже посчитанные задержки. delaySeconds — секунды от текущего момента. */
+export async function enqueueAt(items: Array<{ logId: string; delaySeconds: number }>): Promise<{ queued: number; error?: string }> {
+  if (items.length === 0) return { queued: 0 };
+  const published = await publisher();
+  if ("error" in published) return { queued: 0, error: published.error };
+  const { client, url, secret } = published;
+  let queued = 0;
+  for (const item of items) {
+    const delay = Math.min(MAX_DELAY_SECONDS, Math.max(0, Math.round(item.delaySeconds)));
+    try {
+      await client.publishJSON({
+        url,
+        body: { logId: item.logId },
+        ...(delay > 0 ? { delay } : {}),
+        retries: 3,
         headers: { "x-outreach-secret": secret },
       });
       queued += 1;

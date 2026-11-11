@@ -2,7 +2,7 @@
 
 import { AlertTriangle, FileSpreadsheet, Info, Loader2, Sparkles, UploadCloud } from "lucide-react";
 import Link from "next/link";
-import { useRef, useState, useTransition } from "react";
+import { useRef, useState, useSyncExternalStore, useTransition } from "react";
 
 import { generateOutreachInstruction, importContacts, saveCampaignSettings } from "@/app/leads/actions";
 import { cardClass, fieldClass } from "@/components/outreach/outreach-ui";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select-field";
 import { toast } from "@/components/ui/toaster";
 import { Textarea } from "@/components/ui/textarea";
+import { browserTimeZone } from "@/lib/outreach-schedule";
 import {
   OUTREACH_CHANNELS,
   OUTREACH_LANGUAGES,
@@ -21,6 +22,35 @@ import {
   type OutreachLog,
   type OutreachMessageType,
 } from "@/lib/outreach-types";
+
+let cachedTimeZones: string[] | null = null;
+
+function clientTimeZones() {
+  if (cachedTimeZones) return cachedTimeZones;
+  const supported = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
+  const browser = browserTimeZone();
+  cachedTimeZones = [browser, ...supported.filter((zone) => zone !== browser)];
+  return cachedTimeZones;
+}
+
+const serverTimeZoneLists = new Map<string, string[]>();
+
+function serverTimeZones(selected: string) {
+  const key = selected || "UTC";
+  const cached = serverTimeZoneLists.get(key);
+  if (cached) return cached;
+  const list = [key];
+  serverTimeZoneLists.set(key, list);
+  return list;
+}
+
+function useTimeZones(selected: string) {
+  return useSyncExternalStore(
+    () => () => {},
+    clientTimeZones,
+    () => serverTimeZones(selected),
+  );
+}
 
 const CHUNK = 500;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
@@ -139,6 +169,10 @@ export function OutreachSettings({
   const [generating, startGenerating] = useTransition();
   const [delayMode, setDelayMode] = useState<OutreachDelayMode>(campaign.delay_mode);
   const [fixedDelay, setFixedDelay] = useState(String(campaign.fixed_delay_minutes));
+  const [workStart, setWorkStart] = useState(campaign.work_time_start || "09:00");
+  const [workEnd, setWorkEnd] = useState(campaign.work_time_end || "18:00");
+  const [timezone, setTimezone] = useState(campaign.timezone || "UTC");
+  const timeZones = useTimeZones(timezone);
   const fixedRef = useRef<HTMLTextAreaElement>(null);
   const [saving, startSaving] = useTransition();
 
@@ -174,6 +208,9 @@ export function OutreachSettings({
         delay_mode: delayMode,
         fixed_delay_minutes: Number(fixedDelay),
         webhook_url: webhook || null,
+        work_time_start: workStart,
+        work_time_end: workEnd,
+        timezone,
       });
       if (result.ok) toast.success("Настройки кампании сохранены");
       else toast.error(result.error);
@@ -466,6 +503,34 @@ export function OutreachSettings({
           <input className={fieldClass} type="url" placeholder="https://hook.eu1.make.com/..." value={webhook} disabled={locked} onChange={(event) => setWebhook(event.target.value)} />
           <span className="mt-1.5 block text-xs text-zinc-400">STRIKE отправит сюда телефон, статус и текст после каждой отправки.</span>
         </label>
+      </section>
+
+      <section className={cardClass}>
+        <SectionTitle
+          index={5}
+          title="Режим работы"
+          hint="Сообщения уходят только в эти часы. Суточный лимит считается с полуночи выбранного пояса и на следующий день снимается сам: кампания продолжит отправку в новом окне."
+        />
+        <div className="grid gap-4 sm:grid-cols-3">
+          <label>
+            <FieldLabel>Время начала</FieldLabel>
+            <input className={fieldClass} type="time" step={60} value={workStart} disabled={locked} onChange={(event) => setWorkStart(event.target.value)} />
+          </label>
+          <label>
+            <FieldLabel>Время окончания</FieldLabel>
+            <input className={fieldClass} type="time" step={60} value={workEnd} disabled={locked} onChange={(event) => setWorkEnd(event.target.value)} />
+          </label>
+          <label>
+            <FieldLabel>Часовой пояс</FieldLabel>
+            <select className={fieldClass} value={timezone} disabled={locked} onChange={(event) => setTimezone(event.target.value)}>
+              {(timeZones.includes(timezone) ? timeZones : [timezone, ...timeZones]).map((zone) => (
+                <option key={zone} value={zone}>
+                  {zone}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
       </section>
 
       <div className="flex items-center justify-end gap-3">

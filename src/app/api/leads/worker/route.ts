@@ -54,9 +54,9 @@ export async function POST(request: Request) {
 
   const result = await processOutreachLog(logId);
   console.log(`[outreach-worker] ${logId}: ${result.status}${result.detail ? ` (${result.detail})` : ""}`);
-  // 429 заставляет QStash повторить задачу позже, когда суточный лимит обнулится.
-  if (result.status === "skipped" && result.detail === "daily_limit") {
-    return Response.json(result, { status: 429 });
+  // Если отложить задачу своим publish не удалось, QStash повторит текущую.
+  if ((result.detail === "daily_limit" || result.detail === "outside_hours") && !result.rescheduled) {
+    return Response.json(result, { status: 429, headers: { "Retry-After": "120" } });
   }
   return Response.json(result);
 }
