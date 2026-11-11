@@ -66,7 +66,7 @@ async function runOutreachLog(logId: string): Promise<ProcessResult> {
     .maybeSingle();
   if (!campaign || campaign.status !== "active") {
     await release();
-    return { status: "skipped", detail: "кампания не активна" };
+    return { status: "skipped", detail: `кампания не активна (${campaign?.status ?? "не найдена"})` };
   }
 
   const fail = async (message: string): Promise<ProcessResult> => {

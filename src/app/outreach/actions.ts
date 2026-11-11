@@ -214,7 +214,6 @@ export async function controlCampaign(id: string, action: "start" | "pause" | "s
     return { ok: true, message: "Рассылка остановлена" };
   }
 
-  if (campaign.status === "active") return fail("Рассылка уже запущена.");
   if (!campaign.agent_id || !campaign.channel_type) return fail("Выберите агента и канал во вкладке «Настройки».");
   if (campaign.message_type === "fixed") {
     if (!campaign.fixed_message.trim()) return fail("Заполните текст сообщения во вкладке «Настройки».");
@@ -254,6 +253,11 @@ export async function controlCampaign(id: string, action: "start" | "pause" | "s
   if (error) return fail(error.message);
   if (!queued?.length) return fail("В базе нет строк в очереди.");
 
+  // Статус ставится ДО публикации в очередь: первое сообщение уходит без задержки,
+  // и воркер иначе успевает увидеть ещё не активную кампанию и пропустить строку навсегда.
+  const { error: statusError } = await supabase.from("outreach_campaigns").update({ status: "active" }).eq("id", id).eq("user_id", userId);
+  if (statusError) return fail(statusError.message);
+
   const result = await enqueueLogs(
     queued.map((row) => String(row.id)),
     {
@@ -263,9 +267,10 @@ export async function controlCampaign(id: string, action: "start" | "pause" | "s
       fixedMinutes: campaign.fixed_delay_minutes,
     },
   );
-  if (result.error && result.queued === 0) return fail(result.error);
-
-  await supabase.from("outreach_campaigns").update({ status: "active" }).eq("id", id).eq("user_id", userId);
+  if (result.error && result.queued === 0) {
+    await supabase.from("outreach_campaigns").update({ status: campaign.status }).eq("id", id).eq("user_id", userId);
+    return fail(result.error);
+  }
   revalidatePath("/outreach");
   return { ok: true, message: `Рассылка запущена: в очереди ${result.queued} сообщений` };
 }
