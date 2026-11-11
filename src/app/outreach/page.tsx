@@ -3,7 +3,7 @@
 import { OutreachPageClient } from "@/components/outreach/outreach-page-client";
 
 export const metadata: Metadata = {
-  title: "Рассылки",
+  title: "Лидогенерация",
 };
 
 export default function OutreachPage() {
