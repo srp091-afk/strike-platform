@@ -47,11 +47,20 @@ const bebas = Bebas_Neue({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://www.strikeplatform.io"),
   title: {
     default: "STRIKE",
     template: "%s — STRIKE",
   },
   description: "Платформа для создания и управления ИИ-агентами.",
+  openGraph: {
+    siteName: "STRIKE",
+    type: "website",
+    locale: "ru_RU",
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
   manifest: "/manifest.webmanifest",
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
