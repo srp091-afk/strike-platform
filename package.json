@@ -35,12 +35,14 @@
     "react-dom": "19.3.0",
     "react-textarea-autosize": "^8.5.9",
     "replicate": "^1.4.0",
+    "resend": "^6.38.0",
     "server-only": "^0.0.1",
     "swr": "^2.5.1",
     "tailwind-merge": "^3.7.0",
     "telegram": "^2.26.22",
     "three": "^0.187.0",
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",

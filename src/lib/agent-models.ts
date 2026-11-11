@@ -183,6 +183,8 @@ export type AgentRecord = {
   telegram_api_hash: string | null;
   telegram_session: string | null;
   telegram_chat_id: string | null;
+  notify_email_enabled: boolean;
+  notify_email_address: string | null;
   widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;

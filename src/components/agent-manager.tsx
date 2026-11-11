@@ -565,6 +565,8 @@ function AgentDialog({
     data.set("channel_delays", JSON.stringify(current.channel_delays));
     data.set("human_handoff_duration", current.human_handoff_duration);
     data.set("telegram_chat_id", current.telegram_chat_id);
+    data.set("notify_email_enabled", current.notify_email_enabled ? "true" : "false");
+    data.set("notify_email_address", current.notify_email_address);
     data.set("limit_agent_messages", current.limit_agent_messages);
     data.set("limit_client_messages", current.limit_client_messages);
     data.set("limit_total_messages", current.limit_total_messages);
@@ -765,6 +767,10 @@ function AgentDialog({
                     <LeadNotificationsField
                       value={draft.telegram_chat_id}
                       onChange={(telegram_chat_id) => patchDraft({ telegram_chat_id })}
+                      emailEnabled={draft.notify_email_enabled}
+                      emailAddress={draft.notify_email_address}
+                      onEmailEnabled={(notify_email_enabled) => patchDraft({ notify_email_enabled })}
+                      onEmailAddress={(notify_email_address) => patchDraft({ notify_email_address })}
                     />
                     <MessageLimitsField
                       agentLimit={draft.limit_agent_messages}
@@ -805,6 +811,8 @@ type AgentDraft = {
   channel_delays: ChannelDelays;
   human_handoff_duration: HandoffDuration;
   telegram_chat_id: string;
+  notify_email_enabled: boolean;
+  notify_email_address: string;
   limit_agent_messages: string;
   limit_client_messages: string;
   limit_total_messages: string;
@@ -828,6 +836,8 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     channel_delays: { ...(agent?.channel_delays ?? DEFAULT_CHANNEL_DELAYS) },
     human_handoff_duration: agent?.human_handoff_duration ?? "1_hour",
     telegram_chat_id: agent?.telegram_chat_id ?? "",
+    notify_email_enabled: agent?.notify_email_enabled ?? false,
+    notify_email_address: agent?.notify_email_address ?? "",
     limit_agent_messages: String(agent?.limit_agent_messages ?? 0),
     limit_client_messages: String(agent?.limit_client_messages ?? 0),
     limit_total_messages: String(agent?.limit_total_messages ?? 0),
@@ -849,6 +859,8 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.system_prompt === right.system_prompt &&
     left.human_handoff_duration === right.human_handoff_duration &&
     left.telegram_chat_id.trim() === right.telegram_chat_id.trim() &&
+    left.notify_email_enabled === right.notify_email_enabled &&
+    left.notify_email_address.trim().toLowerCase() === right.notify_email_address.trim().toLowerCase() &&
     left.split_messages === right.split_messages &&
     left.followup_enabled === right.followup_enabled &&
     left.followup_template.trim() === right.followup_template.trim() &&
@@ -1541,7 +1553,21 @@ function HumanHandoffField({
   );
 }
 
-function LeadNotificationsField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function LeadNotificationsField({
+  value,
+  onChange,
+  emailEnabled,
+  emailAddress,
+  onEmailEnabled,
+  onEmailAddress,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  emailEnabled: boolean;
+  emailAddress: string;
+  onEmailEnabled: (enabled: boolean) => void;
+  onEmailAddress: (address: string) => void;
+}) {
   const [enabled, setEnabled] = useState(() => value.trim().length > 0);
 
   function toggle(next: boolean) {
@@ -1552,7 +1578,9 @@ function LeadNotificationsField({ value, onChange }: { value: string; onChange: 
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <h3 className="font-heading text-lg font-semibold text-white">Уведомления о лидах</h3>
+      <input type="hidden" name="notify_email_enabled" value={emailEnabled ? "true" : "false"} />
       {enabled ? null : <input type="hidden" name="telegram_chat_id" value="" />}
+      {emailEnabled ? null : <input type="hidden" name="notify_email_address" value={emailAddress} />}
       <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
         <span className="text-sm font-medium text-zinc-200">Включить уведомления</span>
         <Switch checked={enabled} onCheckedChange={toggle} aria-label="Включить уведомления" />
@@ -1579,6 +1607,24 @@ function LeadNotificationsField({ value, onChange }: { value: string; onChange: 
             </span>
           </label>
         </>
+      ) : null}
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+        <span className="text-sm font-medium text-zinc-200">Отправлять лиды на Email</span>
+        <Switch checked={emailEnabled} onCheckedChange={onEmailEnabled} aria-label="Отправлять лиды на Email" />
+      </label>
+      {emailEnabled ? (
+        <label className="grid gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Email</span>
+          <input
+            className={fieldClass}
+            name="notify_email_address"
+            type="email"
+            autoComplete="email"
+            value={emailAddress}
+            placeholder="Введите email для уведомлений"
+            onChange={(event) => onEmailAddress(event.target.value)}
+          />
+        </label>
       ) : null}
     </section>
   );

@@ -4,6 +4,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type OpenAI from "openai";
 
 import { pauseBotForHandoff } from "@/lib/bot-state";
+import { sendLeadEmail } from "@/lib/email-notify";
 import { getOpenAI } from "@/lib/openai";
 import { sendTelegramNotification } from "@/lib/telegram-notify";
 
@@ -203,9 +204,11 @@ async function runNotifyManager(raw: string, chat: NotifyChat) {
   if ("error" in parsed) return { ok: false, notified: false, paused: false, error: parsed.error };
 
   try {
-    const telegramChatId = await readAgentTelegramChatId(chat);
-    if (!telegramChatId) {
-      console.warn("[notify-manager] у агента не заполнен telegram_chat_id, уведомление пропущено");
+    const settings = await readAgentNotifySettings(chat);
+    const telegramOn = Boolean(settings.telegramChatId);
+    const emailOn = settings.notifyEmailEnabled && Boolean(settings.notifyEmailAddress);
+    if (!telegramOn && !emailOn) {
+      console.warn("[notify-manager] у агента не настроены Telegram и Email, уведомление пропущено");
       return {
         success: true,
         ok: true,
@@ -215,9 +218,32 @@ async function runNotifyManager(raw: string, chat: NotifyChat) {
       };
     }
 
-    const sent = await sendTelegramNotification(telegramChatId, formatLead(parsed, chat));
-    if (!sent.ok) {
-      console.error("[notify-manager] уведомление не доставлено:", sent.error);
+    let notified = false;
+    if (telegramOn) {
+      const sent = await sendTelegramNotification(settings.telegramChatId, formatLead(parsed, chat));
+      if (sent.ok) notified = true;
+      else console.error("[notify-manager] Telegram не доставил уведомление:", sent.error);
+    }
+
+    if (emailOn) {
+      const contact = contactLink(chat);
+      const sent = await sendLeadEmail({
+        to: settings.notifyEmailAddress,
+        agentName: settings.agentName,
+        reason: parsed.event_reason,
+        channel: channelLabel(chat.channel),
+        clientName: chat.clientName,
+        contact: contact.label,
+        contactUrl: contact.url,
+        fields: parsed.extracted_data,
+        paused: parsed.recommend_pause,
+        history: await readDialogHistory(chat),
+      });
+      if (sent.ok) notified = true;
+      else console.error("[notify-manager] письмо о лиде не отправлено:", sent.error);
+    }
+
+    if (!notified) {
       return {
         success: true,
         ok: true,
@@ -249,20 +275,72 @@ async function runNotifyManager(raw: string, chat: NotifyChat) {
   }
 }
 
-async function readAgentTelegramChatId(chat: NotifyChat) {
-  const agentId = chat.agentId || (await readConversationAgentId(chat));
-  if (!agentId) return "";
+type AgentNotifySettings = {
+  agentName: string;
+  telegramChatId: string;
+  notifyEmailEnabled: boolean;
+  notifyEmailAddress: string;
+};
 
-  const { data, error } = await chat.supabase.from("agents").select("telegram_chat_id").eq("id", agentId).maybeSingle();
-  if (error) {
-    if (error.message.includes("telegram_chat_id")) {
-      console.warn("[notify-manager] не удалось прочитать telegram_chat_id:", error.message);
-      return "";
+async function readAgentNotifySettings(chat: NotifyChat): Promise<AgentNotifySettings> {
+  const empty: AgentNotifySettings = {
+    agentName: "Агент",
+    telegramChatId: "",
+    notifyEmailEnabled: false,
+    notifyEmailAddress: "",
+  };
+  const agentId = chat.agentId || (await readConversationAgentId(chat));
+  if (!agentId) return empty;
+
+  const full = await chat.supabase
+    .from("agents")
+    .select("name, telegram_chat_id, notify_email_enabled, notify_email_address")
+    .eq("id", agentId)
+    .maybeSingle();
+
+  const row =
+    full.error && (full.error.message.includes("notify_email_enabled") || full.error.message.includes("notify_email_address"))
+      ? await chat.supabase.from("agents").select("name, telegram_chat_id").eq("id", agentId).maybeSingle()
+      : full;
+
+  if (row.error) {
+    if (row.error.message.includes("telegram_chat_id") || row.error.message.includes("notify_email")) {
+      console.warn("[notify-manager] не удалось прочитать настройки уведомлений:", row.error.message);
+      return empty;
     }
-    throw new Error(error.message);
+    throw new Error(row.error.message);
   }
 
-  return typeof data?.telegram_chat_id === "string" ? data.telegram_chat_id.trim() : "";
+  const data = (row.data ?? {}) as Record<string, unknown>;
+  const address = typeof data.notify_email_address === "string" ? data.notify_email_address.trim() : "";
+  return {
+    agentName: typeof data.name === "string" && data.name.trim() ? data.name.trim() : "Агент",
+    telegramChatId: typeof data.telegram_chat_id === "string" ? data.telegram_chat_id.trim() : "",
+    notifyEmailEnabled: data.notify_email_enabled === true,
+    notifyEmailAddress: address,
+  };
+}
+
+async function readDialogHistory(chat: NotifyChat) {
+  const { data, error } = await chat.supabase
+    .from("messages")
+    .select("role, content")
+    .eq("conversation_id", chat.conversationId)
+    .in("role", ["user", "assistant"])
+    .order("created_at", { ascending: false })
+    .limit(12);
+  if (error) {
+    console.warn("[notify-manager] не удалось прочитать историю диалога:", error.message);
+    return [];
+  }
+
+  return (data ?? [])
+    .reverse()
+    .map((row) => ({
+      role: row.role === "user" ? ("user" as const) : ("assistant" as const),
+      content: typeof row.content === "string" ? row.content.replace(/\s+/g, " ").trim().slice(0, 500) : "",
+    }))
+    .filter((row) => row.content);
 }
 
 async function readConversationAgentId(chat: NotifyChat) {
@@ -317,20 +395,24 @@ function formatLead(
 }
 
 function formatChat(chat: NotifyChat) {
+  const link = contactLink(chat);
+  if (!link.url) return escapeHtml(link.label);
+  return `<a href="${link.url}">${escapeHtml(link.label)}</a>`;
+}
+
+function contactLink(chat: NotifyChat) {
   const handle = chat.clientHandle.trim();
   if (chat.channel === "whatsapp") {
     const digits = handle.replace(/@.*/, "").replace(/\D/g, "");
-    if (digits.length >= 8 && !handle.includes("@g.us")) {
-      return `<a href="https://wa.me/${digits}">${escapeHtml(digits)}</a>`;
-    }
+    if (digits.length >= 8 && !handle.includes("@g.us")) return { label: digits, url: `https://wa.me/${digits}` };
   }
   if (chat.channel === "telegram") {
     const username = handle.replace(/^@/, "");
     if (/^[A-Za-z0-9_]{5,}$/.test(username) && !/^\d+$/.test(username)) {
-      return `<a href="https://t.me/${escapeHtml(username)}">@${escapeHtml(username)}</a>`;
+      return { label: `@${username}`, url: `https://t.me/${username}` };
     }
   }
-  return escapeHtml(handle || "неизвестен");
+  return { label: handle || "неизвестен", url: null as string | null };
 }
 
 function channelLabel(channel: NotifyChat["channel"]) {

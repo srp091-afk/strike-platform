@@ -14,6 +14,7 @@ import {
 } from "@/lib/agent-models";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { ensureGreenIncomingWebhook, getGreenPhone } from "@/lib/green-api";
+import { leadEmailSettingsSchema } from "@/lib/lead-notify";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export type SaveState = {
@@ -46,6 +47,10 @@ function readAgentFields(formData: FormData) {
   const waApiToken = String(formData.get("wa_api_token") ?? "").trim();
   const waPhoneNumber = String(formData.get("wa_phone_number") ?? "").replace(/@c\.us$/i, "").replace(/\D/g, "");
   const telegramChatId = readTelegramChatId(formData.get("telegram_chat_id"));
+  const emailSettings = leadEmailSettingsSchema.safeParse({
+    notify_email_enabled: formData.get("notify_email_enabled") === "true",
+    notify_email_address: String(formData.get("notify_email_address") ?? ""),
+  });
 
   if (!name) {
     return { ok: false as const, error: "Укажи имя агента." };
@@ -73,6 +78,10 @@ function readAgentFields(formData: FormData) {
 
   if (telegramChatId === null) {
     return { ok: false as const, error: "ID чата Telegram должен быть числом, например -100123456789." };
+  }
+
+  if (!emailSettings.success) {
+    return { ok: false as const, error: emailSettings.error.issues[0]?.message ?? "Проверьте email для уведомлений." };
   }
 
   if (followupInterval === null || followupMaxCount === null) {
@@ -104,6 +113,8 @@ function readAgentFields(formData: FormData) {
     waApiToken,
     waPhoneNumber,
     telegramChatId,
+    notifyEmailEnabled: emailSettings.data.notify_email_enabled,
+    notifyEmailAddress: emailSettings.data.notify_email_address,
   };
 }
 
@@ -198,6 +209,8 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
       followup_max_count: fields.followupMaxCount,
       followup_template: fields.followupTemplate || null,
       telegram_chat_id: fields.telegramChatId || null,
+      notify_email_enabled: fields.notifyEmailEnabled,
+      notify_email_address: fields.notifyEmailAddress || null,
       active_channels: fields.activeChannels,
       user_id: userId,
       ...(fields.waInstanceId && fields.waApiToken
@@ -217,29 +230,44 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
       );
     }
 
+    const emailRequested = fields.notifyEmailEnabled || Boolean(fields.notifyEmailAddress);
     let agentId = fields.id;
     if (fields.id) {
-      const { data, error } = await supabase
+      const updated = await supabase
         .from("agents")
         .update(payload)
         .eq("id", fields.id)
         .eq("user_id", userId)
         .select("id")
         .maybeSingle();
+      const retried =
+        updated.error && missingEmailColumn(updated.error.message) && !emailRequested
+          ? await supabase
+              .from("agents")
+              .update(withoutEmail(payload))
+              .eq("id", fields.id)
+              .eq("user_id", userId)
+              .select("id")
+              .maybeSingle()
+          : updated;
 
-      if (error) {
-        return failedSave(error.message);
+      if (retried.error) {
+        return failedSave(emailColumnError(retried.error.message));
       }
 
-      if (!data) {
+      if (!retried.data) {
         return failedSave("Агент не найден.");
       }
     } else {
-      const { data, error } = await supabase.from("agents").insert(payload).select("id").single();
-      if (error || !data) {
-        return failedSave(error?.message ?? "Не удалось сохранить агента.");
+      const inserted = await supabase.from("agents").insert(payload).select("id").single();
+      const retried =
+        inserted.error && missingEmailColumn(inserted.error.message) && !emailRequested
+          ? await supabase.from("agents").insert(withoutEmail(payload)).select("id").single()
+          : inserted;
+      if (retried.error || !retried.data) {
+        return failedSave(emailColumnError(retried.error?.message ?? "Не удалось сохранить агента."));
       }
-      agentId = String(data.id);
+      agentId = String(retried.data.id);
     }
 
     revalidatePath("/dashboard");
@@ -266,6 +294,20 @@ async function readWhatsAppPhone(instanceId: string, apiToken: string) {
   } catch {
     return null;
   }
+}
+
+function withoutEmail<T extends { notify_email_enabled: boolean; notify_email_address: string | null }>(payload: T) {
+  const { notify_email_enabled: _enabled, notify_email_address: _address, ...rest } = payload;
+  return rest;
+}
+
+function missingEmailColumn(message: string) {
+  return message.includes("notify_email_enabled") || message.includes("notify_email_address");
+}
+
+function emailColumnError(message: string) {
+  if (!missingEmailColumn(message)) return message;
+  return "Чтобы сохранять email для лидов, выполните миграцию 20261111_agent_notify_email.sql.";
 }
 
 function failedSave(error: string): SaveState {

@@ -90,6 +90,8 @@ create table if not exists public.agents (
   telegram_api_hash text,
   telegram_session text,
   telegram_chat_id text,
+  notify_email_enabled boolean not null default false,
+  notify_email_address text,
   widget_agent_name text not null default 'AI-Ассистент',
   widget_operator_name text not null default 'Менеджер',
   widget_auto_open boolean not null default false,

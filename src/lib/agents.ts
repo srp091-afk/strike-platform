@@ -184,6 +184,23 @@ export async function listAgents(): Promise<AgentRecord[]> {
     .from("agents")
     .select("id, instagram_account_id, instagram_username, instagram_avatar_url")
     .eq("user_id", userId);
+  // Колонки email лежат отдельно: пока миграция notify_email не применена, карточки агентов открываются как раньше.
+  const emailRows = await supabase
+    .from("agents")
+    .select("id, notify_email_enabled, notify_email_address")
+    .eq("user_id", userId);
+  const emails = new Map<string, { enabled: boolean; address: string | null }>(
+    emailRows.error
+      ? []
+      : (emailRows.data ?? []).map((row) => [
+          String(row.id),
+          {
+            enabled: row.notify_email_enabled === true,
+            address: row.notify_email_address ? String(row.notify_email_address) : null,
+          },
+        ] as const),
+  );
+
   const instagram = new Map<string, { id: string | null; username: string | null; avatar: string | null }>(
     igRows.error
       ? []
@@ -235,6 +252,8 @@ export async function listAgents(): Promise<AgentRecord[]> {
     telegram_api_hash: "telegram_api_hash" in row && row.telegram_api_hash ? String(row.telegram_api_hash) : null,
     telegram_session: "telegram_session" in row && row.telegram_session ? String(row.telegram_session) : null,
     telegram_chat_id: "telegram_chat_id" in row && row.telegram_chat_id ? String(row.telegram_chat_id) : null,
+    notify_email_enabled: emails.get(String(row.id))?.enabled ?? false,
+    notify_email_address: emails.get(String(row.id))?.address ?? null,
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
 
