@@ -1,9 +1,10 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { Suspense } from "react";
 
 import { LoginPanel } from "@/app/login/login-panel";
-import { Logo } from "@/components/ui/Logo";
 import { LegalLinks } from "@/components/legal-links";
+import { Logo } from "@/components/ui/Logo";
 
 export const metadata: Metadata = {
   title: "Вход",
@@ -11,24 +12,26 @@ export const metadata: Metadata = {
 
 export default function LoginPage() {
   return (
-    <div className="mx-auto flex min-h-[70vh] w-full max-w-md flex-col justify-center px-4 py-16">
-      <div className="rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-8 backdrop-blur-md">
-        <Logo className="text-white" />
-        <p className="mt-5 inline-flex items-center gap-2 rounded-full border border-strike/25 bg-strike/10 px-3 py-1 text-xs font-medium text-strike-soft">
-          <span className="size-1.5 rounded-full bg-strike shadow-[0_0_8px_rgba(207,2,52,0.9)]" />
-          Start your 7-day free trial
-        </p>
-        <h1 className="mt-4 text-3xl">Вход</h1>
-        <p className="mt-2 text-sm leading-6 text-zinc-400">
-          Войдите, чтобы открыть агентов, чаты и воронки.
-        </p>
-        <div className="mt-8">
-          <Suspense fallback={<div className="h-48" />}>
-            <LoginPanel />
-          </Suspense>
+    <div className="flex min-h-dvh flex-col">
+      <header className="flex h-14 shrink-0 items-center px-4 sm:px-5">
+        <Link href="/" aria-label="STRIKE" className="flex items-center">
+          <Logo className="text-white" />
+        </Link>
+      </header>
+      <div className="mx-auto flex w-full max-w-md flex-1 flex-col justify-center px-4 py-8">
+        <div className="rounded-2xl border border-zinc-800/50 bg-zinc-900/50 p-6 backdrop-blur-md sm:p-8">
+          <h1 className="text-3xl text-balance">Вход или регистрация</h1>
+          <p className="mt-2 text-sm leading-6 text-zinc-400">
+            Авторизуйтесь через Google или введите email. Мы автоматически создадим вам аккаунт или откроем существующий.
+          </p>
+          <div className="mt-8">
+            <Suspense fallback={<div className="h-48" />}>
+              <LoginPanel />
+            </Suspense>
+          </div>
         </div>
+        <LegalLinks className="mt-6" />
       </div>
-      <LegalLinks className="mt-6" />
     </div>
   );
 }
