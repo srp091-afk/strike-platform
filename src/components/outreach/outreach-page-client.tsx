@@ -1,16 +1,26 @@
 ﻿"use client";
 
-import { Send, Trash2 } from "lucide-react";
+import { Loader2, Pause, Play, Send, Square, Trash2 } from "lucide-react";
 import Link from "next/link";
+import { useState } from "react";
 import { useFormStatus } from "react-dom";
-import useSWR from "swr";
+import useSWR, { type KeyedMutator } from "swr";
 
-import { createCampaignDraft, deleteCampaign } from "@/app/outreach/actions";
+import { controlCampaign, createCampaignDraft, deleteCampaign } from "@/app/outreach/actions";
 import { CampaignStatusBadge, ProgressBar, cardClass } from "@/components/outreach/outreach-ui";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toaster";
-import { OUTREACH_CHANNELS, type OutreachCampaignCard } from "@/lib/outreach-types";
+import { OUTREACH_CHANNELS, type OutreachCampaignCard, type OutreachStatus } from "@/lib/outreach-types";
 import { jsonFetcher } from "@/lib/swr";
+
+type CampaignList = { campaigns: OutreachCampaignCard[] };
+type ControlAction = "start" | "pause" | "stop";
+
+const NEXT_STATUS: Record<ControlAction, OutreachStatus> = {
+  start: "active",
+  pause: "paused",
+  stop: "completed",
+};
 
 function NewCampaignButton() {
   const { pending } = useFormStatus();
@@ -26,7 +36,7 @@ function formatDate(value: string) {
 }
 
 export function OutreachPageClient() {
-  const { data, error, isLoading, mutate } = useSWR<{ campaigns: OutreachCampaignCard[] }>("/api/outreach", jsonFetcher, {
+  const { data, error, isLoading, mutate } = useSWR<CampaignList>("/api/outreach", jsonFetcher, {
     revalidateOnFocus: false,
     keepPreviousData: true,
   });
@@ -96,10 +106,11 @@ export function OutreachPageClient() {
                     <ProgressBar sent={campaign.sent} failed={campaign.failed} total={campaign.total} />
                   </div>
                   <div className="flex items-center gap-2">
+                    <CampaignControls campaign={campaign} mutate={mutate} />
                     <Button asChild>
                       <Link href={`/outreach/${campaign.id}`}>Открыть</Link>
                     </Button>
-                    <Button type="button" variant="outline" size="icon" aria-label={`Удалить ${campaign.name}`} onClick={() => void remove(campaign)}>
+                    <Button type="button" variant="outline" size="icon" className="size-10" aria-label={`Удалить ${campaign.name}`} onClick={() => void remove(campaign)}>
                       <Trash2 className="size-4" />
                     </Button>
                   </div>
@@ -109,6 +120,70 @@ export function OutreachPageClient() {
           })}
         </ul>
       )}
+    </div>
+  );
+}
+
+/** Тот же controlCampaign, что на вкладке «Мониторинг». Бейдж меняется сразу, откатывается, если сервер ответил ошибкой. */
+function CampaignControls({ campaign, mutate }: { campaign: OutreachCampaignCard; mutate: KeyedMutator<CampaignList> }) {
+  const [pending, setPending] = useState<{ action: ControlAction; from: OutreachStatus } | null>(null);
+  const controllable = campaign.status === "active" || campaign.status === "paused";
+  if (!controllable && !pending) return null;
+
+  const shown = pending?.from ?? campaign.status;
+  const actions: ControlAction[] = shown === "paused" ? ["start", "stop"] : ["pause", "stop"];
+
+  async function run(action: ControlAction) {
+    if (pending) return;
+    setPending({ action, from: campaign.status });
+    const previous = campaign.status;
+    await mutate(
+      (current) =>
+        current && {
+          campaigns: current.campaigns.map((item) => (item.id === campaign.id ? { ...item, status: NEXT_STATUS[action] } : item)),
+        },
+      { revalidate: false },
+    );
+    const result = await controlCampaign(campaign.id, action);
+    if (result.ok) {
+      toast.success(result.message ?? "Готово");
+      void mutate();
+    } else {
+      toast.error(result.error);
+      await mutate(
+        (current) =>
+          current && {
+            campaigns: current.campaigns.map((item) => (item.id === campaign.id ? { ...item, status: previous } : item)),
+          },
+        { revalidate: true },
+      );
+    }
+    setPending(null);
+  }
+
+  return (
+    <div className="flex items-center gap-2">
+      {actions.map((action) => {
+        const busy = pending?.action === action;
+        const play = action === "start";
+        const label = play ? "Запустить" : action === "pause" ? "Пауза" : "Остановить";
+        const Icon = busy ? Loader2 : play ? Play : action === "pause" ? Pause : Square;
+        return (
+          <Button
+            key={action}
+            type="button"
+            size="icon"
+            variant={play ? "default" : "outline"}
+            className="size-10"
+            disabled={pending !== null}
+            aria-label={label}
+            title={label}
+            onClick={() => void run(action)}
+          >
+            <Icon className={busy ? "size-4 animate-spin" : "size-4"} />
+          </Button>
+        );
+      })}
     </div>
   );
 }
