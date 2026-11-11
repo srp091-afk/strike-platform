@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useId, useState, useTransition } from "react";
-import { AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, Clock3, Flame, MessagesSquare, Sparkles, Target, TrendingUp, Zap } from "lucide-react";
+import { AlertTriangle, ArrowDownRight, ArrowRight, ArrowUpRight, Flame, MessagesSquare, Sparkles, Target, TrendingUp, Zap } from "lucide-react";
 
 import { generateAIPulseReport, type PulseReport } from "@/app/actions/dashboard";
 import { ChannelIcon } from "@/components/channel-icons";
@@ -18,7 +18,6 @@ const BRAND = "#cf0234";
 type Metric = {
   label: string;
   value: string;
-  hint?: string;
   delta?: number | null;
   /** Для дельты в пунктах (конверсия) вместо процентов. */
   deltaSuffix?: string;
@@ -42,17 +41,9 @@ export function DashboardView({ data }: { data: DashboardData | null }) {
   const fmt = (value: number) => new Intl.NumberFormat("ru-RU").format(value);
   const empty = [0, 0, 0, 0];
   const metrics: Metric[] = [
-    { label: "Квалифицировано лидов", value: data ? fmt(data.leads.value) : "—", delta: data?.leads.delta, icon: Target, points: data?.leads.points ?? empty },
-    {
-      label: "Сэкономлено часов",
-      value: data ? `${fmt(data.hours.value)} ч` : "—",
-      hint: data ? `~$${fmt(Math.round(data.hours.value * 8))} ФОТ` : undefined,
-      delta: data?.hours.delta,
-      icon: Clock3,
-      points: data?.hours.points ?? empty,
-    },
-    { label: "Конверсия в лид", value: data ? `${data.conversion.value}%` : "—", delta: data?.conversion.delta, deltaSuffix: " п.п.", icon: TrendingUp, points: data?.conversion.points ?? empty },
     { label: "Всего диалогов", value: data ? fmt(data.dialogs.value) : "—", delta: data?.dialogs.delta, icon: MessagesSquare, points: data?.dialogs.points ?? empty },
+    { label: "Квалифицировано лидов", value: data ? fmt(data.leads.value) : "—", delta: data?.leads.delta, icon: Target, points: data?.leads.points ?? empty },
+    { label: "Конверсия в лид", value: data ? `${data.conversion.value}%` : "—", delta: data?.conversion.delta, deltaSuffix: " п.п.", icon: TrendingUp, points: data?.conversion.points ?? empty },
   ];
 
   return (
@@ -79,7 +70,7 @@ export function DashboardView({ data }: { data: DashboardData | null }) {
           <p className="mt-6 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-700">{data.error}</p>
         ) : null}
 
-        <section className="mt-10 grid grid-cols-1 gap-5 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mt-10 grid grid-cols-1 gap-5 md:grid-cols-3">
           {metrics.map((metric) => (
             <MetricCard key={metric.label} metric={metric} />
           ))}
@@ -128,7 +119,7 @@ function MetricCard({ metric }: { metric: Metric }) {
         <p className={cn("font-heading text-4xl font-bold tracking-tight", INK)}>{metric.value}</p>
         {metric.delta != null ? <DeltaBadge delta={metric.delta} suffix={metric.deltaSuffix ?? "%"} /> : null}
       </div>
-      <p className="mt-1 h-5 text-sm text-gray-500">{metric.hint ?? "за последние 30 дней"}</p>
+      <p className="mt-1 h-5 text-sm text-gray-500">за последние 30 дней</p>
       <Sparkline points={metric.points} />
     </div>
   );
