@@ -16,6 +16,8 @@ import { cn } from "@/lib/utils";
 
 const WALLET_ADDRESS = "TКошелекЗаглушка123456789";
 const DEFAULT_TOPUP_INDEX = 0;
+/** На время модерации крипто-оплата скрыта. Верните true, чтобы снова показать USDT / BTC. */
+const CRYPTO_CHECKOUT_ENABLED = false;
 
 type Method = "card" | "crypto";
 
@@ -246,7 +248,11 @@ export function BillingView({ data }: { data: BillingData }) {
               })}
             </div>
 
-            <div role="radiogroup" aria-label="Метод оплаты" className="mt-5 grid gap-3 sm:grid-cols-2">
+            <div
+              role="radiogroup"
+              aria-label="Метод оплаты"
+              className={cn("mt-5 grid gap-3", CRYPTO_CHECKOUT_ENABLED && "sm:grid-cols-2")}
+            >
               <MethodButton
                 active={method === "card"}
                 onClick={() => setMethod("card")}
@@ -254,13 +260,15 @@ export function BillingView({ data }: { data: BillingData }) {
                 title="Bank Card"
                 hint={<span className="text-xs text-gray-500">Visa · Mastercard</span>}
               />
-              <MethodButton
-                active={method === "crypto"}
-                onClick={() => setMethod("crypto")}
-                icon={<Bitcoin className="size-5" strokeWidth={1.75} />}
-                title="Crypto (USDT / BTC)"
-                hint={<span className="text-xs text-gray-500">TRC-20 · BTC</span>}
-              />
+              {CRYPTO_CHECKOUT_ENABLED ? (
+                <MethodButton
+                  active={method === "crypto"}
+                  onClick={() => setMethod("crypto")}
+                  icon={<Bitcoin className="size-5" strokeWidth={1.75} />}
+                  title="Crypto (USDT / BTC)"
+                  hint={<span className="text-xs text-gray-500">TRC-20 · BTC</span>}
+                />
+              ) : null}
             </div>
 
             {method === "card" ? (
@@ -286,7 +294,8 @@ export function BillingView({ data }: { data: BillingData }) {
                 Оплатить картой · ${selected.usd}
               </button>
             ) : null}
-            {/* Accordion: плавное раскрытие блока с оплатой криптой */}
+            {/* Accordion: плавное раскрытие блока с оплатой криптой. Скрыт, пока CRYPTO_CHECKOUT_ENABLED = false. */}
+            {CRYPTO_CHECKOUT_ENABLED ? (
             <div
               className={cn(
                 "grid transition-[grid-template-rows,opacity] duration-300 ease-out motion-reduce:transition-none",
@@ -330,6 +339,7 @@ export function BillingView({ data }: { data: BillingData }) {
                 </div>
               </div>
             </div>
+            ) : null}
           </Card>
         </div>
 
