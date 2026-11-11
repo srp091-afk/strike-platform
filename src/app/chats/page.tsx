@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 
 import { ChatsPageClient } from "@/components/chats-page-client";
 
@@ -6,10 +7,10 @@ export const metadata: Metadata = {
   title: "Чаты",
 };
 
-export default function ChatsPage({
-  searchParams,
-}: {
-  searchParams: Promise<{ chat?: string | string[]; agentId?: string | string[] }>;
-}) {
-  return <ChatsPageClient searchParams={searchParams} />;
+export default function ChatsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ChatsPageClient />
+    </Suspense>
+  );
 }

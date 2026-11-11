@@ -2,9 +2,11 @@
 
 import { usePathname } from "next/navigation";
 import type { ReactNode } from "react";
+import { SWRConfig } from "swr";
 
 import { LegalLinks } from "@/components/legal-links";
 import { isPortalPath } from "@/lib/navigation";
+import { swrConfig } from "@/lib/swr";
 
 /**
  * Каркас страницы. Внутренний портал (после входа) — светлая тема `.portal` и левый сайдбар;
@@ -22,16 +24,12 @@ export function AppShell({
 }) {
   const pathname = usePathname();
 
-  if (!isPortalPath(pathname)) {
-    return (
-      <>
-        <main className="flex-1">{children}</main>
-        {footer}
-      </>
-    );
-  }
-
-  return (
+  const content = !isPortalPath(pathname) ? (
+    <>
+      <main className="flex-1">{children}</main>
+      {footer}
+    </>
+  ) : (
     <div className="portal flex min-h-screen flex-1 bg-gray-50 text-gray-600">
       {sidebar}
       <div className="flex min-w-0 flex-1 flex-col pt-12 lg:pt-0">
@@ -42,4 +40,6 @@ export function AppShell({
       </div>
     </div>
   );
+
+  return <SWRConfig value={swrConfig}>{content}</SWRConfig>;
 }

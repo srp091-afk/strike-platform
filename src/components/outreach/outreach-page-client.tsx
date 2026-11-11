@@ -11,7 +11,7 @@ import { CampaignStatusBadge, ProgressBar, cardClass } from "@/components/outrea
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toaster";
 import { OUTREACH_CHANNELS, type OutreachCampaignCard, type OutreachStatus } from "@/lib/outreach-types";
-import { jsonFetcher } from "@/lib/swr";
+import { jsonFetcher, useClientReady } from "@/lib/swr";
 
 type CampaignList = { campaigns: OutreachCampaignCard[] };
 type ControlAction = "start" | "pause" | "stop";
@@ -36,11 +36,12 @@ function formatDate(value: string) {
 }
 
 export function OutreachPageClient() {
+  const ready = useClientReady();
   const { data, error, isLoading, mutate } = useSWR<CampaignList>("/api/outreach", jsonFetcher, {
     revalidateOnFocus: false,
     keepPreviousData: true,
   });
-  const campaigns = data?.campaigns ?? [];
+  const campaigns = ready ? (data?.campaigns ?? []) : [];
 
   async function remove(campaign: OutreachCampaignCard) {
     if (!window.confirm(`Удалить рассылку «${campaign.name}» вместе с базой и логами?`)) return;
@@ -67,7 +68,7 @@ export function OutreachPageClient() {
 
       {error ? (
         <p className="mt-10 rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-200">{error.message}</p>
-      ) : isLoading && !data ? (
+      ) : !ready ? null : isLoading && !data ? (
         <div className="mt-10 grid gap-4">
           {Array.from({ length: 3 }, (_, index) => (
             <div key={index} className="h-32 animate-pulse rounded-2xl border border-zinc-800 bg-gray-100" />

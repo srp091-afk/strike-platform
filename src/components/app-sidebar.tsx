@@ -24,6 +24,7 @@ import { AccountMenu } from "@/components/account-menu";
 import { BrandLogo } from "@/components/brand-logo";
 import type { AccountProfile } from "@/lib/auth-user";
 import { bottomNav, isNavActive, mainNav, type NavItem } from "@/lib/navigation";
+import { preloadNavData } from "@/lib/swr";
 import { cn } from "@/lib/utils";
 
 const ICONS: Record<NavItem["icon"], LucideIcon> = {
@@ -92,6 +93,8 @@ function NavLink({
       prefetch
       aria-current={active ? "page" : undefined}
       title={collapsed ? (item.beta ? `${item.label} (Beta)` : item.label) : undefined}
+      onMouseEnter={() => preloadNavData(item.href)}
+      onFocus={() => preloadNavData(item.href)}
       onClick={onNavigate}
       className={className}
     >

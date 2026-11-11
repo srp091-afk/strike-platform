@@ -5,7 +5,7 @@ import useSWR from "swr";
 import { AgentManager } from "@/components/agent-manager";
 import { PageFrame } from "@/components/page-frame";
 import type { AgentRecord } from "@/lib/agent-models";
-import { jsonFetcher } from "@/lib/swr";
+import { jsonFetcher, useClientReady } from "@/lib/swr";
 
 type AgentsResponse = {
   agents: AgentRecord[];
@@ -36,6 +36,7 @@ export function AgentsPageClient({
   initialAgentId?: string;
   initialConnectChannel?: "whatsapp" | "telegram" | "widget";
 } = {}) {
+  const ready = useClientReady();
   const { data, error, isLoading, mutate } = useSWR<AgentsResponse>("/api/agents", jsonFetcher, {
     revalidateOnFocus: false,
     keepPreviousData: true,
@@ -47,7 +48,7 @@ export function AgentsPageClient({
       title="Агенты"
       description="Системная инструкция #ROLE, модель и имя. Запись сразу попадает в Supabase."
     >
-      {isLoading && !data ? (
+      {!ready ? null : isLoading && !data ? (
         <ManagerSkeleton />
       ) : (
         <AgentManager

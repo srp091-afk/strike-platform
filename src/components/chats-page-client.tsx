@@ -1,19 +1,15 @@
 "use client";
 
-import { use } from "react";
+import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 
 import { ChatInbox } from "@/components/chat-inbox";
 import { PageFrame } from "@/components/page-frame";
 import type { ChatAgentOption, ChatMessage, ChatThread } from "@/lib/chat-types";
-import { jsonFetcher } from "@/lib/swr";
+import { jsonFetcher, useClientReady } from "@/lib/swr";
 
 type AgentsResponse = { agents: ChatAgentOption[] };
 type InboxResponse = { conversations: ChatThread[]; messages: ChatMessage[] };
-
-function firstParam(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] : value;
-}
 
 function InboxSkeleton() {
   return (
@@ -33,21 +29,18 @@ function InboxSkeleton() {
   );
 }
 
-export function ChatsPageClient({
-  searchParams,
-}: {
-  searchParams: Promise<{ chat?: string | string[]; agentId?: string | string[] }>;
-}) {
-  const params = use(searchParams);
-  const requestedChat = firstParam(params.chat) ?? null;
-  const requestedAgent = firstParam(params.agentId) ?? "all";
+export function ChatsPageClient() {
+  const ready = useClientReady();
+  const params = useSearchParams();
+  const requestedChat = params.get("chat");
+  const requestedAgent = params.get("agentId") ?? "all";
 
   const agentsQuery = useSWR<AgentsResponse>("/api/agents?view=chat", jsonFetcher, {
     revalidateOnFocus: false,
     keepPreviousData: true,
   });
 
-  const agents = agentsQuery.data?.agents ?? [];
+  const agents = ready ? (agentsQuery.data?.agents ?? []) : [];
   const agentId = agents.some((agent) => agent.id === requestedAgent) ? requestedAgent : "all";
 
   const inboxKey =
@@ -60,12 +53,13 @@ export function ChatsPageClient({
     keepPreviousData: true,
   });
 
-  const threads = inboxQuery.data?.conversations ?? [];
+  const threads = ready ? (inboxQuery.data?.conversations ?? []) : [];
   const chatBelongs = Boolean(requestedChat && threads.some((thread) => thread.id === requestedChat));
   const selectedId = chatBelongs ? requestedChat : requestedChat ? null : (threads[0]?.id ?? null);
   const messages = selectedId && chatBelongs ? (inboxQuery.data?.messages ?? []) : [];
 
-  const booting = (agentsQuery.isLoading && !agentsQuery.data) || (Boolean(inboxKey) && inboxQuery.isLoading && !inboxQuery.data);
+  const booting =
+    ready && ((agentsQuery.isLoading && !agentsQuery.data) || (Boolean(inboxKey) && inboxQuery.isLoading && !inboxQuery.data));
   const loadError = agentsQuery.error?.message ?? inboxQuery.error?.message ?? null;
 
   return (

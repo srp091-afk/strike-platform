@@ -105,8 +105,12 @@ export async function listCampaignCards(userId: string): Promise<OutreachCampaig
   if (error) throw new Error(error.message);
 
   const campaigns = (data ?? []).map((row) => mapCampaign(row as Record<string, unknown>));
-  const [counts, agents] = await Promise.all([countLogs(campaigns.map((c) => c.id)), listAgents()]);
-  const names = new Map(agents.map((agent) => [agent.id, agent.name]));
+  const [counts, nameRows] = await Promise.all([
+    countLogs(campaigns.map((c) => c.id)),
+    supabase.from("agents").select("id, name").eq("user_id", userId),
+  ]);
+  if (nameRows.error) throw new Error(nameRows.error.message);
+  const names = new Map((nameRows.data ?? []).map((agent) => [String(agent.id), String(agent.name ?? "")]));
   return campaigns.map((campaign) => ({
     ...campaign,
     ...(counts.get(campaign.id) ?? { total: 0, sent: 0, failed: 0 }),
