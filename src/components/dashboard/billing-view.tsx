@@ -9,7 +9,9 @@ import { toast } from "@/components/ui/toaster";
 import { ConsentCheckbox } from "@/components/consent-checkbox";
 import { BillingPlans } from "@/components/dashboard/billing-plans";
 import { formatSc, TOP_UPS, tierLabel } from "@/lib/billing-catalog";
-import { openCustomerPortal, openTopUpCheckout, watchCheckoutSuccess } from "@/lib/lemon-client";
+import { openCustomerPortal } from "@/lib/lemon-client";
+import { PADDLE_CREDIT_PRICE_IDS } from "@/lib/paddle-catalog";
+import { loadPaddle, onPaddleCheckoutCompleted, openPaddleCheckout } from "@/lib/paddle-client";
 import { cn } from "@/lib/utils";
 
 const WALLET_ADDRESS = "TКошелекЗаглушка123456789";
@@ -80,6 +82,14 @@ export function BillingView({ data }: { data: BillingData }) {
   const copyTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    void loadPaddle();
+    return onPaddleCheckoutCompleted(() => {
+      setTimeout(() => router.refresh(), 3000);
+      setTimeout(() => router.refresh(), 8000);
+    });
+  }, [router]);
+
+  useEffect(() => {
     return () => {
       if (copyTimer.current) clearTimeout(copyTimer.current);
     };
@@ -93,23 +103,23 @@ export function BillingView({ data }: { data: BillingData }) {
     { label: "Сайты", tier: data.tiers.sites },
   ];
 
-  /** Оверлей Lemon Squeezy с суммой выбранного пакета; user_id уходит в custom data вебхука. */
+  /** Оверлей Paddle на Price ID выбранного пакета. userId уходит в customData вебхука. */
   async function payByCard() {
     if (paying) return;
     if (!agreed) {
       setConsentMissing(true);
       return;
     }
+    const priceId = PADDLE_CREDIT_PRICE_IDS[selected.credits];
+    if (!priceId) {
+      toast.error("Для этого пакета не задан Price ID Paddle.");
+      return;
+    }
     setPaying(true);
     try {
-      // После оплаты вебхук обновляет баланс с небольшой задержкой — перечитываем данные страницы.
-      watchCheckoutSuccess(() => {
-        setTimeout(() => router.refresh(), 3000);
-        setTimeout(() => router.refresh(), 8000);
-      });
-      const result = await openTopUpCheckout(selected.usd);
+      const result = await openPaddleCheckout(priceId);
       if (result === "login") router.push("/login");
-      else if (result === "missing") toast.error("Чекаут пополнения пока не настроен.");
+      else if (result === "missing") toast.error("Чекаут Paddle пока не настроен. Добавьте NEXT_PUBLIC_PADDLE_CLIENT_TOKEN.");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Не удалось открыть чекаут.");
     } finally {
