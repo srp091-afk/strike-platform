@@ -58,6 +58,8 @@ export async function middleware(request: NextRequest) {
     pathname === "/terms" ||
     pathname === "/refund" ||
     pathname === "/manifest.webmanifest" ||
+    pathname === "/robots.txt" ||
+    pathname === "/opengraph-image" ||
     // Публичная маркетинговая страница тарифов.
     pathname === "/pricing" ||
     pathname === "/api/webhooks" ||
