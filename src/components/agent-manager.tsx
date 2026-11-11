@@ -645,10 +645,19 @@ function AgentDialog({
           }}
         >
           <header className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 bg-black px-6 py-4">
-            <div>
+            <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Агент</p>
-              <h2 id="agent-dialog-title" className="text-2xl font-semibold">
-                {persistedId ? "Правка агента" : "Новый агент"}
+              <h2 id="agent-dialog-title" className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="text-2xl font-semibold">{persistedId ? "Правка агента" : "Новый агент"}</span>
+                {draft.name.trim() ? (
+                  <span className="max-w-full truncate rounded-full border border-zinc-700 bg-zinc-900 px-3 py-1 text-sm font-medium text-zinc-100">
+                    {draft.name.trim()}
+                  </span>
+                ) : persistedId ? (
+                  <span className="rounded-full border border-zinc-800 px-3 py-1 text-sm font-medium text-zinc-500">
+                    Без названия
+                  </span>
+                ) : null}
               </h2>
             </div>
             <div className="flex gap-2">
