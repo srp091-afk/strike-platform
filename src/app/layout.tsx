@@ -54,12 +54,26 @@ export const metadata: Metadata = {
   },
   description: "Платформа для создания и управления ИИ-агентами.",
   openGraph: {
+    title: "STRIKE — AI-агенты для продаж и поддержки",
+    description: "Создавайте AI-агентов, квалифицируйте лидов и запускайте AI-кампании во всех каналах.",
+    url: "https://www.strikeplatform.io",
     siteName: "STRIKE",
-    type: "website",
+    images: [
+      {
+        url: "/og-image.png",
+        width: 1200,
+        height: 630,
+        alt: "STRIKE",
+      },
+    ],
     locale: "ru_RU",
+    type: "website",
   },
   twitter: {
     card: "summary_large_image",
+    title: "STRIKE — AI-агенты для продаж и поддержки",
+    description: "Создавайте AI-агентов, квалифицируйте лидов и запускайте AI-кампании во всех каналах.",
+    images: ["/og-image.png"],
   },
   manifest: "/manifest.webmanifest",
   icons: {
