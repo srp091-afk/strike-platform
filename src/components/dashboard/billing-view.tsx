@@ -13,7 +13,7 @@ import { openCustomerPortal, openTopUpCheckout, watchCheckoutSuccess } from "@/l
 import { cn } from "@/lib/utils";
 
 const WALLET_ADDRESS = "TКошелекЗаглушка123456789";
-const DEFAULT_TOPUP_INDEX = 1;
+const DEFAULT_TOPUP_INDEX = 0;
 
 type Method = "card" | "crypto";
 
@@ -230,6 +230,7 @@ export function BillingView({ data }: { data: BillingData }) {
                   >
                     <span className="block text-lg font-bold tabular-nums text-[#0b0b0f]">+ {formatSc(pack.credits)} SC</span>
                     <span className="mt-1 block text-sm text-gray-500">${pack.usd}</span>
+                    {pack.benefit ? <span className="mt-2 block text-xs font-medium text-strike">{pack.benefit}</span> : null}
                   </button>
                 );
               })}

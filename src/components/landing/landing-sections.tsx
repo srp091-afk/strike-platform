@@ -91,13 +91,13 @@ const CONTENT = {
       ],
     },
     pricing: {
-      title: "Платите за результат, а не за воздух.",
+      title: "Платите за результат.",
       badge: "Лучшая сделка",
       name: "Pay-as-you-go",
       note: "Никаких скрытых подписок",
       from: "От",
       price: "$10",
-      desc: "Пополните баланс на любую сумму от $10. Платите только за реальные сообщения AI. Никаких «кровавых» ежемесячных платежей, даже если вы не пользовались платформой. Риск равен нулю.",
+      desc: "Пополните баланс на сумму от $10. Платите только за реальные сообщения AI. Никаких «кровавых» ежемесячных платежей, даже если вы не пользовались платформой. Риск равен нулю.",
       button: "Пополнить и начать",
     },
     faq: {
@@ -187,13 +187,13 @@ const CONTENT = {
       ],
     },
     pricing: {
-      title: "Pay for results, not for air.",
+      title: "Pay for results.",
       badge: "Best deal",
       name: "Pay-as-you-go",
       note: "No hidden subscriptions",
       from: "From",
       price: "$10",
-      desc: "Top up your balance with any amount from $10. Pay only for real AI messages. No monthly bills, even if you didn't use the platform. Zero risk.",
+      desc: "Top up your balance from $10. Pay only for real AI messages. No monthly bills, even if you didn't use the platform. Zero risk.",
       button: "Top up and start",
     },
     faq: {

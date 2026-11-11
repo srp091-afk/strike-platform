@@ -88,13 +88,21 @@ export const BUNDLE: Tier = {
 
 export const BUNDLE_SAVING: Text2 = { ru: "Экономия ~30%", en: "Save ~30%" };
 
-export type TopUp = { credits: number; usd: number };
+export type TopUp = { credits: number; usd: number; benefit?: string };
 
+/** Базовый курс 100 SC = $1. Скидочные пакеты начисляют больше, чем центы оплаты. */
 export const TOP_UPS: TopUp[] = [
-  { credits: 2000, usd: 20 },
-  { credits: 5000, usd: 45 },
-  { credits: 15000, usd: 120 },
+  { credits: 1000, usd: 10, benefit: "100 SC = $1" },
+  { credits: 5000, usd: 45, benefit: "Выгода 10%" },
+  { credits: 15000, usd: 120, benefit: "Выгода 20%" },
 ];
+
+/** Сколько SC начислить за оплаченный Flex-заказ. Сумма в центах. */
+export function creditsForTopUpCents(totalCents: number): number {
+  const cents = Math.round(totalCents);
+  const pack = TOP_UPS.find((item) => Math.round(item.usd * 100) === cents);
+  return pack ? pack.credits : cents;
+}
 
 export function formatSc(value: number): string {
   return value.toLocaleString("ru-RU").replace(/\u00a0/g, " ");

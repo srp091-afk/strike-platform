@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { NextRequest } from "next/server";
 
+import { creditsForTopUpCents } from "@/lib/billing-catalog";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -189,11 +190,11 @@ export async function POST(request: NextRequest) {
     });
     if (error) throw new Error(error.message);
     if (topup) {
-      // 100 SC = $1 → число центов равно числу кредитов; идемпотентно по ID заказа.
+      // $10 → 1000 SC. Скидочные пакеты ($45 / $120) начисляют 5 000 и 15 000 SC, а не число центов.
       const { error: grantError } = await admin.rpc("grant_strike_credits", {
         p_user_id: customUserId,
         p_order_id: text(data.id),
-        p_credits: Math.round(totalCents),
+        p_credits: creditsForTopUpCents(totalCents),
       });
       if (grantError) console.error("[lemonsqueezy] grant_strike_credits failed (миграция применена?)", grantError.message);
     }
