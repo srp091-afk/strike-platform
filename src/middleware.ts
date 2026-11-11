@@ -68,7 +68,7 @@ export async function middleware(request: NextRequest) {
     // Вебхук видеодвижка (сервер-сервер): защищён WEBHOOK_SECRET внутри роута.
     pathname === "/api/smm/webhooks/video-ready" ||
     // Воркер очереди рассылок: без сессии, защищён OUTREACH_WORKER_SECRET внутри роута.
-    pathname === "/api/outreach/worker" ||
+    pathname === "/api/leads/worker" ||
     // Публичный веб-виджет: страница в iframe на чужих сайтах и её чат-API.
     pathname === "/widget" ||
     pathname.startsWith("/widget/") ||

@@ -15,7 +15,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     const { id } = await params;
     const userId = await getAuthenticatedUserId();
     const campaign = await getCampaign(userId, id);
-    if (!campaign) return Response.json({ error: "Рассылка не найдена." }, { status: 404 });
+    if (!campaign) return Response.json({ error: "Кампания не найдена." }, { status: 404 });
     if (!campaign.agent_id || !campaign.channel_type) return Response.json({ error: "Сначала выберите агента и канал." }, { status: 400 });
     if (campaign.message_type === "fixed" ? !campaign.fixed_message.trim() : !campaign.outreach_prompt.trim()) {
       return Response.json({ error: campaign.message_type === "fixed" ? "Заполните текст сообщения." : "Заполните инструкцию для первого сообщения." }, { status: 400 });

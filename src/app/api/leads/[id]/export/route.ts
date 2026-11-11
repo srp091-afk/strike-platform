@@ -16,7 +16,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     const { id } = await params;
     const userId = await getAuthenticatedUserId();
     const campaign = await getCampaign(userId, id);
-    if (!campaign) return Response.json({ error: "Рассылка не найдена." }, { status: 404 });
+    if (!campaign) return Response.json({ error: "Кампания не найдена." }, { status: 404 });
 
     const logs = await listLogs(id, 5000);
     const header = [...campaign.source_columns, "STRIKE_Status", "STRIKE_Sent_Time", "STRIKE_Message"];
@@ -36,7 +36,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
     return new Response("\uFEFF" + lines.join("\r\n"), {
       headers: {
         "Content-Type": "text/csv; charset=utf-8",
-        "Content-Disposition": `attachment; filename="outreach-${id.slice(0, 8)}.csv"`,
+        "Content-Disposition": `attachment; filename="campaign-${id.slice(0, 8)}.csv"`,
         "Cache-Control": "no-store",
       },
     });

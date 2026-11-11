@@ -11,7 +11,7 @@ export const swrConfig: SWRConfiguration = {
 /** Ключи, которые сайдбар прогревает при наведении, до клика по разделу. */
 const NAV_DATA: Record<string, readonly string[]> = {
   "/agents": ["/api/agents"],
-  "/outreach": ["/api/outreach"],
+  "/leads": ["/api/leads"],
   "/chats": ["/api/agents?view=chat", "/api/chats?agentId=all"],
   "/ads": ["/api/ads"],
   "/funnels": ["/api/landings"],

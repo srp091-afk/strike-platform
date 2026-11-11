@@ -10,7 +10,7 @@ export async function GET() {
     return Response.json({ campaigns: await listCampaignCards(userId) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     return Response.json(
-      { error: error instanceof Error ? error.message : "Не удалось загрузить рассылки." },
+      { error: error instanceof Error ? error.message : "Не удалось загрузить кампании." },
       { status: 500, headers: { "Cache-Control": "no-store" } },
     );
   }

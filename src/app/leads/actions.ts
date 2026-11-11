@@ -22,9 +22,9 @@ type Result = { ok: true; message?: string } | { ok: false; error: string };
 
 const fail = (error: string): Result => ({ ok: false, error });
 
-const DEFAULT_NAME = "Новая рассылка";
+const DEFAULT_NAME = "Новая кампания";
 
-/** «Новая рассылка», «Новая рассылка (1)», «Новая рассылка (2)»…: первое свободное имя среди кампаний пользователя. */
+/** «Новая кампания», «Новая кампания (1)», «Новая кампания (2)»…: первое свободное имя среди кампаний пользователя. */
 async function nextDraftName(userId: string) {
   const { data } = await createSupabaseAdminClient()
     .from("outreach_campaigns")
@@ -40,7 +40,7 @@ async function nextDraftName(userId: string) {
   return `${DEFAULT_NAME} (${Date.now()})`;
 }
 
-/** «+ Новая рассылка»: создаёт черновик в БД и переводит на рабочую область кампании. */
+/** «+ Новая кампания»: создаёт черновик в БД и переводит на рабочую область кампании. */
 export async function createCampaignDraft() {
   const userId = await getAuthenticatedUserId();
   const { data, error } = await createSupabaseAdminClient()
@@ -49,10 +49,10 @@ export async function createCampaignDraft() {
     .select("id")
     .single();
   if (error || !data) {
-    throw new Error(error?.message.includes("outreach_campaigns") ? "Примените миграцию 20261104_outreach.sql." : (error?.message ?? "Не удалось создать рассылку."));
+    throw new Error(error?.message.includes("outreach_campaigns") ? "Примените миграцию 20261104_outreach.sql." : (error?.message ?? "Не удалось создать кампанию."));
   }
-  revalidatePath("/outreach");
-  redirect(`/outreach/${data.id}`);
+  revalidatePath("/leads");
+  redirect(`/leads/${data.id}`);
 }
 
 export type CampaignSettingsInput = {
@@ -79,8 +79,8 @@ export type CampaignSettingsInput = {
 export async function saveCampaignSettings(id: string, input: CampaignSettingsInput): Promise<Result> {
   const userId = await getAuthenticatedUserId();
   const campaign = await getCampaign(userId, id);
-  if (!campaign) return fail("Рассылка не найдена.");
-  if (campaign.status === "active") return fail("Поставьте рассылку на паузу, чтобы изменить настройки.");
+  if (!campaign) return fail("Кампания не найдена.");
+  if (campaign.status === "active") return fail("Поставьте кампанию на паузу, чтобы изменить настройки.");
 
   const name = input.name.trim().slice(0, 120) || DEFAULT_NAME;
   const min = Math.max(0, Math.min(1440, Math.round(Number(input.min_delay_minutes) || 0)));
@@ -135,7 +135,7 @@ export async function saveCampaignSettings(id: string, input: CampaignSettingsIn
     .eq("user_id", userId);
   if (error) return fail(error.message);
 
-  revalidatePath("/outreach");
+  revalidatePath("/leads");
   return { ok: true };
 }
 
@@ -154,8 +154,8 @@ export type ImportChunk = {
 export async function importContacts(id: string, chunk: ImportChunk): Promise<Result> {
   const userId = await getAuthenticatedUserId();
   const campaign = await getCampaign(userId, id);
-  if (!campaign) return fail("Рассылка не найдена.");
-  if (campaign.status === "active") return fail("Остановите рассылку перед заменой базы.");
+  if (!campaign) return fail("Кампания не найдена.");
+  if (campaign.status === "active") return fail("Остановите кампанию перед заменой базы.");
 
   const columns = chunk.columns.map((column) => String(column).slice(0, 80));
   if (columns.length === 0 || columns.length > 60) return fail("Файл должен содержать от 1 до 60 колонок.");
@@ -195,23 +195,23 @@ export async function importContacts(id: string, chunk: ImportChunk): Promise<Re
     const { error } = await supabase.from("outreach_logs").insert(records);
     if (error) return fail(error.message);
   }
-  revalidatePath("/outreach");
+  revalidatePath("/leads");
   return { ok: true };
 }
 
 export async function controlCampaign(id: string, action: "start" | "pause" | "stop"): Promise<Result> {
   const userId = await getAuthenticatedUserId();
   const campaign = await getCampaign(userId, id);
-  if (!campaign) return fail("Рассылка не найдена.");
+  if (!campaign) return fail("Кампания не найдена.");
   const supabase = createSupabaseAdminClient();
 
   if (action === "pause") {
     await supabase.from("outreach_campaigns").update({ status: "paused" }).eq("id", id).eq("user_id", userId);
-    return { ok: true, message: "Рассылка на паузе" };
+    return { ok: true, message: "Кампания на паузе" };
   }
   if (action === "stop") {
     await supabase.from("outreach_campaigns").update({ status: "completed" }).eq("id", id).eq("user_id", userId);
-    return { ok: true, message: "Рассылка остановлена" };
+    return { ok: true, message: "Кампания остановлена" };
   }
 
   if (!campaign.agent_id || !campaign.channel_type) return fail("Выберите агента и канал во вкладке «Настройки».");
@@ -237,7 +237,7 @@ export async function controlCampaign(id: string, action: "start" | "pause" | "s
     .eq("strike_status", "success")
     .gte("strike_sent_time", dayStart.toISOString());
   const remaining = campaign.daily_limit - (sentToday ?? 0);
-  if (remaining <= 0) return fail("Суточный лимит на сегодня уже выбран. Запустите рассылку завтра или увеличьте лимит.");
+  if (remaining <= 0) return fail("Суточный лимит на сегодня уже выбран. Запустите кампанию завтра или увеличьте лимит.");
 
   // Строки, зависшие в обработке после сбоя функции, возвращаем в очередь (кампания не активна, воркеры их пропускают).
   await supabase.from("outreach_logs").update({ strike_error: null }).eq("campaign_id", id).eq("strike_status", "queued").eq("strike_error", "processing");
@@ -271,15 +271,15 @@ export async function controlCampaign(id: string, action: "start" | "pause" | "s
     await supabase.from("outreach_campaigns").update({ status: campaign.status }).eq("id", id).eq("user_id", userId);
     return fail(result.error);
   }
-  revalidatePath("/outreach");
-  return { ok: true, message: `Рассылка запущена: в очереди ${result.queued} сообщений` };
+  revalidatePath("/leads");
+  return { ok: true, message: `Кампания запущена: в очереди ${result.queued} сообщений` };
 }
 
 export async function deleteCampaign(id: string): Promise<Result> {
   const userId = await getAuthenticatedUserId();
   const { error } = await createSupabaseAdminClient().from("outreach_campaigns").delete().eq("id", id).eq("user_id", userId);
   if (error) return fail(error.message);
-  revalidatePath("/outreach");
+  revalidatePath("/leads");
   return { ok: true };
 }
 
@@ -306,11 +306,11 @@ export async function generateOutreachInstruction(agentId: string): Promise<{ ok
       messages: [
         {
           role: "system",
-          content: "Ты помогаешь настроить рассылки для AI-агентов. Отвечай только текстом инструкции, без кавычек, заголовков и пояснений.",
+          content: "Ты помогаешь настроить кампании лидогенерации для AI-агентов. Отвечай только текстом инструкции, без кавычек, заголовков и пояснений.",
         },
         {
           role: "user",
-          content: `Проанализируй базовую инструкцию этого AI-агента: ${systemPrompt}\n\nНапиши короткую инструкцию (1-2 предложения) для генерации самого первого холодного исходящего сообщения (Outreach), чтобы оно соответствовало стилю агента и плавно переводило диалог в его воронку.`,
+          content: `Проанализируй базовую инструкцию этого AI-агента: ${systemPrompt}\n\nНапиши короткую инструкцию (1-2 предложения) для генерации самого первого исходящего сообщения, чтобы оно соответствовало стилю агента и плавно переводило диалог в его воронку.`,
         },
       ],
     });

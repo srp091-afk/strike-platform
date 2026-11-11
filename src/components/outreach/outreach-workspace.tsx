@@ -19,7 +19,7 @@ export type CampaignState = {
 export function OutreachWorkspace({ initial, agents }: { initial: CampaignState; agents: OutreachAgentOption[] }) {
   const id = initial.campaign.id;
   // Живое обновление мониторинга: пока рассылка в работе, опрашиваем состояние раз в 4 секунды.
-  const { data, mutate } = useSWR<CampaignState>(`/api/outreach/${id}`, jsonFetcher, {
+  const { data, mutate } = useSWR<CampaignState>(`/api/leads/${id}`, jsonFetcher, {
     fallbackData: initial,
     revalidateOnFocus: false,
     refreshInterval: (latest) => (latest?.campaign.status === "active" ? 4000 : 0),
@@ -28,8 +28,8 @@ export function OutreachWorkspace({ initial, agents }: { initial: CampaignState;
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-10">
-      <Link href="/outreach" className="text-sm text-zinc-400 hover:text-white">
-        ← Все рассылки
+      <Link href="/leads" className="text-sm text-zinc-400 hover:text-white">
+        ← Все кампании
       </Link>
       <header className="mt-4 flex flex-wrap items-center gap-3">
         <h1 className="text-3xl font-bold text-white">{state.campaign.name}</h1>

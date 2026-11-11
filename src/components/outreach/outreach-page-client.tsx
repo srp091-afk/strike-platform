@@ -6,7 +6,7 @@ import { useState } from "react";
 import { useFormStatus } from "react-dom";
 import useSWR, { type KeyedMutator } from "swr";
 
-import { controlCampaign, createCampaignDraft, deleteCampaign } from "@/app/outreach/actions";
+import { controlCampaign, createCampaignDraft, deleteCampaign } from "@/app/leads/actions";
 import { CampaignStatusBadge, ProgressBar, cardClass } from "@/components/outreach/outreach-ui";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toaster";
@@ -26,7 +26,7 @@ function NewCampaignButton() {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" disabled={pending} className="shrink-0 bg-strike text-white hover:brightness-110 hover:shadow-none">
-      {pending ? "Создаём..." : "+ Новая рассылка"}
+      {pending ? "Создаём..." : "+ Новая кампания"}
     </Button>
   );
 }
@@ -37,17 +37,17 @@ function formatDate(value: string) {
 
 export function OutreachPageClient() {
   const ready = useClientReady();
-  const { data, error, isLoading, mutate } = useSWR<CampaignList>("/api/outreach", jsonFetcher, {
+  const { data, error, isLoading, mutate } = useSWR<CampaignList>("/api/leads", jsonFetcher, {
     revalidateOnFocus: false,
     keepPreviousData: true,
   });
   const campaigns = ready ? (data?.campaigns ?? []) : [];
 
   async function remove(campaign: OutreachCampaignCard) {
-    if (!window.confirm(`Удалить рассылку «${campaign.name}» вместе с базой и логами?`)) return;
+    if (!window.confirm(`Удалить кампанию «${campaign.name}» вместе с базой и логами?`)) return;
     const result = await deleteCampaign(campaign.id);
     if (!result.ok) return toast.error(result.error);
-    toast.success("Рассылка удалена");
+    toast.success("Кампания удалена");
     void mutate();
   }
 
@@ -78,7 +78,7 @@ export function OutreachPageClient() {
         <div className="mt-16 grid place-items-center">
           <div className="grid max-w-md justify-items-center rounded-2xl border border-zinc-800 px-8 py-16 text-center">
             <Send className="size-8 text-zinc-600" strokeWidth={1.5} />
-            <p className="mt-4 text-sm leading-6 text-zinc-400">Рассылок пока нет. Создайте первую, чтобы начать холодный аутрич с ИИ.</p>
+            <p className="mt-4 text-sm leading-6 text-zinc-400">Кампаний пока нет. Создайте первую, чтобы ИИ отправил персональное первое сообщение каждому контакту.</p>
           </div>
         </div>
       ) : (
@@ -90,7 +90,7 @@ export function OutreachPageClient() {
                 <div className="flex flex-col gap-5 lg:flex-row lg:items-center">
                   <div className="min-w-0 flex-1">
                     <div className="flex flex-wrap items-center gap-3">
-                      <Link href={`/outreach/${campaign.id}`} className="truncate font-heading text-xl font-semibold text-white hover:underline">
+                      <Link href={`/leads/${campaign.id}`} className="truncate font-heading text-xl font-semibold text-white hover:underline">
                         {campaign.name}
                       </Link>
                       <CampaignStatusBadge status={campaign.status} />
@@ -109,7 +109,7 @@ export function OutreachPageClient() {
                   <div className="flex items-center gap-2">
                     <CampaignControls campaign={campaign} mutate={mutate} />
                     <Button asChild>
-                      <Link href={`/outreach/${campaign.id}`}>Открыть</Link>
+                      <Link href={`/leads/${campaign.id}`}>Открыть</Link>
                     </Button>
                     <Button type="button" variant="outline" size="icon" className="size-10" aria-label={`Удалить ${campaign.name}`} onClick={() => void remove(campaign)}>
                       <Trash2 className="size-4" />

@@ -19,7 +19,7 @@ function workerUrl() {
   const explicit = process.env.OUTREACH_WORKER_URL?.trim();
   if (explicit) return explicit;
   const site = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-  return site ? `${site.replace(/\/$/, "")}/api/outreach/worker` : null;
+  return site ? `${site.replace(/\/$/, "")}/api/leads/worker` : null;
 }
 
 /** QStash не следует редиректам (apex -> www дают 308): заранее находим конечный адрес воркера. */

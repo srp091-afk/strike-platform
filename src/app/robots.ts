@@ -4,7 +4,7 @@ import type { MetadataRoute } from "next";
 const PRIVATE = [
   "/api/",
   "/auth",
-  "/outreach",
+  "/leads",
   "/dashboard",
   "/agents",
   "/chats",

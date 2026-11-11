@@ -9,7 +9,7 @@ type ProcessResult = { status: "skipped" | "success" | "error"; detail?: string 
 
 /**
  * Обрабатывает ОДНУ строку базы: парсинг сайта -> генерация -> отправка -> запись в outreach_logs.
- * Вызывается воркером очереди (/api/outreach/worker). Ошибка строки не останавливает кампанию.
+ * Вызывается воркером очереди (/api/leads/worker). Ошибка строки не останавливает кампанию.
  * Входящие ответы клиентов идут обычным вебхуком канала в стандартную логику агента.
  */
 export async function processOutreachLog(logId: string): Promise<ProcessResult> {
@@ -124,7 +124,7 @@ async function runOutreachLog(logId: string): Promise<ProcessResult> {
   if (!generated.ok) return fail(generated.error);
 
   const target = campaign.contact_column ? (contact[campaign.contact_column] ?? "") : "";
-  if (channel !== "whatsapp") return fail(`Отправка через ${channelLabel} пока не подключена к рассылкам`);
+  if (channel !== "whatsapp") return fail(`Отправка через ${channelLabel} пока не подключена к кампаниям`);
   const digits = target.replace(/\D/g, "");
   if (digits.length < 8) return fail("Некорректный номер телефона");
   if (!agent.wa_instance_id || !agent.wa_api_token) return fail("У агента не подключён WhatsApp");

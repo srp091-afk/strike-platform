@@ -8,7 +8,7 @@ import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { listAgentOptions, loadCampaignState } from "@/lib/outreach";
 
 export const metadata: Metadata = {
-  title: "Рассылка",
+  title: "Кампания",
 };
 
 export default function OutreachCampaignPage({ params }: { params: Promise<{ id: string }> }) {
@@ -30,17 +30,17 @@ async function CampaignContent({ params }: { params: Promise<{ id: string }> }) 
     const userId = await getAuthenticatedUserId();
     [state, agents] = await Promise.all([loadCampaignState(userId, id), listAgentOptions()]);
   } catch (caught) {
-    error = caught instanceof Error ? caught.message : "Не удалось загрузить рассылку.";
+    error = caught instanceof Error ? caught.message : "Не удалось загрузить кампанию.";
   }
 
   if (error || !state) {
     return (
       <div className="mx-auto w-full max-w-7xl px-6 py-10">
-        <Link href="/outreach" className="text-sm text-zinc-400 hover:text-white">
-          ← Все рассылки
+        <Link href="/leads" className="text-sm text-zinc-400 hover:text-white">
+          ← Все кампании
         </Link>
         <p className="mt-6 rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-200">
-          {error ?? "Рассылка не найдена."}
+          {error ?? "Кампания не найдена."}
         </p>
       </div>
     );

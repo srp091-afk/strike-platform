@@ -3,7 +3,7 @@
 import { Download, FlaskConical, Pause, Play, Square } from "lucide-react";
 import { useState, useTransition } from "react";
 
-import { controlCampaign } from "@/app/outreach/actions";
+import { controlCampaign } from "@/app/leads/actions";
 import { LogStatusBadge, ProgressBar, cardClass } from "@/components/outreach/outreach-ui";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toaster";
@@ -49,7 +49,7 @@ export function OutreachMonitor({
     setSandboxLoading(true);
     setSandbox(null);
     try {
-      const response = await fetch(`/api/outreach/${campaign.id}/sandbox`, { method: "POST" });
+      const response = await fetch(`/api/leads/${campaign.id}/sandbox`, { method: "POST" });
       setSandbox((await response.json()) as SandboxResponse);
     } catch {
       setSandbox({ error: "Не удалось связаться с сервером." });
@@ -88,7 +88,7 @@ export function OutreachMonitor({
               <FlaskConical className="size-4" /> {sandboxLoading ? "Генерируем..." : "Сгенерировать тест"}
             </Button>
             <Button asChild variant="outline">
-              <a href={`/api/outreach/${campaign.id}/export`} download>
+              <a href={`/api/leads/${campaign.id}/export`} download>
                 <Download className="size-4" /> Экспорт отчёта
               </a>
             </Button>

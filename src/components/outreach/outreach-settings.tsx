@@ -4,7 +4,7 @@ import { AlertTriangle, FileSpreadsheet, Info, Loader2, Sparkles, UploadCloud } 
 import Link from "next/link";
 import { useRef, useState, useTransition } from "react";
 
-import { generateOutreachInstruction, importContacts, saveCampaignSettings } from "@/app/outreach/actions";
+import { generateOutreachInstruction, importContacts, saveCampaignSettings } from "@/app/leads/actions";
 import { cardClass, fieldClass } from "@/components/outreach/outreach-ui";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select-field";
@@ -175,7 +175,7 @@ export function OutreachSettings({
         fixed_delay_minutes: Number(fixedDelay),
         webhook_url: webhook || null,
       });
-      if (result.ok) toast.success("Настройки рассылки сохранены");
+      if (result.ok) toast.success("Настройки кампании сохранены");
       else toast.error(result.error);
       onChanged();
     });
@@ -211,7 +211,7 @@ export function OutreachSettings({
   return (
     <div className="grid gap-6">
       <section className={cardClass}>
-        <FieldLabel>Название рассылки</FieldLabel>
+        <FieldLabel>Название кампании</FieldLabel>
         <input className={fieldClass} value={name} maxLength={120} disabled={locked} onChange={(event) => setName(event.target.value)} />
       </section>
 
@@ -269,7 +269,7 @@ export function OutreachSettings({
                     <Link href={`/agents/${selectedAgent.id}`} className="font-semibold underline">
                       «Агенты»
                     </Link>
-                    , подключите и активируйте канал (например, WhatsApp), чтобы использовать его для рассылки.
+                    , подключите и активируйте канал (например, WhatsApp), чтобы использовать его в кампании.
                   </p>
                 </div>
               ) : (
@@ -469,7 +469,7 @@ export function OutreachSettings({
       </section>
 
       <div className="flex items-center justify-end gap-3">
-        {locked ? <p className="text-sm text-zinc-400">Рассылка в работе: чтобы изменить настройки, поставьте её на паузу.</p> : null}
+        {locked ? <p className="text-sm text-zinc-400">Кампания в работе: чтобы изменить настройки, поставьте её на паузу.</p> : null}
         <Button type="button" disabled={saving || locked} onClick={save}>
           {saving ? "Сохраняем..." : "Сохранить настройки"}
         </Button>

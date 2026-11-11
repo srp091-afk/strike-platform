@@ -15,7 +15,7 @@ export const mainNav: readonly NavItem[] = [
   { href: "/agents", label: "Агенты", icon: "agents" },
   { href: "/funnels", label: "Сайты", icon: "sites", beta: true },
   { href: "/ads", label: "Ads & Креативы", icon: "ads" },
-  { href: "/outreach", label: "Лидогенерация", icon: "outreach" },
+  { href: "/leads", label: "Лидогенерация", icon: "outreach" },
   { href: "/smm", label: "SMM", icon: "smm", beta: true },
   { href: "/chats", label: "Чаты", icon: "chats" },
 ];
@@ -33,7 +33,7 @@ const PORTAL_PREFIXES = [
   "/funnels",
   "/sites",
   "/ads",
-  "/outreach",
+  "/leads",
   "/chats",
   "/settings",
   "/playground",
