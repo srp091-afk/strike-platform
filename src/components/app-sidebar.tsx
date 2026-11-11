@@ -21,7 +21,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AccountMenu } from "@/components/account-menu";
-import { BrandLogo } from "@/components/brand-logo";
+import { Logo } from "@/components/ui/Logo";
 import type { AccountProfile } from "@/lib/auth-user";
 import { bottomNav, isNavActive, mainNav, type NavItem } from "@/lib/navigation";
 import { preloadNavData } from "@/lib/swr";
@@ -123,7 +123,7 @@ function SidebarBody({
       <div className={cn("flex h-14 shrink-0 items-center px-3", collapsed ? "justify-center" : "justify-between")}>
         {collapsed ? null : (
           <Link href="/dashboard" aria-label="STRIKE" onClick={onNavigate} className="flex items-center pl-2">
-            <BrandLogo tone="dark" />
+            <Logo variant="dark" />
           </Link>
         )}
         {onToggle ? (
@@ -217,7 +217,7 @@ export function AppSidebar({ account }: { account: AccountProfile | null }) {
           <Menu className="size-5" strokeWidth={1.75} />
         </button>
         <Link href="/dashboard" aria-label="STRIKE" className="flex items-center">
-          <BrandLogo tone="dark" />
+          <Logo variant="dark" />
         </Link>
       </div>
 

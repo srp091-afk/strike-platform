@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 
-import { BrandLogo } from "@/components/brand-logo";
+import { Logo } from "@/components/ui/Logo";
 import { LegalLinks } from "@/components/legal-links";
 
 /** Типографика юридических текстов (аналог prose): заголовки, абзацы, списки и ссылки. */
@@ -24,7 +24,7 @@ export function LegalPage({ title, updated, children }: { title: string; updated
       />
       <header className="mx-auto flex h-16 w-full max-w-3xl items-center justify-between px-4 sm:px-6">
         <Link href="/" aria-label="STRIKE" className="flex items-center">
-          <BrandLogo />
+          <Logo className="text-white" />
         </Link>
         <Link href="/pricing" className="text-sm text-zinc-400 transition-colors hover:text-white">
           Тарифы

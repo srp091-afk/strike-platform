@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Zap } from "lucide-react";
 import { useEffect, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 
-import { BrandLogo } from "@/components/brand-logo";
+import { Logo } from "@/components/ui/Logo";
 import { ModularPlans } from "@/components/billing/modular-plans";
 import { LegalLinks } from "@/components/legal-links";
 import { toast } from "@/components/ui/toaster";
@@ -124,7 +124,7 @@ export function PricingView() {
 
       <header className="mx-auto flex h-16 w-full max-w-6xl items-center justify-between px-4 sm:px-6">
         <Link href="/" aria-label="STRIKE" className="flex items-center">
-          <BrandLogo />
+          <Logo className="text-white" />
         </Link>
         <div className="flex items-center gap-3">
           <LangSwitch lang={lang} onChange={setLang} label={t.langLabel} />

@@ -4,7 +4,7 @@ import { ArrowRight } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { BrandLogo } from "@/components/brand-logo";
+import { Logo } from "@/components/ui/Logo";
 import { LandingFooterExtras, LandingSections } from "@/components/landing/landing-sections";
 import { Reveal } from "@/components/landing/landing-ui";
 import { LegalLinks } from "@/components/legal-links";
@@ -100,7 +100,7 @@ export function LandingView() {
             aria-label="STRIKE"
             className="flex items-center"
           >
-            <BrandLogo />
+            <Logo className="text-white" />
           </button>
 
           <nav className="hidden items-center gap-1 md:flex">
