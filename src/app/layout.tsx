@@ -52,14 +52,10 @@ export const metadata: Metadata = {
     template: "%s — STRIKE",
   },
   description: "Платформа для создания и управления ИИ-агентами.",
-  // Логотип лежит в public/icons: чтобы заменить, подмените файлы с теми же именами.
   manifest: "/manifest.webmanifest",
   icons: {
-    icon: [
-      { url: "/icons/icon-32.png?v=2", sizes: "32x32", type: "image/png" },
-      { url: "/icons/icon-192.png?v=2", sizes: "192x192", type: "image/png" },
-    ],
-    apple: [{ url: "/icons/apple-touch-icon.png?v=2", sizes: "180x180", type: "image/png" }],
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/icon.svg", type: "image/svg+xml" }],
   },
 };
 
