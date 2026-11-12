@@ -2,15 +2,15 @@
 
 import { AlertTriangle, FileSpreadsheet, Info, Loader2, Sparkles, UploadCloud } from "lucide-react";
 import Link from "next/link";
-import { useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 
 import { generateOutreachInstruction, importContacts, saveCampaignSettings } from "@/app/leads/actions";
 import { cardClass, fieldClass } from "@/components/outreach/outreach-ui";
+import { TimeZoneField, useAdoptDefaultTimeZone, useEffectiveTimeZone } from "@/components/outreach/timezone-field";
 import { Button } from "@/components/ui/button";
 import { SelectField } from "@/components/ui/select-field";
 import { toast } from "@/components/ui/toaster";
 import { Textarea } from "@/components/ui/textarea";
-import { browserTimeZone } from "@/lib/outreach-schedule";
 import {
   OUTREACH_CHANNELS,
   OUTREACH_LANGUAGES,
@@ -22,35 +22,6 @@ import {
   type OutreachLog,
   type OutreachMessageType,
 } from "@/lib/outreach-types";
-
-let cachedTimeZones: string[] | null = null;
-
-function clientTimeZones() {
-  if (cachedTimeZones) return cachedTimeZones;
-  const supported = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : [];
-  const browser = browserTimeZone();
-  cachedTimeZones = [browser, ...supported.filter((zone) => zone !== browser)];
-  return cachedTimeZones;
-}
-
-const serverTimeZoneLists = new Map<string, string[]>();
-
-function serverTimeZones(selected: string) {
-  const key = selected || "UTC";
-  const cached = serverTimeZoneLists.get(key);
-  if (cached) return cached;
-  const list = [key];
-  serverTimeZoneLists.set(key, list);
-  return list;
-}
-
-function useTimeZones(selected: string) {
-  return useSyncExternalStore(
-    () => () => {},
-    clientTimeZones,
-    () => serverTimeZones(selected),
-  );
-}
 
 const CHUNK = 500;
 const MAX_FILE_BYTES = 8 * 1024 * 1024;
@@ -171,8 +142,13 @@ export function OutreachSettings({
   const [fixedDelay, setFixedDelay] = useState(String(campaign.fixed_delay_minutes));
   const [workStart, setWorkStart] = useState(campaign.work_time_start || "09:00");
   const [workEnd, setWorkEnd] = useState(campaign.work_time_end || "18:00");
-  const [timezone, setTimezone] = useState(campaign.timezone || "UTC");
-  const timeZones = useTimeZones(timezone);
+  const effectiveTimeZone = useEffectiveTimeZone(campaign.timezone, campaign.timezone_is_default);
+  const [pickedTimeZone, setPickedTimeZone] = useState<string | null>(null);
+  const timezone = pickedTimeZone ?? effectiveTimeZone;
+  useAdoptDefaultTimeZone(
+    [{ id: campaign.id, timezone: campaign.timezone, timezone_is_default: campaign.timezone_is_default }],
+    onChanged,
+  );
   const fixedRef = useRef<HTMLTextAreaElement>(null);
   const [saving, startSaving] = useTransition();
 
@@ -520,16 +496,10 @@ export function OutreachSettings({
             <FieldLabel>Время окончания</FieldLabel>
             <input className={fieldClass} type="time" step={60} value={workEnd} disabled={locked} onChange={(event) => setWorkEnd(event.target.value)} />
           </label>
-          <label>
+          <div>
             <FieldLabel>Часовой пояс</FieldLabel>
-            <select className={fieldClass} value={timezone} disabled={locked} onChange={(event) => setTimezone(event.target.value)}>
-              {(timeZones.includes(timezone) ? timeZones : [timezone, ...timeZones]).map((zone) => (
-                <option key={zone} value={zone}>
-                  {zone}
-                </option>
-              ))}
-            </select>
-          </label>
+            <TimeZoneField value={timezone} disabled={locked} onChange={setPickedTimeZone} />
+          </div>
         </div>
       </section>
 

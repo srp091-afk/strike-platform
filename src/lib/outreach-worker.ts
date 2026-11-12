@@ -103,6 +103,7 @@ async function runOutreachLog(logId: string): Promise<ProcessResult> {
     .eq("strike_status", "success")
     .gte("strike_sent_time", zonedDayStart(now, schedule.timezone).toISOString());
   const limitReached = (count ?? 0) >= Number(campaign.daily_limit);
+  // Сначала переводим текущий момент в пояс кампании, потом сравниваем с окном.
   const outside = !isWithinWorkWindow(now, schedule);
   if (limitReached || outside) {
     const deferred = await deferUntilWindow(logId, Number(log.row_index ?? 0), campaign, schedule, limitReached, count ?? 0);

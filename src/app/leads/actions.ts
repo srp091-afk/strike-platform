@@ -6,7 +6,7 @@ import { revalidatePath } from "next/cache";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { getCampaign, listAgentOptions, scheduleOpenBatch } from "@/lib/outreach";
 import { outreachQueueConfigured } from "@/lib/outreach-queue";
-import { readTimeZone, readWorkTime } from "@/lib/outreach-schedule";
+import { isAutomaticTimeZone, readTimeZone, readWorkTime } from "@/lib/outreach-schedule";
 import { getOpenAI } from "@/lib/openai";
 import {
   DEFAULT_OUTREACH_LANGUAGE,
@@ -46,12 +46,28 @@ export async function createCampaignDraft(timezoneInput?: string) {
   const userId = await getAuthenticatedUserId();
   const supabase = createSupabaseAdminClient();
   const name = await nextDraftName(userId);
-  const timezone = readTimeZone(timezoneInput);
+  const provided = typeof timezoneInput === "string" && timezoneInput.trim() && readTimeZone(timezoneInput) === timezoneInput.trim();
+  const timezone = provided ? timezoneInput.trim() : "UTC";
   let result = await supabase
     .from("outreach_campaigns")
-    .insert({ user_id: userId, name, status: "draft", work_time_start: "09:00", work_time_end: "18:00", timezone })
+    .insert({
+      user_id: userId,
+      name,
+      status: "draft",
+      work_time_start: "09:00",
+      work_time_end: "18:00",
+      timezone,
+      timezone_is_default: !provided,
+    })
     .select("id")
     .single();
+  if (result.error && /timezone_is_default/.test(result.error.message)) {
+    result = await supabase
+      .from("outreach_campaigns")
+      .insert({ user_id: userId, name, status: "draft", work_time_start: "09:00", work_time_end: "18:00", timezone })
+      .select("id")
+      .single();
+  }
   if (result.error && /work_time_start|timezone/.test(result.error.message)) {
     result = await supabase.from("outreach_campaigns").insert({ user_id: userId, name, status: "draft" }).select("id").single();
   }
@@ -61,6 +77,46 @@ export async function createCampaignDraft(timezoneInput?: string) {
   }
   revalidatePath("/leads");
   redirect(`/leads/${data.id}`);
+}
+
+/** Заменяет автоматический UTC на пояс браузера. Явный выбор пользователя не трогает. */
+export async function adoptCampaignTimeZone(id: string, timezoneInput: string): Promise<Result & { changed?: boolean }> {
+  const userId = await getAuthenticatedUserId();
+  const zone = readTimeZone(timezoneInput);
+  if (!timezoneInput?.trim() || zone !== timezoneInput.trim()) return fail("Неизвестный часовой пояс.");
+  const campaign = await getCampaign(userId, id);
+  if (!campaign) return fail("Кампания не найдена.");
+  if (campaign.timezone_is_default === false || !isAutomaticTimeZone(campaign.timezone) || campaign.timezone === zone) {
+    return { ok: true, changed: false };
+  }
+
+  const supabase = createSupabaseAdminClient();
+  const stamp = new Date().toISOString();
+  const confirmed = await supabase
+    .from("outreach_campaigns")
+    .update({ timezone: zone, timezone_is_default: false, updated_at: stamp })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .eq("timezone_is_default", true)
+    .select("id");
+  if (!confirmed.error) {
+    if ((confirmed.data ?? []).length === 0) return { ok: true, changed: false };
+    revalidatePath("/leads");
+    return { ok: true, changed: true };
+  }
+  if (!/timezone_is_default/.test(confirmed.error.message)) return fail(confirmed.error.message);
+
+  const retry = await supabase
+    .from("outreach_campaigns")
+    .update({ timezone: zone, updated_at: stamp })
+    .eq("id", id)
+    .eq("user_id", userId)
+    .in("timezone", ["UTC", "Etc/UTC", "Etc/GMT", "Etc/GMT0", "Etc/GMT+0", "Etc/GMT-0"])
+    .select("id");
+  if (retry.error) return fail(retry.error.message);
+  if ((retry.data ?? []).length === 0) return { ok: true, changed: false };
+  revalidatePath("/leads");
+  return { ok: true, changed: true };
 }
 
 export type CampaignSettingsInput = {
@@ -125,34 +181,39 @@ export async function saveCampaignSettings(id: string, input: CampaignSettingsIn
   const nameColumn = input.name_column && columns.includes(input.name_column) ? input.name_column : null;
   const socialColumn = input.social_column && columns.includes(input.social_column) ? input.social_column : null;
 
-  const { error } = await createSupabaseAdminClient()
+  const payload = {
+    name,
+    agent_id: input.agent_id || null,
+    channel_type: input.agent_id ? channel : null,
+    outreach_prompt: input.outreach_prompt.slice(0, 6000),
+    min_delay_minutes: min,
+    max_delay_minutes: max,
+    daily_limit: daily,
+    contact_column: contactColumn,
+    website_column: websiteColumn,
+    name_column: nameColumn,
+    social_column: socialColumn,
+    message_type: messageType,
+    fixed_message: input.fixed_message.slice(0, 4000),
+    fallback_message: String(input.fallback_message ?? "").slice(0, 4000),
+    language: (OUTREACH_LANGUAGES as readonly string[]).includes(input.language) ? input.language : DEFAULT_OUTREACH_LANGUAGE,
+    delay_mode: delayMode,
+    fixed_delay_minutes: fixedDelay,
+    webhook_url: webhook,
+    work_time_start: workStart,
+    work_time_end: workEnd,
+    timezone,
+    updated_at: new Date().toISOString(),
+  };
+  const supabase = createSupabaseAdminClient();
+  let { error } = await supabase
     .from("outreach_campaigns")
-    .update({
-      name,
-      agent_id: input.agent_id || null,
-      channel_type: input.agent_id ? channel : null,
-      outreach_prompt: input.outreach_prompt.slice(0, 6000),
-      min_delay_minutes: min,
-      max_delay_minutes: max,
-      daily_limit: daily,
-      contact_column: contactColumn,
-      website_column: websiteColumn,
-      name_column: nameColumn,
-      social_column: socialColumn,
-      message_type: messageType,
-      fixed_message: input.fixed_message.slice(0, 4000),
-      fallback_message: String(input.fallback_message ?? "").slice(0, 4000),
-      language: (OUTREACH_LANGUAGES as readonly string[]).includes(input.language) ? input.language : DEFAULT_OUTREACH_LANGUAGE,
-      delay_mode: delayMode,
-      fixed_delay_minutes: fixedDelay,
-      webhook_url: webhook,
-      work_time_start: workStart,
-      work_time_end: workEnd,
-      timezone,
-      updated_at: new Date().toISOString(),
-    })
+    .update({ ...payload, timezone_is_default: false })
     .eq("id", id)
     .eq("user_id", userId);
+  if (error && /timezone_is_default/.test(error.message)) {
+    ({ error } = await supabase.from("outreach_campaigns").update(payload).eq("id", id).eq("user_id", userId));
+  }
   if (error) return fail(/work_time_start|timezone/.test(error.message) ? "Примените миграцию 20261111_outreach_work_schedule.sql." : error.message);
 
   revalidatePath("/leads");

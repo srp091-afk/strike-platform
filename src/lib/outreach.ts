@@ -20,6 +20,7 @@ export const CAMPAIGN_COLUMNS =
   "id, name, agent_id, channel_type, outreach_prompt, min_delay_minutes, max_delay_minutes, daily_limit, status, source_columns, contact_column, website_column, name_column, social_column, message_type, fixed_message, fallback_message, language, delay_mode, fixed_delay_minutes, webhook_url, created_at";
 
 const SCHEDULE_COLUMNS = `${CAMPAIGN_COLUMNS}, work_time_start, work_time_end, timezone`;
+const SCHEDULE_COLUMNS_WITH_FLAG = `${SCHEDULE_COLUMNS}, timezone_is_default`;
 
 function missingScheduleColumn(message: string) {
   return /work_time_start|work_time_end|timezone/.test(message);
@@ -51,6 +52,7 @@ export function mapCampaign(row: Record<string, unknown>): OutreachCampaign {
     work_time_start: typeof row.work_time_start === "string" ? row.work_time_start : "00:00",
     work_time_end: typeof row.work_time_end === "string" ? row.work_time_end : "23:59",
     timezone: typeof row.timezone === "string" && row.timezone.trim() ? row.timezone : "UTC",
+    timezone_is_default: typeof row.timezone_is_default === "boolean" ? row.timezone_is_default : null,
     created_at: typeof row.created_at === "string" ? row.created_at : "",
   };
 }
@@ -110,9 +112,12 @@ export async function countLogs(campaignIds: string[]): Promise<Map<string, Outr
 }
 
 async function campaignRows(load: (columns: string) => PromiseLike<{ data: unknown; error: { message: string } | null }>) {
-  const primary = await load(SCHEDULE_COLUMNS);
-  if (!primary.error) return primary.data;
-  if (!missingScheduleColumn(primary.error.message)) throw new Error(primary.error.message);
+  const withFlag = await load(SCHEDULE_COLUMNS_WITH_FLAG);
+  if (!withFlag.error) return withFlag.data;
+  if (!/timezone_is_default|work_time_start|work_time_end|timezone/.test(withFlag.error.message)) throw new Error(withFlag.error.message);
+  const schedule = await load(SCHEDULE_COLUMNS);
+  if (!schedule.error) return schedule.data;
+  if (!missingScheduleColumn(schedule.error.message)) throw new Error(schedule.error.message);
   const fallback = await load(CAMPAIGN_COLUMNS);
   if (fallback.error) throw new Error(fallback.error.message);
   return fallback.data;

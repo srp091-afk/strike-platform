@@ -40,6 +40,7 @@ export function OutreachWorkspace({ initial, agents }: { initial: CampaignState;
           workTimeStart={state.campaign.work_time_start}
           workTimeEnd={state.campaign.work_time_end}
           timezone={state.campaign.timezone}
+          timezoneIsDefault={state.campaign.timezone_is_default}
         />
       </header>
 

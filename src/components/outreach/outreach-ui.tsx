@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react";
 
+import { useEffectiveTimeZone } from "@/components/outreach/timezone-field";
 import { campaignHold, type CampaignHold } from "@/lib/outreach-schedule";
 import type { OutreachLogStatus, OutreachStatus } from "@/lib/outreach-types";
 import { OUTREACH_STATUS_LABEL } from "@/lib/outreach-types";
@@ -23,13 +24,23 @@ const HOLD_BADGE: Record<CampaignHold, { label: string; tone: string }> = {
   outside_hours: { label: "Вне рабочего времени", tone: "border-blue-200 bg-blue-50 text-blue-700" },
 };
 
+let cachedNow = 0;
+
+function readClientNow() {
+  if (!cachedNow) cachedNow = Date.now();
+  return cachedNow;
+}
+
 function useClientNow() {
   return useSyncExternalStore(
     (onStoreChange) => {
-      const id = setInterval(onStoreChange, 30_000);
+      const id = setInterval(() => {
+        cachedNow = Date.now();
+        onStoreChange();
+      }, 30_000);
       return () => clearInterval(id);
     },
-    () => Date.now(),
+    readClientNow,
     () => 0,
   );
 }
@@ -41,6 +52,7 @@ export function CampaignStatusBadge({
   workTimeStart,
   workTimeEnd,
   timezone,
+  timezoneIsDefault = null,
 }: {
   status: OutreachStatus;
   sentToday?: number;
@@ -48,8 +60,10 @@ export function CampaignStatusBadge({
   workTimeStart?: string;
   workTimeEnd?: string;
   timezone?: string;
+  timezoneIsDefault?: boolean | null;
 }) {
   const now = useClientNow();
+  const zone = useEffectiveTimeZone(timezone, timezoneIsDefault);
   const hold =
     now > 0
       ? campaignHold({
@@ -58,7 +72,7 @@ export function CampaignStatusBadge({
           dailyLimit,
           workTimeStart,
           workTimeEnd,
-          timezone,
+          timezone: zone,
           now: new Date(now),
         })
       : null;

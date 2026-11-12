@@ -63,6 +63,8 @@ export type OutreachCampaign = {
   work_time_start: string;
   work_time_end: string;
   timezone: string;
+  /** true — пояс ещё не выбирали, null — колонка в базе пока не применена. */
+  timezone_is_default: boolean | null;
   created_at: string;
 };
 

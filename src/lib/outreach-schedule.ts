@@ -30,6 +30,14 @@ export function readTimeZone(value: unknown) {
   }
 }
 
+/** Пояс, который приложение подставило само, а не выбрал пользователь. */
+const AUTOMATIC_TIME_ZONES = new Set(["UTC", "Etc/UTC", "Etc/GMT", "Etc/GMT0", "Etc/GMT+0", "Etc/GMT-0"]);
+
+export function isAutomaticTimeZone(value: unknown) {
+  if (typeof value !== "string" || !value.trim()) return true;
+  return AUTOMATIC_TIME_ZONES.has(value.trim());
+}
+
 /** Пустые значения не сужают уже идущие кампании: окно на весь день в UTC. */
 export function normalizeSchedule(input: {
   workTimeStart?: unknown;
@@ -66,11 +74,21 @@ export function zonedParts(date: Date, timeZone: string): ZonedParts {
   const bag: Record<string, string> = {};
   for (const part of fmt.formatToParts(date)) bag[part.type] = part.value;
   let hour = Number(bag.hour);
-  if (hour === 24) hour = 0;
+  let year = Number(bag.year);
+  let month = Number(bag.month);
+  let day = Number(bag.day);
+  // Часть движков пишет полночь как 24:00 того же календарного дня.
+  if (hour === 24) {
+    hour = 0;
+    const next = new Date(Date.UTC(year, month - 1, day + 1));
+    year = next.getUTCFullYear();
+    month = next.getUTCMonth() + 1;
+    day = next.getUTCDate();
+  }
   return {
-    year: Number(bag.year),
-    month: Number(bag.month),
-    day: Number(bag.day),
+    year,
+    month,
+    day,
     hour,
     minute: Number(bag.minute),
     second: Number(bag.second),
@@ -99,9 +117,14 @@ function parseMinutes(value: string) {
   return Number(hour) * 60 + Number(minute);
 }
 
+/** Минуты местных суток в поясе кампании, а не в поясе сервера. */
+export function zonedClockMinutes(now: Date, timeZone: string) {
+  const parts = zonedParts(now, timeZone);
+  return parts.hour * 60 + parts.minute;
+}
+
 export function isWithinWorkWindow(now: Date, schedule: WorkSchedule) {
-  const parts = zonedParts(now, schedule.timezone);
-  const minutes = parts.hour * 60 + parts.minute;
+  const minutes = zonedClockMinutes(now, schedule.timezone);
   return minutes >= parseMinutes(schedule.workTimeStart) && minutes <= parseMinutes(schedule.workTimeEnd);
 }
 
@@ -178,6 +201,65 @@ export function planSendDelays(input: {
     cursor = new Date(slot.getTime() + gapMs(input.delay, random));
   }
   return delays;
+}
+
+export type TimeZoneChoice = {
+  value: string;
+  label: string;
+  offsetMinutes: number;
+};
+
+export function formatUtcOffset(minutes: number) {
+  const sign = minutes >= 0 ? "+" : "-";
+  const absolute = Math.abs(minutes);
+  const hours = String(Math.floor(absolute / 60)).padStart(2, "0");
+  const mins = String(absolute % 60).padStart(2, "0");
+  return `UTC${sign}${hours}:${mins}`;
+}
+
+export function timeZoneOffsetMinutes(timeZone: string, now = new Date()) {
+  const parts = zonedParts(now, readTimeZone(timeZone));
+  const asUtc = Date.UTC(parts.year, parts.month - 1, parts.day, parts.hour, parts.minute, parts.second);
+  return Math.round((asUtc - now.getTime()) / 60_000);
+}
+
+export function listTimeZoneChoices(now = new Date()): TimeZoneChoice[] {
+  const zones = typeof Intl.supportedValuesOf === "function" ? Intl.supportedValuesOf("timeZone") : ["UTC"];
+  const unique = zones.includes("UTC") ? zones : ["UTC", ...zones];
+  return unique
+    .map((value) => {
+      const offsetMinutes = timeZoneOffsetMinutes(value, now);
+      return { value, offsetMinutes, label: `(${formatUtcOffset(offsetMinutes)}) ${value}` };
+    })
+    .sort((a, b) => a.offsetMinutes - b.offsetMinutes || a.label.localeCompare(b.label));
+}
+
+function parseOffsetQuery(query: string) {
+  const match = query.match(/^(?:utc|gmt)?([+-])(\d{1,2})(?::?(\d{2}))?$/);
+  if (!match) return null;
+  const sign = match[1] === "-" ? -1 : 1;
+  const hours = Number(match[2]);
+  if (hours > 14) return null;
+  const minutes = match[3] === undefined ? null : Number(match[3]);
+  if (minutes !== null && minutes >= 60) return null;
+  return { hours: sign * hours, minutes: minutes === null ? null : sign * minutes };
+}
+
+function offsetMatches(offsetMinutes: number, parsed: { hours: number; minutes: number | null }) {
+  if (parsed.minutes === null) return Math.trunc(offsetMinutes / 60) === parsed.hours;
+  return offsetMinutes === parsed.hours * 60 + parsed.minutes;
+}
+
+/** Поиск по городу, региону и смещению: «Tbilisi», «Europe», «+4», «UTC+3», «-5». */
+export function filterTimeZoneChoices(choices: TimeZoneChoice[], query: string) {
+  const compact = query.trim().toLowerCase().replace(/[\s_]+/g, "");
+  if (!compact) return choices;
+  const offset = parseOffsetQuery(compact);
+  return choices.filter((choice) => {
+    const haystack = `${choice.value} ${choice.label}`.toLowerCase().replace(/[\s_]+/g, "");
+    if (haystack.includes(compact)) return true;
+    return offset ? offsetMatches(choice.offsetMinutes, offset) : false;
+  });
 }
 
 export type CampaignHold = "daily_limit" | "outside_hours";

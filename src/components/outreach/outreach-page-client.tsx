@@ -7,6 +7,7 @@ import useSWR, { type KeyedMutator } from "swr";
 
 import { controlCampaign, createCampaignDraft, deleteCampaign } from "@/app/leads/actions";
 import { CampaignStatusBadge, ProgressBar, cardClass } from "@/components/outreach/outreach-ui";
+import { useAdoptDefaultTimeZone } from "@/components/outreach/timezone-field";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/components/ui/toaster";
 import { browserTimeZone } from "@/lib/outreach-schedule";
@@ -48,6 +49,7 @@ export function OutreachPageClient() {
     refreshInterval: (latest) => (latest?.campaigns.some((item) => item.status === "active") ? 20_000 : 0),
   });
   const campaigns = ready ? (data?.campaigns ?? []) : [];
+  useAdoptDefaultTimeZone(campaigns, () => void mutate());
 
   async function remove(campaign: OutreachCampaignCard) {
     if (!window.confirm(`Удалить кампанию «${campaign.name}» вместе с базой и логами?`)) return;
@@ -104,6 +106,7 @@ export function OutreachPageClient() {
                         workTimeStart={campaign.work_time_start}
                         workTimeEnd={campaign.work_time_end}
                         timezone={campaign.timezone}
+                        timezoneIsDefault={campaign.timezone_is_default}
                       />
                     </div>
                     <p className="mt-2 text-sm text-zinc-400">
