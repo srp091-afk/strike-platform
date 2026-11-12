@@ -14,6 +14,7 @@ export type CampaignState = {
   campaign: OutreachCampaign;
   logs: OutreachLog[];
   counts: OutreachCounts;
+  nextDispatchAt?: string | null;
 };
 
 export function OutreachWorkspace({ initial, agents }: { initial: CampaignState; agents: OutreachAgentOption[] }) {
@@ -60,7 +61,13 @@ export function OutreachWorkspace({ initial, agents }: { initial: CampaignState;
           />
         </TabsContent>
         <TabsContent value="monitoring">
-          <OutreachMonitor campaign={state.campaign} logs={state.logs} counts={state.counts} onChanged={() => void mutate()} />
+          <OutreachMonitor
+            campaign={state.campaign}
+            logs={state.logs}
+            counts={state.counts}
+            nextDispatchAt={state.nextDispatchAt}
+            onChanged={() => void mutate()}
+          />
         </TabsContent>
       </Tabs>
     </div>

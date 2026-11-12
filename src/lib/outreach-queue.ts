@@ -93,7 +93,10 @@ export async function enqueueLogs(
 }
 
 /** Публикует уже посчитанные задержки. delaySeconds — секунды от текущего момента. */
-export async function enqueueAt(items: Array<{ logId: string; delaySeconds: number }>): Promise<{ queued: number; error?: string }> {
+export async function enqueueAt(
+  items: Array<{ logId: string; delaySeconds: number }>,
+  options?: { generation?: number },
+): Promise<{ queued: number; error?: string }> {
   if (items.length === 0) return { queued: 0 };
   const published = await publisher();
   if ("error" in published) return { queued: 0, error: published.error };
@@ -104,7 +107,10 @@ export async function enqueueAt(items: Array<{ logId: string; delaySeconds: numb
     try {
       await client.publishJSON({
         url,
-        body: { logId: item.logId },
+        body: {
+          logId: item.logId,
+          ...(typeof options?.generation === "number" ? { generation: options.generation } : {}),
+        },
         ...(delay > 0 ? { delay } : {}),
         retries: 3,
         headers: { "x-outreach-secret": secret },

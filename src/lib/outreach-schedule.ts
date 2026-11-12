@@ -262,6 +262,24 @@ export function filterTimeZoneChoices(choices: TimeZoneChoice[], query: string) 
   });
 }
 
+/**
+ * Свежий план: ближайшая постановка рядом со следующим допустимым слотом.
+ * late — план рассчитан на более позднее окно (например, пока пояс был UTC).
+ * overdue — время постановки прошло, а воркер так и не пришёл.
+ */
+export function queueNeedsReplan(input: {
+  now: number;
+  earliestDispatchAt: number | null;
+  nextSlot: number;
+  slackMs: number;
+  overdueMs: number;
+}): "fresh" | "late" | "overdue" | "unknown" {
+  if (input.earliestDispatchAt === null) return "unknown";
+  if (input.earliestDispatchAt < input.now - input.overdueMs) return "overdue";
+  if (input.earliestDispatchAt > input.nextSlot + input.slackMs) return "late";
+  return "fresh";
+}
+
 export type CampaignHold = "daily_limit" | "outside_hours";
 
 /** Бейдж поверх статуса active. На паузу, черновик и завершение не влияет. */

@@ -25,11 +25,13 @@ export function OutreachMonitor({
   campaign,
   logs,
   counts,
+  nextDispatchAt = null,
   onChanged,
 }: {
   campaign: OutreachCampaign;
   logs: OutreachLog[];
   counts: OutreachCounts;
+  nextDispatchAt?: string | null;
   onChanged: () => void;
 }) {
   const [pending, startTransition] = useTransition();
@@ -73,10 +75,13 @@ export function OutreachMonitor({
             <div className="mt-2 max-w-md">
               <ProgressBar sent={counts.sent} failed={counts.failed} total={counts.total} />
             </div>
+            {active && nextDispatchAt ? (
+              <p className="mt-2 text-sm text-zinc-400">Следующая отправка: {formatTime(nextDispatchAt)}. «Перезапустить» пересчитает очередь по текущему поясу и окну.</p>
+            ) : null}
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button type="button" disabled={pending || active} onClick={() => control("start")}>
-              <Play className="size-4" /> {campaign.status === "paused" ? "Продолжить" : "Запустить"}
+            <Button type="button" disabled={pending} onClick={() => control("start")}>
+              <Play className="size-4" /> {active ? "Перезапустить" : campaign.status === "paused" ? "Продолжить" : "Запустить"}
             </Button>
             <Button type="button" variant="outline" disabled={pending || !active} onClick={() => control("pause")}>
               <Pause className="size-4" /> Пауза

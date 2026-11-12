@@ -4,7 +4,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { getAuthenticatedUserId } from "@/lib/auth-user";
-import { getCampaign, listAgentOptions, scheduleOpenBatch } from "@/lib/outreach";
+import { getCampaign, listAgentOptions, replanCampaignQueue } from "@/lib/outreach";
 import { outreachQueueConfigured } from "@/lib/outreach-queue";
 import { isAutomaticTimeZone, readTimeZone, readWorkTime } from "@/lib/outreach-schedule";
 import { getOpenAI } from "@/lib/openai";
@@ -101,6 +101,7 @@ export async function adoptCampaignTimeZone(id: string, timezoneInput: string): 
     .select("id");
   if (!confirmed.error) {
     if ((confirmed.data ?? []).length === 0) return { ok: true, changed: false };
+    if (campaign.status === "active") await replanCampaignQueue(id);
     revalidatePath("/leads");
     return { ok: true, changed: true };
   }
@@ -115,6 +116,7 @@ export async function adoptCampaignTimeZone(id: string, timezoneInput: string): 
     .select("id");
   if (retry.error) return fail(retry.error.message);
   if ((retry.data ?? []).length === 0) return { ok: true, changed: false };
+  if (campaign.status === "active") await replanCampaignQueue(id);
   revalidatePath("/leads");
   return { ok: true, changed: true };
 }
@@ -308,8 +310,19 @@ export async function controlCampaign(id: string, action: "start" | "pause" | "s
     return fail("Очередь фоновых задач не настроена: добавьте QSTASH_TOKEN, OUTREACH_WORKER_SECRET и OUTREACH_WORKER_URL.");
   }
 
-  // Строки, зависшие в обработке после сбоя функции, возвращаем в очередь (кампания не активна, воркеры их пропускают).
-  await supabase.from("outreach_logs").update({ strike_error: null }).eq("campaign_id", id).eq("strike_status", "queued").eq("strike_error", "processing");
+  // Зависшая обработка не должна блокировать новый план. Свежую отправку (срок ещё не прошёл на 10 минут) не трогаем.
+  const staleBefore = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+  const releaseProcessing = (filter: "null" | "stale") => {
+    const query = supabase
+      .from("outreach_logs")
+      .update({ strike_error: null, dispatch_after: null })
+      .eq("campaign_id", id)
+      .eq("strike_status", "queued")
+      .eq("strike_error", "processing");
+    return filter === "null" ? query.is("dispatch_after", null) : query.lt("dispatch_after", staleBefore);
+  };
+  await releaseProcessing("stale");
+  await releaseProcessing("null");
 
   const countWaiting = (marker: "scheduled" | null) => {
     const query = supabase.from("outreach_logs").select("id", { count: "exact", head: true }).eq("campaign_id", id).eq("strike_status", "queued");
@@ -322,12 +335,13 @@ export async function controlCampaign(id: string, action: "start" | "pause" | "s
 
   // Статус ставится ДО публикации в очередь: первое сообщение уходит без задержки,
   // и воркер иначе успевает увидеть ещё не активную кампанию и пропустить строку навсегда.
+  const wasActive = campaign.status === "active";
   const { error: statusError } = await supabase.from("outreach_campaigns").update({ status: "active" }).eq("id", id).eq("user_id", userId);
   if (statusError) return fail(statusError.message);
 
-  const result = await scheduleOpenBatch(id);
+  const result = await replanCampaignQueue(id);
   if (result.error && result.queued === 0) {
-    await supabase.from("outreach_campaigns").update({ status: campaign.status }).eq("id", id).eq("user_id", userId);
+    if (!wasActive) await supabase.from("outreach_campaigns").update({ status: campaign.status }).eq("id", id).eq("user_id", userId);
     return fail(result.error);
   }
   revalidatePath("/leads");

@@ -3,7 +3,7 @@ import "server-only";
 import { effectiveActiveChannels, telegramChannelLabel } from "@/lib/agent-models";
 import { listAgents } from "@/lib/agents";
 import { enqueueAt } from "@/lib/outreach-queue";
-import { normalizeSchedule, planSendDelays, zonedDayStart } from "@/lib/outreach-schedule";
+import { nextWindowStart, normalizeSchedule, planSendDelays, queueNeedsReplan, zonedDayStart } from "@/lib/outreach-schedule";
 import {
   readOutreachChannel,
   readOutreachStatus,
@@ -21,6 +21,7 @@ export const CAMPAIGN_COLUMNS =
 
 const SCHEDULE_COLUMNS = `${CAMPAIGN_COLUMNS}, work_time_start, work_time_end, timezone`;
 const SCHEDULE_COLUMNS_WITH_FLAG = `${SCHEDULE_COLUMNS}, timezone_is_default`;
+const SCHEDULE_COLUMNS_FULL = `${SCHEDULE_COLUMNS_WITH_FLAG}, queue_generation`;
 
 function missingScheduleColumn(message: string) {
   return /work_time_start|work_time_end|timezone/.test(message);
@@ -53,6 +54,7 @@ export function mapCampaign(row: Record<string, unknown>): OutreachCampaign {
     work_time_end: typeof row.work_time_end === "string" ? row.work_time_end : "23:59",
     timezone: typeof row.timezone === "string" && row.timezone.trim() ? row.timezone : "UTC",
     timezone_is_default: typeof row.timezone_is_default === "boolean" ? row.timezone_is_default : null,
+    queue_generation: typeof row.queue_generation === "number" ? row.queue_generation : 0,
     created_at: typeof row.created_at === "string" ? row.created_at : "",
   };
 }
@@ -112,6 +114,9 @@ export async function countLogs(campaignIds: string[]): Promise<Map<string, Outr
 }
 
 async function campaignRows(load: (columns: string) => PromiseLike<{ data: unknown; error: { message: string } | null }>) {
+  const full = await load(SCHEDULE_COLUMNS_FULL);
+  if (!full.error) return full.data;
+  if (!/queue_generation|timezone_is_default|work_time_start|work_time_end|timezone/.test(full.error.message)) throw new Error(full.error.message);
   const withFlag = await load(SCHEDULE_COLUMNS_WITH_FLAG);
   if (!withFlag.error) return withFlag.data;
   if (!/timezone_is_default|work_time_start|work_time_end|timezone/.test(withFlag.error.message)) throw new Error(withFlag.error.message);
@@ -184,15 +189,128 @@ export async function countSentToday(campaigns: Array<Pick<OutreachCampaign, "id
 }
 
 const SCHEDULE_BATCH = 80;
+const QUEUE_OVERDUE_MS = 10 * 60 * 1000;
+
+function scheduleSlackMs(campaign: Pick<OutreachCampaign, "min_delay_minutes" | "max_delay_minutes" | "fixed_delay_minutes">) {
+  const gap = Math.max(campaign.min_delay_minutes, campaign.max_delay_minutes, campaign.fixed_delay_minutes, 5);
+  return (gap + 2) * 60 * 1000;
+}
+
+async function clearScheduledLocks(campaignId: string) {
+  const supabase = createSupabaseAdminClient();
+  const clear = { strike_error: null, dispatch_after: null };
+  let result = await supabase
+    .from("outreach_logs")
+    .update(clear)
+    .eq("campaign_id", campaignId)
+    .eq("strike_status", "queued")
+    .eq("strike_error", "scheduled");
+  if (result.error && /dispatch_after/.test(result.error.message)) {
+    result = await supabase
+      .from("outreach_logs")
+      .update({ strike_error: null })
+      .eq("campaign_id", campaignId)
+      .eq("strike_status", "queued")
+      .eq("strike_error", "scheduled");
+  }
+  return result.error;
+}
+
+async function bumpQueueGeneration(campaignId: string) {
+  const supabase = createSupabaseAdminClient();
+  const current = await supabase.from("outreach_campaigns").select("queue_generation").eq("id", campaignId).maybeSingle();
+  if (current.error) {
+    if (/queue_generation/.test(current.error.message)) return 0;
+    throw new Error(current.error.message);
+  }
+  const previous = Number(current.data?.queue_generation ?? 0);
+  const next = previous + 1;
+  const updated = await supabase
+    .from("outreach_campaigns")
+    .update({ queue_generation: next })
+    .eq("id", campaignId)
+    .eq("queue_generation", previous)
+    .select("queue_generation");
+  if (updated.error) {
+    if (/queue_generation/.test(updated.error.message)) return 0;
+    throw new Error(updated.error.message);
+  }
+  return Number(updated.data?.[0]?.queue_generation ?? next);
+}
+
+/**
+ * Сбрасывает опубликованный план и ставит новый от текущего окна и пояса.
+ * Старые задачи QStash остаются в брокере, но воркер их не выполняет: номер поколения уже другой.
+ */
+export async function replanCampaignQueue(campaignId: string): Promise<{ queued: number; error?: string; opensAt: string | null }> {
+  const campaign = await getCampaignById(campaignId);
+  if (!campaign || campaign.status !== "active") return { queued: 0, opensAt: null };
+  const generation = await bumpQueueGeneration(campaignId);
+  const clearError = await clearScheduledLocks(campaignId);
+  if (clearError) return { queued: 0, error: clearError.message, opensAt: null };
+  return scheduleOpenBatch(campaignId, { generation, skipHeal: true });
+}
+
+/**
+ * Если ближайшая задача опаздывает или рассчитана на другое окно, план публикуется заново.
+ * Неизвестный срок (старые строки без dispatch_after) сам по себе не сбрасывает живую очередь.
+ */
+export async function healCampaignQueue(campaign: OutreachCampaign): Promise<boolean> {
+  if (campaign.status !== "active") return false;
+  const supabase = createSupabaseAdminClient();
+  const staleBefore = new Date(Date.now() - QUEUE_OVERDUE_MS).toISOString();
+  await supabase
+    .from("outreach_logs")
+    .update({ strike_error: null, dispatch_after: null })
+    .eq("campaign_id", campaign.id)
+    .eq("strike_status", "queued")
+    .eq("strike_error", "processing")
+    .lt("dispatch_after", staleBefore);
+  const { data, error } = await supabase
+    .from("outreach_logs")
+    .select("dispatch_after")
+    .eq("campaign_id", campaign.id)
+    .eq("strike_status", "queued")
+    .eq("strike_error", "scheduled");
+  if (error) {
+    if (/dispatch_after/.test(error.message)) return false;
+    throw new Error(error.message);
+  }
+  if (!data?.length) return false;
+  const known = data
+    .map((row) => (typeof row.dispatch_after === "string" ? Date.parse(row.dispatch_after) : Number.NaN))
+    .filter((time) => Number.isFinite(time));
+  const sentToday = (await countSentToday([campaign])).get(campaign.id) ?? 0;
+  const schedule = normalizeSchedule(campaign);
+  const next = nextWindowStart(new Date(), schedule, sentToday >= campaign.daily_limit);
+  const decision = queueNeedsReplan({
+    now: Date.now(),
+    earliestDispatchAt: known.length > 0 ? Math.min(...known) : null,
+    nextSlot: next.getTime(),
+    slackMs: scheduleSlackMs(campaign),
+    overdueMs: QUEUE_OVERDUE_MS,
+  });
+  if (decision !== "late" && decision !== "overdue") return false;
+  const result = await replanCampaignQueue(campaign.id);
+  if (result.error) console.error(`[outreach] не удалось пересчитать очередь ${campaign.id}: ${result.error}`);
+  return !result.error;
+}
 
 /**
  * Ставит в очередь ещё не запланированные строки: не больше суточного лимита в сутки
  * и только внутри окна работы. Повторный вызов ничего не дублирует, пока прошлые
- * строки висят в очереди со служебной пометкой scheduled.
+ * строки висят в очереди со служебной пометкой scheduled и их срок ещё впереди.
  */
-export async function scheduleOpenBatch(campaignId: string): Promise<{ queued: number; error?: string; opensAt: string | null }> {
+export async function scheduleOpenBatch(
+  campaignId: string,
+  options?: { generation?: number; skipHeal?: boolean },
+): Promise<{ queued: number; error?: string; opensAt: string | null }> {
   const campaign = await getCampaignById(campaignId);
   if (!campaign || campaign.status !== "active") return { queued: 0, opensAt: null };
+  if (!options?.skipHeal) {
+    const healed = await healCampaignQueue(campaign);
+    if (healed) return { queued: 0, opensAt: null };
+  }
   const supabase = createSupabaseAdminClient();
   const { count: scheduled, error: scheduledError } = await supabase
     .from("outreach_logs")
@@ -235,31 +353,50 @@ export async function scheduleOpenBatch(campaignId: string): Promise<{ queued: n
   if (delays.length === 0) return { queued: 0, error: "В режиме работы нет окна для отправки.", opensAt: null };
 
   const chosen = waiting.slice(0, delays.length);
-  const ids = chosen.map((row) => String(row.id));
-  const { data: marked, error: markError } = await supabase
-    .from("outreach_logs")
-    .update({ strike_error: "scheduled" })
-    .in("id", ids)
-    .eq("strike_status", "queued")
-    .is("strike_error", null)
-    .select("id");
-  if (markError) return { queued: 0, error: markError.message, opensAt: null };
-  const markedIds = new Set((marked ?? []).map((row) => String(row.id)));
-  const items = chosen
-    .map((row, index) => ({ logId: String(row.id), delaySeconds: delays[index] ?? 0 }))
-    .filter((item) => markedIds.has(item.logId));
+  const generation = options?.generation ?? campaign.queue_generation;
+  const candidates = chosen.map((row, index) => ({
+    logId: String(row.id),
+    delaySeconds: delays[index] ?? 0,
+    due: new Date(Date.now() + (delays[index] ?? 0) * 1000).toISOString(),
+  }));
+  const marked = await Promise.all(
+    candidates.map(async (item) => {
+      let result = await supabase
+        .from("outreach_logs")
+        .update({ strike_error: "scheduled", dispatch_after: item.due })
+        .eq("id", item.logId)
+        .eq("strike_status", "queued")
+        .is("strike_error", null)
+        .select("id");
+      if (result.error && /dispatch_after/.test(result.error.message)) {
+        result = await supabase
+          .from("outreach_logs")
+          .update({ strike_error: "scheduled" })
+          .eq("id", item.logId)
+          .eq("strike_status", "queued")
+          .is("strike_error", null)
+          .select("id");
+      }
+      if (result.error) return { item, error: result.error.message };
+      return { item, error: null, taken: (result.data ?? []).length > 0 };
+    }),
+  );
+  const markError = marked.find((entry) => entry.error)?.error;
+  if (markError) return { queued: 0, error: markError, opensAt: null };
+  const items = marked.filter((entry) => "taken" in entry && entry.taken).map((entry) => entry.item);
   if (items.length === 0) return { queued: 0, opensAt: null };
 
-  const result = await enqueueAt(items);
+  const result = await enqueueAt(items, { generation });
   if (result.queued < items.length) {
-    await supabase
+    const unpublished = items.slice(result.queued).map((item) => item.logId);
+    let rollback = await supabase
       .from("outreach_logs")
-      .update({ strike_error: null })
-      .in(
-        "id",
-        items.slice(result.queued).map((item) => item.logId),
-      )
+      .update({ strike_error: null, dispatch_after: null })
+      .in("id", unpublished)
       .eq("strike_error", "scheduled");
+    if (rollback.error && /dispatch_after/.test(rollback.error.message)) {
+      rollback = await supabase.from("outreach_logs").update({ strike_error: null }).in("id", unpublished).eq("strike_error", "scheduled");
+    }
   }
   const firstDelay = items[0]?.delaySeconds ?? 0;
   return {
@@ -301,14 +438,37 @@ export async function listLogs(campaignId: string, limit = 500): Promise<Outreac
   return (data ?? []).map((row) => mapLog(row as Record<string, unknown>));
 }
 
+async function nextDispatchAt(campaignId: string) {
+  const supabase = createSupabaseAdminClient();
+  const { data, error } = await supabase
+    .from("outreach_logs")
+    .select("dispatch_after")
+    .eq("campaign_id", campaignId)
+    .eq("strike_status", "queued")
+    .eq("strike_error", "scheduled")
+    .not("dispatch_after", "is", null)
+    .order("dispatch_after", { ascending: true })
+    .limit(1);
+  if (error) return null;
+  const value = data?.[0]?.dispatch_after;
+  return typeof value === "string" ? value : null;
+}
+
 /** Состояние для страницы кампании и поллинга мониторинга. */
 export async function loadCampaignState(userId: string, id: string) {
   const campaign = await getCampaign(userId, id);
   if (!campaign) return null;
-  const [logs, counts, sentToday] = await Promise.all([listLogs(id), countLogs([id]), countSentToday([campaign])]);
+  if (campaign.status === "active") await healCampaignQueue(campaign);
+  const [logs, counts, sentToday, nextDispatch] = await Promise.all([
+    listLogs(id),
+    countLogs([id]),
+    countSentToday([campaign]),
+    nextDispatchAt(id),
+  ]);
   return {
     campaign,
     logs,
+    nextDispatchAt: nextDispatch,
     counts: { ...(counts.get(id) ?? { total: 0, sent: 0, failed: 0, sent_today: 0 }), sent_today: sentToday.get(id) ?? 0 },
   };
 }

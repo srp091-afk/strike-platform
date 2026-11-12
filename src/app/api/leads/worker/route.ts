@@ -45,14 +45,17 @@ export async function POST(request: Request) {
   }
 
   let logId: unknown;
+  let generation: number | undefined;
   try {
-    logId = (JSON.parse(body) as { logId?: unknown }).logId;
+    const payload = JSON.parse(body) as { logId?: unknown; generation?: unknown };
+    logId = payload.logId;
+    generation = typeof payload.generation === "number" ? payload.generation : undefined;
   } catch {
     logId = null;
   }
   if (typeof logId !== "string") return Response.json({ error: "logId required" }, { status: 400 });
 
-  const result = await processOutreachLog(logId);
+  const result = await processOutreachLog(logId, generation);
   console.log(`[outreach-worker] ${logId}: ${result.status}${result.detail ? ` (${result.detail})` : ""}`);
   // Если отложить задачу своим publish не удалось, QStash повторит текущую.
   if ((result.detail === "daily_limit" || result.detail === "outside_hours") && !result.rescheduled) {

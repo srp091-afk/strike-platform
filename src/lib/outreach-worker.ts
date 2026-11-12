@@ -15,7 +15,7 @@ type ProcessResult = { status: "skipped" | "success" | "error"; detail?: string;
  * Вызывается воркером очереди (/api/leads/worker). Ошибка строки не останавливает кампанию.
  * Входящие ответы клиентов идут обычным вебхуком канала в стандартную логику агента.
  */
-export async function processOutreachLog(logId: string): Promise<ProcessResult> {
+export async function processOutreachLog(logId: string, generation?: number): Promise<ProcessResult> {
   const supabase = createSupabaseAdminClient();
   const markFailed = async (message: string): Promise<ProcessResult> => {
     // Только захваченная нами строка (processing) переводится в ошибку: чужие статусы не трогаем.
@@ -34,7 +34,7 @@ export async function processOutreachLog(logId: string): Promise<ProcessResult> 
     timer = setTimeout(() => void markFailed("Превышено время обработки (100 с): сайт или модель не ответили").then(resolve), 100_000);
   });
   try {
-    const result = await Promise.race([runOutreachLog(logId), deadline]);
+    const result = await Promise.race([runOutreachLog(logId, generation), deadline]);
     if (result.followUpCampaignId) {
       const followUp = await scheduleOpenBatch(result.followUpCampaignId);
       if (followUp.error) console.error(`[outreach-worker] не удалось поставить следующую пачку: ${followUp.error}`);
@@ -47,14 +47,35 @@ export async function processOutreachLog(logId: string): Promise<ProcessResult> 
   }
 }
 
-async function runOutreachLog(logId: string): Promise<ProcessResult> {
+async function runOutreachLog(logId: string, generation?: number): Promise<ProcessResult> {
   const supabase = createSupabaseAdminClient();
-  const { data: log } = await supabase
+  let logResult = await supabase
     .from("outreach_logs")
-    .select("id, campaign_id, row_index, contact_data, strike_status")
+    .select("id, campaign_id, row_index, contact_data, strike_status, dispatch_after")
     .eq("id", logId)
     .maybeSingle();
+  if (logResult.error && /dispatch_after/.test(logResult.error.message)) {
+    logResult = await supabase
+      .from("outreach_logs")
+      .select("id, campaign_id, row_index, contact_data, strike_status")
+      .eq("id", logId)
+      .maybeSingle();
+  }
+  const log = logResult.data;
   if (!log || log.strike_status !== "queued") return { status: "skipped", detail: "строка уже обработана или удалена" };
+
+  const dueAt = "dispatch_after" in log && typeof log.dispatch_after === "string" ? Date.parse(log.dispatch_after) : Number.NaN;
+  if (Number.isFinite(dueAt) && dueAt > Date.now() + 15 * 60 * 1000) {
+    return { status: "skipped", detail: "задача от прошлого плана, срок ещё не наступил" };
+  }
+
+  const generationRow = await supabase.from("outreach_campaigns").select("queue_generation").eq("id", log.campaign_id).maybeSingle();
+  const campaignGeneration = generationRow.error ? 0 : Number(generationRow.data?.queue_generation ?? 0);
+  const messageGeneration = typeof generation === "number" ? generation : 0;
+  // Не захватываем строку: иначе устаревшая задача снимет пометку scheduled у нового плана.
+  if (!generationRow.error && campaignGeneration !== messageGeneration) {
+    return { status: "skipped", detail: "устаревший план очереди" };
+  }
 
   // Атомарный захват строки: повторная доставка QStash или повторный запуск после паузы не отправят дубль.
   const claim = (marker: "scheduled" | null) => {
@@ -67,8 +88,15 @@ async function runOutreachLog(logId: string): Promise<ProcessResult> {
   const release = () => supabase.from("outreach_logs").update({ strike_error: null }).eq("id", logId);
 
   const scheduleSelect =
-    "id, user_id, agent_id, channel_type, outreach_prompt, daily_limit, status, contact_column, website_column, name_column, social_column, message_type, fixed_message, fallback_message, language, webhook_url, min_delay_minutes, max_delay_minutes, delay_mode, fixed_delay_minutes, work_time_start, work_time_end, timezone";
+    "id, user_id, agent_id, channel_type, outreach_prompt, daily_limit, status, contact_column, website_column, name_column, social_column, message_type, fixed_message, fallback_message, language, webhook_url, min_delay_minutes, max_delay_minutes, delay_mode, fixed_delay_minutes, work_time_start, work_time_end, timezone, queue_generation";
   let campaignResult = await supabase.from("outreach_campaigns").select(scheduleSelect).eq("id", log.campaign_id).maybeSingle();
+  if (campaignResult.error && /queue_generation/.test(campaignResult.error.message)) {
+    campaignResult = await supabase
+      .from("outreach_campaigns")
+      .select(scheduleSelect.replace(", queue_generation", ""))
+      .eq("id", log.campaign_id)
+      .maybeSingle();
+  }
   if (campaignResult.error && /work_time_start|work_time_end|timezone/.test(campaignResult.error.message)) {
     campaignResult = await supabase
       .from("outreach_campaigns")
@@ -202,6 +230,7 @@ async function deferUntilWindow(
     min_delay_minutes: number | null;
     max_delay_minutes: number | null;
     fixed_delay_minutes: number | null;
+    queue_generation?: number | null;
   },
   schedule: WorkSchedule,
   limitReached: boolean,
@@ -227,10 +256,18 @@ async function deferUntilWindow(
     schedule,
     random: () => 0,
   });
-  const delaySeconds = delays.length > 0 ? delays[delays.length - 1] : 24 * 60 * 60;
-  const published = await enqueueAt([{ logId, delaySeconds: Math.max(30, delaySeconds) }]);
+  const delaySeconds = Math.max(30, delays.length > 0 ? delays[delays.length - 1] : 24 * 60 * 60);
+  const published = await enqueueAt([{ logId, delaySeconds }], { generation: Number(campaign.queue_generation ?? 0) });
   if (published.queued === 0) return { ok: false as const, error: published.error };
-  const { error } = await supabase.from("outreach_logs").update({ strike_error: "scheduled" }).eq("id", logId).eq("strike_error", "processing");
+  const due = new Date(Date.now() + delaySeconds * 1000).toISOString();
+  let { error } = await supabase
+    .from("outreach_logs")
+    .update({ strike_error: "scheduled", dispatch_after: due })
+    .eq("id", logId)
+    .eq("strike_error", "processing");
+  if (error && /dispatch_after/.test(error.message)) {
+    ({ error } = await supabase.from("outreach_logs").update({ strike_error: "scheduled" }).eq("id", logId).eq("strike_error", "processing"));
+  }
   if (error) return { ok: false as const, error: error.message };
   return { ok: true as const };
 }

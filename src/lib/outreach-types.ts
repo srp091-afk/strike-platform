@@ -65,6 +65,8 @@ export type OutreachCampaign = {
   timezone: string;
   /** true — пояс ещё не выбирали, null — колонка в базе пока не применена. */
   timezone_is_default: boolean | null;
+  /** Сообщения QStash с другим номером относятся к прошлому плану и не отправляются. */
+  queue_generation: number;
   created_at: string;
 };
 
