@@ -18,7 +18,7 @@ export function BillingPlans({ current }: { current: CurrentPlans }) {
   }, []);
 
   async function choose(key: string) {
-    if (pending) return;
+    if (pending || !key.startsWith("agents_")) return;
     const priceId = PADDLE_PLANS[key]?.priceId;
     if (!priceId || !priceId.startsWith("pri_")) {
       toast.error("Для этого тарифа не задан Price ID Paddle.");
@@ -42,7 +42,13 @@ export function BillingPlans({ current }: { current: CurrentPlans }) {
         <h2 className="text-lg font-semibold text-[#0b0b0f]">Тарифы</h2>
         <p className="mt-1 text-sm text-gray-500">Выберите подходящий тариф для автоматизации диалогов и продаж.</p>
       </div>
-      <ModularPlans theme="light" current={current} onSelect={(key) => void choose(key)} pendingKey={pending} />
+      <ModularPlans
+        theme="light"
+        current={current}
+        onSelect={(key) => void choose(key)}
+        pendingKey={pending}
+        unavailableModules={["smm", "ads", "sites", "bundle"]}
+      />
     </section>
   );
 }

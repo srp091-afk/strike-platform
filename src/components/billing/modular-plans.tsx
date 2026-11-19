@@ -25,6 +25,11 @@ const UI = {
   perMonth: { ru: "/мес", en: "/mo" },
   popular: { ru: "Популярный", en: "Most popular" },
   choose: { ru: "Выбрать", en: "Choose" },
+  soon: { ru: "Скоро", en: "Soon" },
+  beta: {
+    ru: "Этот модуль сейчас в закрытом бета-тестировании и скоро станет доступен для подключения.",
+    en: "This module is in closed beta and will be available to subscribe soon.",
+  },
   current: { ru: "Текущий тариф", en: "Current plan" },
   billed: { ru: "Оплата каждый месяц, отмена в любой момент", en: "Billed monthly, cancel any time" },
   promo: { ru: "Есть промокод? Введите его на этапе оплаты.", en: "Have a promo code? Enter it at checkout." },
@@ -51,6 +56,8 @@ const THEMES = {
     btnPrimary: "bg-strike text-[#ffffff] shadow-[0_0_30px_-6px_rgba(207,2,52,0.45)] hover:brightness-110",
     btnSecondary: "border border-white/15 bg-white/5 text-[#ffffff] hover:border-white/30 hover:bg-white/10",
     btnCurrent: "border border-strike/30 bg-strike/10 text-strike-soft",
+    btnSoon: "cursor-not-allowed border border-white/10 bg-white/5 text-zinc-500",
+    notice: "border-white/10 bg-white/5 text-zinc-300",
     saving: "border-strike/30 bg-strike/10 text-strike-soft",
   },
   light: {
@@ -71,6 +78,8 @@ const THEMES = {
     btnPrimary: "bg-strike text-[#ffffff] hover:brightness-110",
     btnSecondary: "border border-gray-200 bg-[#ffffff] text-[#0b0b0f] hover:border-rose-300 hover:bg-rose-50/50",
     btnCurrent: "border border-rose-200 bg-rose-50 text-strike",
+    btnSoon: "cursor-not-allowed border border-gray-200 bg-gray-100 text-gray-400",
+    notice: "border-gray-200 bg-gray-50 text-gray-600",
     saving: "border-rose-200 bg-rose-50 text-strike",
   },
 } as const;
@@ -91,15 +100,19 @@ export function ModularPlans({
   current,
   onSelect,
   pendingKey,
+  unavailableModules = [],
 }: {
   theme: PlansTheme;
   lang?: Lang;
   current?: CurrentPlans;
   onSelect: (key: string) => void;
   pendingKey?: string | null;
+  /** Модули без чекаута: кнопки неактивны и не вызывают onSelect. */
+  unavailableModules?: readonly ModuleId[];
 }) {
   const [active, setActive] = useState<ModuleId>("agents");
   const th = THEMES[theme];
+  const unavailable = unavailableModules.includes(active);
 
   return (
     <div>
@@ -129,6 +142,9 @@ export function ModularPlans({
       </div>
 
       <p className={cn("mx-auto mt-5 max-w-xl text-center text-sm", th.muted)}>{MODULE_BLURBS[active][lang]}</p>
+      {unavailable ? (
+        <p className={cn("mx-auto mt-4 max-w-2xl rounded-xl border px-4 py-3 text-center text-sm", th.notice)}>{UI.beta[lang]}</p>
+      ) : null}
 
       {active === "bundle" ? (
         <div className="mx-auto mt-8 max-w-md">
@@ -141,6 +157,7 @@ export function ModularPlans({
             badge={BUNDLE_SAVING[lang]}
             isCurrent={Boolean(current?.bundle)}
             pending={pendingKey === "bundle"}
+            comingSoon={unavailable}
             onSelect={onSelect}
           />
         </div>
@@ -162,6 +179,7 @@ export function ModularPlans({
               badge={tier.popular ? UI.popular[lang] : undefined}
               isCurrent={current ? !current.bundle && current[active] === tier.id : false}
               pending={pendingKey === planKey(active, tier.id)}
+              comingSoon={unavailable}
               onSelect={onSelect}
             />
           ))}
@@ -180,6 +198,7 @@ function PlanCard({
   badge,
   isCurrent,
   pending,
+  comingSoon = false,
   onSelect,
 }: {
   module: ModuleId;
@@ -190,6 +209,7 @@ function PlanCard({
   badge?: string;
   isCurrent: boolean;
   pending: boolean;
+  comingSoon?: boolean;
   onSelect: (key: string) => void;
 }) {
   const th = THEMES[theme];
@@ -224,22 +244,24 @@ function PlanCard({
           <span className={cn("text-sm", th.faint)}>{UI.perMonth[lang]}</span>
         </div>
         <p className={cn("mt-2 text-xs", th.faint)}>{UI.billed[lang]}</p>
-        <p className={cn("mt-1 text-xs", th.faint)}>{UI.promo[lang]}</p>
+        {comingSoon ? null : <p className={cn("mt-1 text-xs", th.faint)}>{UI.promo[lang]}</p>}
 
         <button
           type="button"
-          disabled={isCurrent || pending}
+          disabled={comingSoon || isCurrent || pending}
           aria-current={isCurrent ? "true" : undefined}
-          onClick={() => onSelect(key)}
+          onClick={() => {
+            if (!comingSoon) onSelect(key);
+          }}
           className={cn(
-            "mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-200 active:scale-[0.98] disabled:cursor-default",
-            isCurrent ? th.btnCurrent : hot ? th.btnPrimary : th.btnSecondary,
-            !isCurrent && "disabled:opacity-60",
+            "mt-6 inline-flex w-full items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-semibold transition-all duration-200 active:scale-[0.98] disabled:cursor-not-allowed",
+            comingSoon ? th.btnSoon : isCurrent ? th.btnCurrent : hot ? th.btnPrimary : th.btnSecondary,
+            !isCurrent && !comingSoon && "disabled:opacity-60",
           )}
         >
-          {pending ? <Loader2 className="size-4 animate-spin" /> : isCurrent ? <Check className="size-4" strokeWidth={2.5} /> : null}
-          {isCurrent ? UI.current[lang] : `${UI.choose[lang]} ${tier.name}`}
-          {!isCurrent && !pending ? <ArrowRight className="size-4" strokeWidth={2} /> : null}
+          {comingSoon ? null : pending ? <Loader2 className="size-4 animate-spin" /> : isCurrent ? <Check className="size-4" strokeWidth={2.5} /> : null}
+          {comingSoon ? UI.soon[lang] : isCurrent ? UI.current[lang] : `${UI.choose[lang]} ${tier.name}`}
+          {!comingSoon && !isCurrent && !pending ? <ArrowRight className="size-4" strokeWidth={2} /> : null}
         </button>
 
         <ul className={cn("mt-7 grid gap-3 border-t pt-6 text-sm", th.divider)}>
