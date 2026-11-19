@@ -127,6 +127,8 @@ export async function POST(request: NextRequest) {
   try {
     const ids = priceIds(data);
     if (event === "transaction.completed") {
+      // 100% промокод завершает транзакцию с total = 0. Сумму оплаты не читаем:
+      // кредиты берутся только из каталога по price_id.
       for (const priceId of ids) {
         const pack = creditPackByPriceId(priceId);
         if (pack) {

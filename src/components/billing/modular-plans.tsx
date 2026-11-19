@@ -27,6 +27,7 @@ const UI = {
   choose: { ru: "Выбрать", en: "Choose" },
   current: { ru: "Текущий тариф", en: "Current plan" },
   billed: { ru: "Оплата каждый месяц, отмена в любой момент", en: "Billed monthly, cancel any time" },
+  promo: { ru: "Есть промокод? Введите его на этапе оплаты.", en: "Have a promo code? Enter it at checkout." },
   allIn: { ru: "Всё включено", en: "All-in-one" },
 } as const;
 
@@ -223,6 +224,7 @@ function PlanCard({
           <span className={cn("text-sm", th.faint)}>{UI.perMonth[lang]}</span>
         </div>
         <p className={cn("mt-2 text-xs", th.faint)}>{UI.billed[lang]}</p>
+        <p className={cn("mt-1 text-xs", th.faint)}>{UI.promo[lang]}</p>
 
         <button
           type="button"
