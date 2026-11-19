@@ -8,10 +8,17 @@ function paddlePrice(serverValue: string | undefined, publicValue: string | unde
   return value || placeholder;
 }
 export const PADDLE_CREDIT_PACKS = [
+  { credits: 1000, usd: 10, priceId: paddlePrice(undefined, process.env.NEXT_PUBLIC_PADDLE_PRICE_TOPUP_1000, "NEXT_PUBLIC_PADDLE_PRICE_TOPUP_1000") },
+  { credits: 5000, usd: 45, priceId: paddlePrice(undefined, process.env.NEXT_PUBLIC_PADDLE_PRICE_TOPUP_5000, "NEXT_PUBLIC_PADDLE_PRICE_TOPUP_5000") },
+  { credits: 15000, usd: 120, priceId: paddlePrice(undefined, process.env.NEXT_PUBLIC_PADDLE_PRICE_TOPUP_15000, "NEXT_PUBLIC_PADDLE_PRICE_TOPUP_15000") },
+];
+
+/** Старые заглушки пакетов, если разовая цена ещё не переведена на новый Price ID. */
+const LEGACY_CREDIT_PACKS = [
   { credits: 1000, usd: 10, priceId: "pri_credits_1000" },
   { credits: 5000, usd: 45, priceId: "pri_credits_5000" },
   { credits: 15000, usd: 120, priceId: "pri_credits_15000" },
-] as const;
+];
 
 export const PADDLE_CREDIT_PRICE_IDS: Record<number, string> = Object.fromEntries(
   PADDLE_CREDIT_PACKS.map((pack) => [pack.credits, pack.priceId]),
@@ -68,7 +75,11 @@ export const PADDLE_PLANS: Record<string, PaddlePlan> = {
 };
 
 export function creditPackByPriceId(priceId: string): { credits: number; usd: number } | null {
-  return PADDLE_CREDIT_PACKS.find((pack) => pack.priceId === priceId) ?? null;
+  return (
+    PADDLE_CREDIT_PACKS.find((pack) => pack.priceId === priceId) ??
+    LEGACY_CREDIT_PACKS.find((pack) => pack.priceId === priceId) ??
+    null
+  );
 }
 
 /** Старые цены AI-Агентов. Продление по ним начисляет прежние SC, пока подписка не переведена на новую цену. */

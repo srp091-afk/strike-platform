@@ -132,6 +132,7 @@ export async function POST(request: NextRequest) {
       for (const priceId of ids) {
         const pack = creditPackByPriceId(priceId);
         if (pack) {
+          // Разовый пакет: только strike_credits. Уровень тарифа не меняется.
           await grantCredits(userId, orderId, pack.credits, pack.usd, "Top-up", "topup");
           continue;
         }

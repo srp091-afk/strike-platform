@@ -8,7 +8,7 @@ import { useRouter } from "next/navigation";
 import { toast } from "@/components/ui/toaster";
 import { ConsentCheckbox } from "@/components/consent-checkbox";
 import { BillingPlans } from "@/components/dashboard/billing-plans";
-import { formatSc, TOP_UPS, tierLabel } from "@/lib/billing-catalog";
+import { formatSc, TOP_UPS, tierLabel, type TopUp } from "@/lib/billing-catalog";
 import { openCustomerPortal } from "@/lib/lemon-client";
 import { PADDLE_CREDIT_PRICE_IDS } from "@/lib/paddle-catalog";
 import { loadPaddle, onPaddleCheckoutCompleted, openPaddleCheckout } from "@/lib/paddle-client";
@@ -105,15 +105,15 @@ export function BillingView({ data }: { data: BillingData }) {
     { label: "Сайты", tier: data.tiers.sites },
   ];
 
-  /** Оверлей Paddle на Price ID выбранного пакета. userId уходит в customData вебхука. */
-  async function payByCard() {
+  /** Оверлей Paddle на Price ID пакета. userId уходит в customData вебхука. */
+  async function payByCard(pack: TopUp = selected) {
     if (paying) return;
     if (!agreed) {
       setConsentMissing(true);
       return;
     }
-    const priceId = PADDLE_CREDIT_PRICE_IDS[selected.credits];
-    if (!priceId) {
+    const priceId = PADDLE_CREDIT_PRICE_IDS[pack.credits];
+    if (!priceId || !priceId.startsWith("pri_")) {
       toast.error("Для этого пакета не задан Price ID Paddle.");
       return;
     }
@@ -234,7 +234,10 @@ export function BillingView({ data }: { data: BillingData }) {
                     type="button"
                     role="radio"
                     aria-checked={active}
-                    onClick={() => setTopUpIndex(index)}
+                    onClick={() => {
+                      setTopUpIndex(index);
+                      void payByCard(pack);
+                    }}
                     className={cn(
                       "rounded-2xl border bg-[#ffffff] p-4 text-left transition-colors",
                       active ? "border-strike ring-1 ring-strike" : "border-gray-200 hover:border-rose-300 hover:bg-rose-50/40",
@@ -248,19 +251,15 @@ export function BillingView({ data }: { data: BillingData }) {
               })}
             </div>
 
-            <div
-              role="radiogroup"
-              aria-label="Метод оплаты"
-              className={cn("mt-5 grid gap-3", CRYPTO_CHECKOUT_ENABLED && "sm:grid-cols-2")}
-            >
-              <MethodButton
-                active={method === "card"}
-                onClick={() => setMethod("card")}
-                icon={<CreditCard className="size-5" strokeWidth={1.75} />}
-                title="Bank Card"
-                hint={<span className="text-xs text-gray-500">Visa · Mastercard</span>}
-              />
-              {CRYPTO_CHECKOUT_ENABLED ? (
+            {CRYPTO_CHECKOUT_ENABLED ? (
+              <div role="radiogroup" aria-label="Метод оплаты" className="mt-5 grid gap-3 sm:grid-cols-2">
+                <MethodButton
+                  active={method === "card"}
+                  onClick={() => setMethod("card")}
+                  icon={<CreditCard className="size-5" strokeWidth={1.75} />}
+                  title="Bank Card"
+                  hint={<span className="text-xs text-gray-500">Visa · Mastercard</span>}
+                />
                 <MethodButton
                   active={method === "crypto"}
                   onClick={() => setMethod("crypto")}
@@ -268,8 +267,8 @@ export function BillingView({ data }: { data: BillingData }) {
                   title="Crypto (USDT / BTC)"
                   hint={<span className="text-xs text-gray-500">TRC-20 · BTC</span>}
                 />
-              ) : null}
-            </div>
+              </div>
+            ) : null}
 
             {method === "card" ? (
               <ConsentCheckbox
