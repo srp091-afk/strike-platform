@@ -94,6 +94,30 @@ export async function deleteContent(sid: string) {
   }).catch(() => undefined);
 }
 
+/** Ответ внутри 24-часового окна: обычный текст, без шаблона. */
+export async function sendTextMessage(input: { phoneDigits: string; body: string; from?: string }) {
+  const keys = credentials();
+  const header = authorization();
+  const sender = process.env.TWILIO_PHONE_NUMBER?.trim() ?? "";
+  const from = input.from?.startsWith("whatsapp:") ? input.from : sender ? `whatsapp:${sender}` : "";
+  if (!keys || !header) return { error: "Задайте TWILIO_ACCOUNT_SID и TWILIO_AUTH_TOKEN." } as const;
+  if (!from) return { error: "Задайте TWILIO_PHONE_NUMBER." } as const;
+
+  const form = new URLSearchParams({
+    To: `whatsapp:+${input.phoneDigits}`,
+    From: from,
+    Body: input.body.slice(0, 1600),
+  });
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${keys.accountSid}/Messages.json`, {
+    method: "POST",
+    headers: { Authorization: header, "Content-Type": "application/x-www-form-urlencoded" },
+    body: form.toString(),
+    signal: AbortSignal.timeout(20_000),
+  });
+  if (!response.ok) return { error: await readError(response) } as const;
+  return { ok: true } as const;
+}
+
 /** Первое сообщение лиду по одобренному шаблону WhatsApp. */
 export async function sendTemplateMessage(input: { phoneDigits: string; contentSid: string; variables: Record<string, string> }) {
   const keys = credentials();
