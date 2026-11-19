@@ -1,10 +1,18 @@
 "use client";
 
-import { initializePaddle, type Paddle } from "@paddle/paddle-js";
+import { initializePaddle, type CheckoutSettings, type Paddle } from "@paddle/paddle-js";
 
 import { currentUser } from "@/lib/lemon-client";
 
 export type PaddleCheckoutResult = "opened" | "login" | "missing";
+
+/** Светлый одностраничный оверлей. Цвет кнопок Paddle.js не принимает: его задаёт primary_checkout_color в аккаунте. */
+const CHECKOUT_SETTINGS = {
+  displayMode: "overlay",
+  theme: "light",
+  variant: "one-page",
+  locale: "ru",
+} as const satisfies CheckoutSettings;
 
 const completedListeners = new Set<() => void>();
 let paddlePromise: Promise<Paddle | undefined> | null = null;
@@ -17,6 +25,7 @@ export function loadPaddle(): Promise<Paddle | undefined> {
     paddlePromise = initializePaddle({
       token,
       environment: process.env.NEXT_PUBLIC_PADDLE_ENVIRONMENT === "production" ? "production" : "sandbox",
+      checkout: { settings: CHECKOUT_SETTINGS },
       eventCallback(event) {
         if (event.name === "checkout.completed") {
           completedListeners.forEach((listener) => listener());
@@ -47,7 +56,7 @@ export async function openPaddleCheckout(priceId: string): Promise<PaddleCheckou
   paddle.Checkout.open({
     items: [{ priceId, quantity: 1 }],
     customData: { userId: user.id },
-    settings: { displayMode: "overlay", theme: "light", locale: "ru" },
+    settings: CHECKOUT_SETTINGS,
   });
   return "opened";
 }
