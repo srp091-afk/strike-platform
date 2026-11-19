@@ -80,13 +80,23 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
     admin.from("landings").select("id", { count: "exact", head: true }).eq("user_id", userId),
     admin
       .from("billing_transactions")
-      .select("id, created_at, description, method, amount_usd, status")
+      .select("id, created_at, description, method, payment_method, amount, amount_usd, status")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(20),
   ]);
 
-  const failure = profile.error ?? transactions.error;
+  const failure = profile.error ?? (transactions.error && !/payment_method|amount/.test(transactions.error.message) ? transactions.error : null);
+  const rows = transactions.error
+    ? (
+        await admin
+          .from("billing_transactions")
+          .select("id, created_at, description, method, amount_usd, status")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(20)
+      ).data
+    : transactions.data;
   if (failure) throw new Error(failure.message);
 
   return {
@@ -109,13 +119,26 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
       sites: sites.count ?? 0,
     },
     hasSubscription: Boolean(paddleCustomerId || paddleSubscriptionId),
-    transactions: (transactions.data ?? []).map((row) => ({
-      id: String(row.id),
-      createdAt: String(row.created_at),
-      description: String(row.description),
-      method: String(row.method),
-      amountUsd: Number(row.amount_usd),
-      status: String(row.status),
-    })),
+    transactions: (rows ?? []).map((row) => {
+      const record = row as {
+        id: unknown;
+        created_at: unknown;
+        description: unknown;
+        method: unknown;
+        payment_method?: unknown;
+        amount?: unknown;
+        amount_usd: unknown;
+        status: unknown;
+      };
+      const paidAmount = record.amount ?? record.amount_usd;
+      return {
+        id: String(record.id),
+        createdAt: String(record.created_at),
+        description: String(record.description),
+        method: String(record.payment_method || record.method),
+        amountUsd: Number(paidAmount ?? 0),
+        status: String(record.status).toLowerCase(),
+      };
+    }),
   };
 }

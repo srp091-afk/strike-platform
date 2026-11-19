@@ -45,6 +45,12 @@ function formatUsd(value: number) {
   return `$${value.toFixed(2)}`;
 }
 
+function paymentLabel(method: string) {
+  if (method === "crypto") return "Crypto";
+  if (!method || method === "card") return "Card";
+  return method;
+}
+
 /** Подсветка границы и фона следом за курсором (как в pricing). */
 function trackPointer(event: MouseEvent<HTMLElement>) {
   const box = event.currentTarget.getBoundingClientRect();
@@ -383,7 +389,7 @@ export function BillingView({ data }: { data: BillingData }) {
                   {data.transactions.length === 0 ? (
                     <tr>
                       <td colSpan={5} className="py-8 text-center text-zinc-500">
-                        Транзакций пока нет.
+                        История транзакций пока пуста
                       </td>
                     </tr>
                   ) : null}
@@ -393,7 +399,7 @@ export function BillingView({ data }: { data: BillingData }) {
                       <tr key={tx.id}>
                         <td className="py-3.5 text-zinc-400">{formatDate(tx.createdAt)}</td>
                         <td className="py-3.5 font-medium text-white">{tx.description}</td>
-                        <td className="py-3.5 text-zinc-400">{tx.method === "crypto" ? "Crypto" : "Card"}</td>
+                        <td className="py-3.5 text-zinc-400">{paymentLabel(tx.method)}</td>
                         <td className="py-3.5 text-right tabular-nums text-white">{formatUsd(tx.amountUsd)}</td>
                         <td className="py-3.5 text-right">
                           <span

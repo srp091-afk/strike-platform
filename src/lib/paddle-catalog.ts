@@ -3,6 +3,9 @@
  * Старую цену в Paddle нельзя изменить, поэтому AI-Агенты читают новые ID из env.
  * Чекаут в браузере видит только NEXT_PUBLIC_*, вебхук — оба имени.
  */
+
+import { formatSc } from "@/lib/billing-catalog";
+
 function paddlePrice(serverValue: string | undefined, publicValue: string | undefined, placeholder: string) {
   const value = (publicValue || serverValue || "").trim();
   return value || placeholder;
@@ -95,4 +98,34 @@ export function planByPriceId(priceId: string): PaddlePlan | null {
     LEGACY_AGENT_PLANS.find((plan) => plan.priceId === priceId) ??
     null
   );
+}
+
+const PLAN_LABELS: Record<string, string> = {
+  agents_start: "STRIKE Start",
+  agents_pro: "STRIKE Pro",
+  agents_agency: "STRIKE Agency",
+  smm_start: "STRIKE SMM Start",
+  smm_creator: "STRIKE SMM Creator",
+  smm_agency: "STRIKE SMM Agency",
+  ads_start: "STRIKE Ads Start",
+  ads_pro: "STRIKE Ads Pro",
+  ads_agency: "STRIKE Ads Agency",
+  sites_basic: "STRIKE Sites Basic",
+  sites_pro: "STRIKE Sites Pro",
+  bundle: "STRIKE Business",
+};
+
+const LEGACY_LABELS: Record<string, string> = {
+  pri_agents_start: "STRIKE Start",
+  pri_agents_pro: "STRIKE Pro",
+  pri_agents_agency: "STRIKE Agency",
+};
+
+/** Название строки в истории оплат: тариф или пакет кредитов. */
+export function purchaseLabel(priceId: string): string | null {
+  const pack = creditPackByPriceId(priceId);
+  if (pack) return `+ ${formatSc(pack.credits)} SC`;
+  const key = Object.entries(PADDLE_PLANS).find(([, plan]) => plan.priceId === priceId)?.[0];
+  if (key && PLAN_LABELS[key]) return PLAN_LABELS[key];
+  return LEGACY_LABELS[priceId] ?? null;
 }

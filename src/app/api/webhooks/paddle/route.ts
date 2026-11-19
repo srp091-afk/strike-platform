@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import type { NextRequest } from "next/server";
 
-import { creditPackByPriceId, planByPriceId, type PaddlePlan } from "@/lib/paddle-catalog";
+import { creditPackByPriceId, planByPriceId, purchaseLabel, type PaddlePlan } from "@/lib/paddle-catalog";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -61,16 +61,40 @@ function userIdFrom(data: Json) {
   return text(custom.userId) || text(custom.user_id);
 }
 
-async function grantCredits(userId: string, orderId: string, credits: number, usd: number, description: string, kind: "topup" | "subscription") {
+async function recordPayment(
+  userId: string,
+  orderId: string,
+  credits: number,
+  description: string,
+  amount: number,
+  currency: string,
+  method: string,
+  kind: "topup" | "subscription",
+) {
   const admin = createSupabaseAdminClient();
-  const { error } = await admin.rpc("billing_apply_order", {
+  const args = {
     p_user_id: userId,
     p_order_id: orderId,
     p_kind: kind,
     p_description: description,
-    p_amount: usd,
-  });
-  if (error) throw new Error(error.message);
+    p_amount: amount,
+    p_method: method,
+    p_currency: currency,
+  };
+  const full = await admin.rpc("billing_apply_order", args);
+  if (full.error && /billing_apply_order|schema cache|p_method|p_currency/i.test(full.error.message)) {
+    const basic = await admin.rpc("billing_apply_order", {
+      p_user_id: userId,
+      p_order_id: orderId,
+      p_kind: kind,
+      p_description: description,
+      p_amount: amount,
+    });
+    if (basic.error) throw new Error(basic.error.message);
+    await admin.from("billing_transactions").update({ method }).eq("lemon_order_id", orderId);
+  } else if (full.error) {
+    throw new Error(full.error.message);
+  }
   if (credits <= 0) return;
   const { error: grantError } = await admin.rpc("grant_strike_credits", {
     p_user_id: userId,
@@ -78,6 +102,35 @@ async function grantCredits(userId: string, orderId: string, credits: number, us
     p_credits: credits,
   });
   if (grantError) throw new Error(grantError.message);
+}
+
+function money(raw: string) {
+  const numeric = Number(raw);
+  if (!Number.isFinite(numeric)) return 0;
+  const amount = raw.includes(".") ? numeric : numeric / 100;
+  return Math.round(amount * 100) / 100;
+}
+
+/** Фактически списанная сумма. Промокод на 100% даёт 0, кредиты при этом всё равно начисляются. */
+function chargedAmount(data: Json) {
+  const totals = asRecord(asRecord(data.details).totals);
+  const currency = text(data.currency_code) || text(totals.currency_code) || "USD";
+  const raw = text(totals.grand_total) || text(totals.total) || "0";
+  return { amount: money(raw), currency };
+}
+
+function paymentMethod(data: Json, amount: number) {
+  if (amount === 0) return "Promo";
+  const payments = Array.isArray(data.payments) ? data.payments : [];
+  const details = asRecord(asRecord(payments[0]).method_details);
+  const type = text(details.type) || text(asRecord(payments[0]).payment_method_type);
+  const labels: Record<string, string> = {
+    card: "Card",
+    apple_pay: "Apple Pay",
+    google_pay: "Google Pay",
+    paypal: "PayPal",
+  };
+  return labels[type] ?? (type ? type : "Card");
 }
 
 function paddleId(value: unknown, prefix: string) {
@@ -152,19 +205,39 @@ export async function POST(request: NextRequest) {
     await savePaddleIdentity(userId, data, event);
     const ids = priceIds(data);
     if (event === "transaction.completed") {
-      // 100% промокод завершает транзакцию с total = 0. Сумму оплаты не читаем:
-      // кредиты берутся только из каталога по price_id.
+      const { amount, currency } = chargedAmount(data);
+      const method = paymentMethod(data, amount);
+      const labels: string[] = [];
+      let credits = 0;
+      let sawPack = false;
+      let sawPlan = false;
       for (const priceId of ids) {
+        const label = purchaseLabel(priceId);
         const pack = creditPackByPriceId(priceId);
         if (pack) {
-          // Разовый пакет: только strike_credits. Уровень тарифа не меняется.
-          await grantCredits(userId, orderId, pack.credits, pack.usd, "Top-up", "topup");
+          sawPack = true;
+          labels.push(label ?? "STRIKE Credits");
+          credits += pack.credits;
           continue;
         }
         const plan = planByPriceId(priceId);
         if (plan) {
-          await grantCredits(userId, orderId, plan.credits, plan.usd, "Subscription", "subscription");
+          sawPlan = true;
+          labels.push(label ?? "STRIKE");
+          credits += plan.credits;
         }
+      }
+      if (labels.length > 0) {
+        await recordPayment(
+          userId,
+          orderId,
+          credits,
+          labels.join(", "),
+          amount,
+          currency,
+          method,
+          sawPack && !sawPlan ? "topup" : "subscription",
+        );
       }
       return Response.json({ ok: true });
     }

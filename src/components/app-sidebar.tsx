@@ -163,8 +163,7 @@ function SidebarBody({
             key={item.href}
             item={item}
             pathname={pathname}
-            lockedHrefs={lockedHrefs}
-          collapsed={collapsed}
+            collapsed={collapsed}
             locked={lockedHrefs.includes(item.href)}
             onNavigate={onNavigate}
           />
