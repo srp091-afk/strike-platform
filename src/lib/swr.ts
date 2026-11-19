@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from "react";
 import { preload, type SWRConfiguration } from "swr";
 
+import { activeAccountHeader } from "@/lib/active-account";
+
 /** Общий кэш списков: повторный заход показывает прошлые данные, обновление идёт в фоне. */
 export const swrConfig: SWRConfiguration = {
   revalidateOnFocus: false,
@@ -31,7 +33,11 @@ export function preloadNavData(href: string) {
 }
 
 export async function jsonFetcher<T>(url: string): Promise<T> {
-  const response = await fetch(url, { credentials: "same-origin" });
+  const accountId = activeAccountHeader();
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    headers: accountId ? { "x-account-id": accountId } : undefined,
+  });
   const payload = (await response.json()) as T & { error?: string };
   if (!response.ok) {
     throw new Error(typeof payload.error === "string" && payload.error.trim() ? payload.error : "Не удалось загрузить данные.");

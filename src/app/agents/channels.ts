@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { readActiveChannels } from "@/lib/agent-models";
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getEffectiveUserId } from "@/lib/account-context";
 import {
   ensureGreenIncomingWebhook,
   getGreenAuthorizationCode,
@@ -27,7 +27,7 @@ function readGreenPair(instanceId: string, apiToken: string): GreenCredentials |
 
 async function agentInWorkspace(agentId: string) {
   const supabase = createSupabaseAdminClient();
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const { data, error } = await supabase
     .from("agents")
     .select("id")
@@ -184,7 +184,7 @@ export async function disconnectInstagram(agentId: string) {
   try {
     if (!(await agentInWorkspace(agentId))) return { ok: false as const, error: "Агент не найден." };
     const supabase = createSupabaseAdminClient();
-    const userId = await getAuthenticatedUserId();
+    const userId = await getEffectiveUserId();
     const { data } = await supabase
       .from("agents")
       .select("active_channels")
@@ -351,7 +351,7 @@ export async function disconnectTelegram(agentId: string) {
   if (!UUID_PATTERN.test(agentId)) return { ok: false as const, error: "Агент не найден." };
   try {
     const supabase = createSupabaseAdminClient();
-    const userId = await getAuthenticatedUserId();
+    const userId = await getEffectiveUserId();
     const { data, error: lookupError } = await supabase
       .from("agents")
       .select("tg_bot_token, telegram_bot_token")

@@ -66,6 +66,18 @@ export const getAuthenticatedUserId = cache(async () => {
     throw new Error(profileError.message);
   }
 
+  const email = user.email?.trim().toLowerCase() ?? "";
+  if (email) {
+    const { error: claimError } = await admin
+      .from("account_delegations")
+      .update({ delegate_id: user.id, updated_at: new Date().toISOString() })
+      .eq("delegate_email", email)
+      .is("delegate_id", null);
+    if (claimError && !/account_delegations/.test(claimError.message)) {
+      console.error("[delegations]", claimError.message);
+    }
+  }
+
   return user.id;
 });
 

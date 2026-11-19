@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { deniedStatus, getEffectiveUserId } from "@/lib/account-context";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { TWILIO_NOT_CONNECTED, twilioAccountForUser } from "@/lib/twilio-account";
 import { fetchApprovalStatus, type TemplateStatus } from "@/lib/twilio-content";
@@ -17,7 +17,7 @@ type TemplateRow = {
 export async function GET() {
   await connection();
   try {
-    const userId = await getAuthenticatedUserId();
+    const userId = await getEffectiveUserId();
     const twilio = await twilioAccountForUser(userId);
     if ("error" in twilio) return Response.json({ error: twilio.error }, { status: 500 });
     if (!twilio.account) return Response.json({ error: TWILIO_NOT_CONNECTED }, { status: 400 });
@@ -55,6 +55,6 @@ export async function GET() {
     return Response.json({ templates: data ?? [] }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Не удалось синхронизировать шаблоны.";
-    return Response.json({ error: message }, { status: message === "Нужно войти через Google." ? 401 : 500 });
+    return Response.json({ error: message }, { status: message === "Нужно войти через Google." ? 401 : deniedStatus(error) });
   }
 }

@@ -5,7 +5,7 @@ import { Api, TelegramClient } from "telegram";
 import { computeCheck } from "telegram/Password";
 import { StringSession } from "telegram/sessions";
 
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getEffectiveUserId } from "@/lib/account-context";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const UUID_PATTERN =
@@ -103,7 +103,7 @@ async function closeClient(client: TelegramClient) {
 
 async function agentInWorkspace(agentId: string) {
   const supabase = createSupabaseAdminClient();
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const { data, error } = await supabase
     .from("agents")
     .select("id, tg_bot_token, telegram_bot_token")

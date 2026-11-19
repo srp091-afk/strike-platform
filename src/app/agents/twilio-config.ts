@@ -1,6 +1,6 @@
 "use server";
 
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getEffectiveUserId } from "@/lib/account-context";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { verifyTwilioAccount } from "@/lib/twilio-content";
 
@@ -12,7 +12,7 @@ function phoneNumber(value: string) {
 }
 
 export async function readTwilioConfig() {
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("user_twilio_configs")
@@ -32,7 +32,7 @@ export async function readTwilioConfig() {
 }
 
 export async function saveTwilioConfig(input: { accountSid: string; authToken: string; whatsappNumber: string }) {
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const accountSid = input.accountSid.trim();
   const whatsappNumber = phoneNumber(input.whatsappNumber);
   const typedToken = input.authToken.trim();

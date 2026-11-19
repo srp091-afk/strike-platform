@@ -4,6 +4,10 @@ import { LogOut } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
+import { mutate } from "swr";
+
+import { switchAccount } from "@/app/settings/access-actions";
+import { setActiveAccountHeader, type ClientAccount } from "@/lib/active-account";
 import type { AccountProfile } from "@/lib/auth-user";
 import { createSupabaseBrowserClient } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
@@ -18,13 +22,26 @@ function initials(name: string, email: string) {
 }
 
 /** Профиль внизу сайдбара: аватар, имя и меню выхода. В свёрнутом сайдбаре остаётся только аватар. */
-export function AccountMenu({ account, collapsed = false }: { account: AccountProfile; collapsed?: boolean }) {
+export function AccountMenu({
+  account,
+  collapsed = false,
+  clients = [],
+  activeAccountId,
+}: {
+  account: AccountProfile;
+  collapsed?: boolean;
+  clients?: ClientAccount[];
+  activeAccountId?: string;
+}) {
   const router = useRouter();
   const rootRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [pending, setPending] = useState(false);
   const [avatarFailed, setAvatarFailed] = useState(false);
   const letters = initials(account.displayName, account.email);
+  const currentId = activeAccountId || account.id;
+  const currentClient = clients.find((client) => client.id === currentId) ?? null;
+  if (typeof window !== "undefined") setActiveAccountHeader(currentClient ? currentClient.id : "");
 
   useEffect(() => {
     if (!open) return;
@@ -44,9 +61,24 @@ export function AccountMenu({ account, collapsed = false }: { account: AccountPr
 
   async function signOut() {
     setPending(true);
+    await switchAccount(account.id);
     const supabase = createSupabaseBrowserClient();
     await supabase.auth.signOut();
     router.replace("/login");
+    router.refresh();
+  }
+
+  async function choose(accountId: string) {
+    setPending(true);
+    setActiveAccountHeader(accountId === account.id ? "" : accountId);
+    const result = await switchAccount(accountId);
+    if (!result.ok) {
+      setPending(false);
+      return;
+    }
+    await mutate(() => true);
+    setOpen(false);
+    setPending(false);
     router.refresh();
   }
 
@@ -79,7 +111,9 @@ export function AccountMenu({ account, collapsed = false }: { account: AccountPr
         {collapsed ? null : (
           <span className="min-w-0 flex-1">
             <span className="block truncate font-heading text-sm font-semibold text-gray-900">{account.displayName}</span>
-            <span className="block truncate text-xs text-gray-500">{account.email}</span>
+            <span className="block truncate text-xs text-gray-500">
+              {currentClient ? `Кабинет: ${currentClient.name}` : account.email}
+            </span>
           </span>
         )}
       </button>
@@ -92,6 +126,38 @@ export function AccountMenu({ account, collapsed = false }: { account: AccountPr
           )}
         >
           <p className="truncate px-2.5 py-2 text-xs text-gray-500">{account.email}</p>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={pending}
+            onClick={() => void choose(account.id)}
+            className={cn(
+              "flex w-full rounded-lg px-2.5 py-2 text-left text-sm font-medium hover:bg-gray-100",
+              currentClient ? "text-gray-700" : "text-gray-900",
+            )}
+          >
+            Мой аккаунт
+          </button>
+          {clients.length > 0 ? (
+            <div className="mt-1 border-t border-gray-100 pt-1">
+              <p className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-widest text-gray-400">Клиенты</p>
+              {clients.map((client) => (
+                <button
+                  key={client.id}
+                  type="button"
+                  role="menuitem"
+                  disabled={pending}
+                  onClick={() => void choose(client.id)}
+                  className={cn(
+                    "block w-full truncate rounded-lg px-2.5 py-2 text-left text-sm hover:bg-gray-100",
+                    client.id === currentId ? "font-semibold text-gray-900" : "text-gray-700",
+                  )}
+                >
+                  {client.name}
+                </button>
+              ))}
+            </div>
+          ) : null}
           <button
             type="button"
             role="menuitem"

@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { deniedStatus, getEffectiveUserId } from "@/lib/account-context";
 import { getCampaign, getRandomLog } from "@/lib/outreach";
 import { generateOutreachMessage } from "@/lib/outreach-generate";
 import { OUTREACH_CHANNELS } from "@/lib/outreach-types";
@@ -13,7 +13,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   await connection();
   try {
     const { id } = await params;
-    const userId = await getAuthenticatedUserId();
+    const userId = await getEffectiveUserId();
     const campaign = await getCampaign(userId, id);
     if (!campaign) return Response.json({ error: "Кампания не найдена." }, { status: 404 });
     if (!campaign.agent_id || !campaign.channel_type) return Response.json({ error: "Сначала выберите агента и канал." }, { status: 400 });
@@ -47,6 +47,6 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     });
     return Response.json({ contact: first.contact_data, ...result }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Не удалось сгенерировать тест." }, { status: 500 });
+    return Response.json({ error: error instanceof Error ? error.message : "Не удалось сгенерировать тест." }, { status: deniedStatus(error) });
   }
 }

@@ -1,13 +1,13 @@
 import "server-only";
 
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getEffectiveUserId } from "@/lib/account-context";
 import { isBotMarker, readBotFlags, writeBotFlag } from "@/lib/bot-state";
 import type { ChatMessage, ChatProvider, ChatThread } from "@/lib/chat-types";
 import { integrationProviders } from "@/lib/integration-catalog";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export async function listConversations(agentId?: string | null): Promise<ChatThread[]> {
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   if (!userId) return [];
 
   const supabase = createSupabaseAdminClient();
@@ -41,7 +41,7 @@ export async function listConversations(agentId?: string | null): Promise<ChatTh
 
 export async function listMessages(conversationId: string): Promise<ChatMessage[]> {
   if (!isUuid(conversationId)) return [];
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   if (!userId) return [];
 
   const supabase = createSupabaseAdminClient();
@@ -77,7 +77,7 @@ export async function listMessages(conversationId: string): Promise<ChatMessage[
 
 export async function deleteConversation(conversationId: string) {
   if (!isUuid(conversationId)) return { ok: false as const, error: "Диалог не найден." };
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   if (!userId) return { ok: false as const, error: "Рабочее пространство не найдено." };
 
   const supabase = createSupabaseAdminClient();
@@ -121,7 +121,7 @@ export async function deleteConversation(conversationId: string) {
 
 export async function setConversationBotActive(conversationId: string, active: boolean) {
   if (!isUuid(conversationId)) return { ok: false as const, error: "Диалог не найден." };
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   if (!userId) return { ok: false as const, error: "Рабочее пространство не найдено." };
 
   const supabase = createSupabaseAdminClient();

@@ -12,7 +12,7 @@ import {
   type ActiveChannels,
   type HandoffDuration,
 } from "@/lib/agent-models";
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getEffectiveUserId } from "@/lib/account-context";
 import { ensureGreenIncomingWebhook, getGreenPhone } from "@/lib/green-api";
 import { leadEmailSettingsSchema } from "@/lib/lead-notify";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -189,7 +189,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
 
   try {
     const supabase = createSupabaseAdminClient();
-    const userId = await getAuthenticatedUserId();
+    const userId = await getEffectiveUserId();
     const manualPhone = /^\d{8,15}$/.test(fields.waPhoneNumber) ? fields.waPhoneNumber : null;
     const waPhoneNumber = (await readWhatsAppPhone(fields.waInstanceId, fields.waApiToken)) || manualPhone;
     const payload = {
@@ -321,7 +321,7 @@ export async function deleteAgent(formData: FormData) {
   }
 
   const supabase = createSupabaseAdminClient();
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const { error } = await supabase.from("agents").delete().eq("id", id).eq("user_id", userId);
 
   if (error) {
@@ -339,7 +339,7 @@ export async function reorderAgents(ids: string[]): Promise<{ ok: boolean; error
   }
 
   const supabase = createSupabaseAdminClient();
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const results = await Promise.all(
     ids.map((id, index) => supabase.from("agents").update({ order_index: index }).eq("id", id).eq("user_id", userId)),
   );

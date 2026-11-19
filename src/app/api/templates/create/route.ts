@@ -1,6 +1,6 @@
 import { connection, type NextRequest } from "next/server";
 
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { deniedStatus, getEffectiveUserId } from "@/lib/account-context";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { TWILIO_NOT_CONNECTED, twilioAccountForUser } from "@/lib/twilio-account";
 import { createTextContent, deleteContent, submitWhatsAppApproval, templateVariables } from "@/lib/twilio-content";
@@ -14,14 +14,14 @@ function text(value: unknown, max: number) {
 
 function fail(error: unknown, status = 500) {
   const message = error instanceof Error ? error.message : "Не удалось создать шаблон.";
-  return Response.json({ error: message }, { status: message === "Нужно войти через Google." ? 401 : status });
+  return Response.json({ error: message }, { status: message === "Нужно войти через Google." ? 401 : deniedStatus(error, status) });
 }
 
 /** Создаёт twilio/text, отправляет его на модерацию WhatsApp и сохраняет сессию шаблона. */
 export async function POST(request: NextRequest) {
   await connection();
   try {
-    const userId = await getAuthenticatedUserId();
+    const userId = await getEffectiveUserId();
     let body: unknown;
     try {
       body = await request.json();

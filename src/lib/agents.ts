@@ -15,7 +15,7 @@ import {
   readWidgetSettings,
   type AgentRecord,
 } from "@/lib/agent-models";
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getEffectiveUserId } from "@/lib/account-context";
 import type { ChatAgentOption } from "@/lib/chat-types";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -85,7 +85,7 @@ async function createWorkspaceUser(
 /** Slim list for chat filters / nav previews — no prompts or channel secrets. */
 export async function listChatAgents(): Promise<ChatAgentOption[]> {
   const supabase = createSupabaseAdminClient();
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const primary = await supabase
     .from("agents")
     .select("id, name, is_active, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_phone, created_at")
@@ -125,7 +125,7 @@ export async function listChatAgents(): Promise<ChatAgentOption[]> {
 
 export async function listAgents(): Promise<AgentRecord[]> {
   const supabase = createSupabaseAdminClient();
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const withPosition = await supabase
     .from("agents")
     .select("id, name, system_prompt, model, temperature, is_active, active_channels, channel_delays, human_handoff_duration, limit_agent_messages, limit_client_messages, limit_total_messages, split_messages, followup_enabled, followup_interval_hours, followup_max_count, followup_template, wa_instance_id, wa_api_token, wa_phone_number, wa_is_active, tg_bot_username, tg_is_active, telegram_type, telegram_bot_token, telegram_phone, telegram_api_id, telegram_api_hash, telegram_session, telegram_chat_id, widget_position, widget_agent_name, widget_operator_name, widget_auto_open, widget_open_delay, widget_color_header_bg, widget_color_header_text, widget_greeting, widget_avatar_agent, widget_avatar_operator, created_at")

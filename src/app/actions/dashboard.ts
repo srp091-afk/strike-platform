@@ -1,6 +1,6 @@
 "use server";
 
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getEffectiveUserId } from "@/lib/account-context";
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -36,7 +36,7 @@ function readInsight(value: unknown): PulseInsight | null {
 
 export async function generateAIPulseReport(): Promise<PulseResult> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const userId = await getEffectiveUserId();
     const supabase = createSupabaseAdminClient();
     const { data, error } = await supabase
       .from("messages")

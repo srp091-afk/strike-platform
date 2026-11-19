@@ -3,7 +3,7 @@
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getEffectiveUserId } from "@/lib/account-context";
 import { getCampaign, listAgentOptions, replanCampaignQueue } from "@/lib/outreach";
 import { outreachQueueConfigured } from "@/lib/outreach-queue";
 import { isAutomaticTimeZone, readTimeZone, readWorkTime } from "@/lib/outreach-schedule";
@@ -43,7 +43,7 @@ async function nextDraftName(userId: string) {
 
 /** «+ Новая кампания»: создаёт черновик в БД и переводит на рабочую область кампании. */
 export async function createCampaignDraft(timezoneInput?: string) {
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const supabase = createSupabaseAdminClient();
   const name = await nextDraftName(userId);
   const provided = typeof timezoneInput === "string" && timezoneInput.trim() && readTimeZone(timezoneInput) === timezoneInput.trim();
@@ -81,7 +81,7 @@ export async function createCampaignDraft(timezoneInput?: string) {
 
 /** Заменяет автоматический UTC на пояс браузера. Явный выбор пользователя не трогает. */
 export async function adoptCampaignTimeZone(id: string, timezoneInput: string): Promise<Result & { changed?: boolean }> {
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const zone = readTimeZone(timezoneInput);
   if (!timezoneInput?.trim() || zone !== timezoneInput.trim()) return fail("Неизвестный часовой пояс.");
   const campaign = await getCampaign(userId, id);
@@ -146,7 +146,7 @@ export type CampaignSettingsInput = {
 };
 
 export async function saveCampaignSettings(id: string, input: CampaignSettingsInput): Promise<Result> {
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const campaign = await getCampaign(userId, id);
   if (!campaign) return fail("Кампания не найдена.");
   if (campaign.status === "active") return fail("Поставьте кампанию на паузу, чтобы изменить настройки.");
@@ -235,7 +235,7 @@ export type ImportChunk = {
 };
 
 export async function importContacts(id: string, chunk: ImportChunk): Promise<Result> {
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const campaign = await getCampaign(userId, id);
   if (!campaign) return fail("Кампания не найдена.");
   if (campaign.status === "active") return fail("Остановите кампанию перед заменой базы.");
@@ -283,7 +283,7 @@ export async function importContacts(id: string, chunk: ImportChunk): Promise<Re
 }
 
 export async function controlCampaign(id: string, action: "start" | "pause" | "stop"): Promise<Result> {
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const campaign = await getCampaign(userId, id);
   if (!campaign) return fail("Кампания не найдена.");
   const supabase = createSupabaseAdminClient();
@@ -351,7 +351,7 @@ export async function controlCampaign(id: string, action: "start" | "pause" | "s
 }
 
 export async function deleteCampaign(id: string): Promise<Result> {
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const { error } = await createSupabaseAdminClient().from("outreach_campaigns").delete().eq("id", id).eq("user_id", userId);
   if (error) return fail(error.message);
   revalidatePath("/leads");
@@ -363,7 +363,7 @@ const bad = (error: string) => ({ ok: false as const, error });
 
 export async function generateOutreachInstruction(agentId: string): Promise<{ ok: true; instruction: string } | { ok: false; error: string }> {
   try {
-    const userId = await getAuthenticatedUserId();
+    const userId = await getEffectiveUserId();
     if (!agentId) return bad("Сначала выберите агента.");
     const { data: agent } = await createSupabaseAdminClient()
       .from("agents")

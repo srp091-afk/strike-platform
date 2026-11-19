@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getEffectiveUserId } from "@/lib/account-context";
 import {
   readWidgetAvatar,
   readWidgetColor,
@@ -41,7 +41,7 @@ const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 
 async function agentInWorkspace(agentId: string) {
   const supabase = createSupabaseAdminClient();
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const { data, error } = await supabase
     .from("agents")
     .select("id")

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { OutreachWorkspace } from "@/components/outreach/outreach-workspace";
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getEffectiveUserId } from "@/lib/account-context";
 import { listAgentOptions, loadCampaignState } from "@/lib/outreach";
 
 export const metadata: Metadata = {
@@ -27,7 +27,7 @@ async function CampaignContent({ params }: { params: Promise<{ id: string }> }) 
   let agents: Awaited<ReturnType<typeof listAgentOptions>> = [];
   let error: string | null = null;
   try {
-    const userId = await getAuthenticatedUserId();
+    const userId = await getEffectiveUserId();
     [state, agents] = await Promise.all([loadCampaignState(userId, id), listAgentOptions()]);
   } catch (caught) {
     error = caught instanceof Error ? caught.message : "Не удалось загрузить кампанию.";

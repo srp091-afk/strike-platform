@@ -1,6 +1,6 @@
 import { connection } from "next/server";
 
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { deniedStatus, getEffectiveUserId } from "@/lib/account-context";
 import { getCampaign, listLogs } from "@/lib/outreach";
 
 function cell(value: string) {
@@ -14,7 +14,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   await connection();
   try {
     const { id } = await params;
-    const userId = await getAuthenticatedUserId();
+    const userId = await getEffectiveUserId();
     const campaign = await getCampaign(userId, id);
     if (!campaign) return Response.json({ error: "Кампания не найдена." }, { status: 404 });
 
@@ -41,6 +41,6 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
       },
     });
   } catch (error) {
-    return Response.json({ error: error instanceof Error ? error.message : "Не удалось экспортировать." }, { status: 500 });
+    return Response.json({ error: error instanceof Error ? error.message : "Не удалось экспортировать." }, { status: deniedStatus(error) });
   }
 }

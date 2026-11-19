@@ -1,5 +1,6 @@
 import { connection } from "next/server";
 
+import { deniedStatus } from "@/lib/account-context";
 import { listAgents, listChatAgents } from "@/lib/agents";
 import { readOptionalGreenCredentials } from "@/lib/green-api";
 
@@ -24,7 +25,7 @@ export async function GET(request: Request) {
   } catch (error) {
     return Response.json(
       { error: error instanceof Error ? error.message : "Не удалось загрузить агентов." },
-      { status: 500, headers: { "Cache-Control": "no-store" } },
+      { status: deniedStatus(error), headers: { "Cache-Control": "no-store" } },
     );
   }
 }

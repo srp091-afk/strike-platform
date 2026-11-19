@@ -21,8 +21,9 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AccountMenu } from "@/components/account-menu";
-import { Logo } from "@/components/ui/Logo";
+import type { ClientAccount } from "@/lib/active-account";
 import type { AccountProfile } from "@/lib/auth-user";
+import { Logo } from "@/components/ui/Logo";
 import { bottomNav, isNavActive, mainNav, type NavItem } from "@/lib/navigation";
 import { preloadNavData } from "@/lib/swr";
 import { cn } from "@/lib/utils";
@@ -105,6 +106,8 @@ function NavLink({
 
 function SidebarBody({
   account,
+  clients,
+  activeAccountId,
   collapsed,
   pathname,
   onToggle,
@@ -112,6 +115,8 @@ function SidebarBody({
   toggleIcon,
 }: {
   account: AccountProfile | null;
+  clients: ClientAccount[];
+  activeAccountId: string;
   collapsed: boolean;
   pathname: string;
   onToggle?: () => void;
@@ -156,7 +161,7 @@ function SidebarBody({
         ))}
         {account ? (
           <div className="mt-1 border-t border-gray-100 pt-2">
-            <AccountMenu account={account} collapsed={collapsed} />
+            <AccountMenu account={account} collapsed={collapsed} clients={clients} activeAccountId={activeAccountId} />
           </div>
         ) : null}
       </div>
@@ -168,7 +173,15 @@ function SidebarBody({
  * Левая навигация портала. На десктопе сворачивается в узкую панель с иконками (состояние помнится),
  * на мобильных скрыта: сверху фиксированная полоса с бургером, меню выезжает слева.
  */
-export function AppSidebar({ account }: { account: AccountProfile | null }) {
+export function AppSidebar({
+  account,
+  clients = [],
+  activeAccountId = "",
+}: {
+  account: AccountProfile | null;
+  clients?: ClientAccount[];
+  activeAccountId?: string;
+}) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -203,7 +216,14 @@ export function AppSidebar({ account }: { account: AccountProfile | null }) {
           collapsed ? "w-[68px]" : "w-60",
         )}
       >
-        <SidebarBody account={account} collapsed={collapsed} pathname={pathname} onToggle={toggleCollapsed} />
+        <SidebarBody
+          account={account}
+          clients={clients}
+          activeAccountId={activeAccountId}
+          collapsed={collapsed}
+          pathname={pathname}
+          onToggle={toggleCollapsed}
+        />
       </aside>
 
       <div className="fixed inset-x-0 top-0 z-40 flex h-12 items-center gap-3 border-b border-gray-200 bg-[#fff] px-3 lg:hidden">
@@ -232,6 +252,8 @@ export function AppSidebar({ account }: { account: AccountProfile | null }) {
           <aside className="absolute inset-y-0 left-0 w-72 max-w-[85vw] border-r border-gray-200 bg-[#fff] shadow-xl">
             <SidebarBody
               account={account}
+              clients={clients}
+              activeAccountId={activeAccountId}
               collapsed={false}
               pathname={pathname}
               onToggle={() => setMobileOpen(false)}

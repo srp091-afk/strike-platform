@@ -1,6 +1,6 @@
 import "server-only";
 
-import { getAuthenticatedUserId } from "@/lib/auth-user";
+import { getEffectiveUserId } from "@/lib/account-context";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 /**
@@ -72,7 +72,7 @@ async function fetchAll<T>(build: (from: number, to: number) => PromiseLike<{ da
 }
 
 export async function getDashboardData(): Promise<DashboardData> {
-  const userId = await getAuthenticatedUserId();
+  const userId = await getEffectiveUserId();
   const supabase = createSupabaseAdminClient();
   const now = Date.now();
   const periodStart = now - PERIOD_DAYS * DAY_MS;
