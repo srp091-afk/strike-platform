@@ -2,6 +2,7 @@ import { connection, type NextRequest } from "next/server";
 
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { TWILIO_NOT_CONNECTED, twilioAccountForUser } from "@/lib/twilio-account";
 import { createTextContent, deleteContent, submitWhatsAppApproval, templateVariables } from "@/lib/twilio-content";
 
 const NAME_PATTERN = /^[a-z0-9_]+$/;
@@ -43,12 +44,16 @@ export async function POST(request: NextRequest) {
     const variables = templateVariables(templateBody);
     if ("error" in variables) return Response.json({ error: variables.error }, { status: 400 });
 
-    const created = await createTextContent({ name, language, body: templateBody, variables: variables.variables });
+    const twilio = await twilioAccountForUser(userId);
+    if ("error" in twilio) return Response.json({ error: twilio.error }, { status: 500 });
+    if (!twilio.account) return Response.json({ error: TWILIO_NOT_CONNECTED }, { status: 400 });
+
+    const created = await createTextContent(twilio.account, { name, language, body: templateBody, variables: variables.variables });
     if ("error" in created) return Response.json({ error: created.error }, { status: 502 });
 
-    const approval = await submitWhatsAppApproval(created.sid, name);
+    const approval = await submitWhatsAppApproval(twilio.account, created.sid, name);
     if ("error" in approval) {
-      await deleteContent(created.sid);
+      await deleteContent(twilio.account, created.sid);
       return Response.json({ error: approval.error }, { status: 502 });
     }
 
@@ -66,7 +71,7 @@ export async function POST(request: NextRequest) {
       .select("id, name, language, body, twilio_content_sid, status, created_at, updated_at")
       .single();
     if (error) {
-      await deleteContent(created.sid);
+      await deleteContent(twilio.account, created.sid);
       const missing = /whatsapp_templates/.test(error.message);
       return Response.json(
         { error: missing ? "Примените миграцию 20261119_whatsapp_templates.sql." : error.message },

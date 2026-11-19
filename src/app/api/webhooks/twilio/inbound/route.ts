@@ -6,6 +6,7 @@ import { normalizeAgentModel } from "@/lib/agent-models";
 import { getOpenAI } from "@/lib/openai";
 import { stripMarkdown, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { canonicalWhatsappNumber, twilioAccountForNumber } from "@/lib/twilio-account";
 import { sendTextMessage } from "@/lib/twilio-content";
 
 export const maxDuration = 60;
@@ -73,18 +74,25 @@ function validTwilioSignature(token: string, signature: string, urls: string[], 
 /** Входящее сообщение WhatsApp. Ответ уходит через REST, пустой TwiML ничего дополнительно не отправляет. */
 export async function POST(request: NextRequest) {
   await connection();
-  const token = process.env.TWILIO_AUTH_TOKEN?.trim() ?? "";
   const form = await request.formData().catch(() => null);
-  if (!form) return received();
+  if (!form) return new Response("Forbidden", { status: 403 });
 
   const params: Record<string, string> = {};
   for (const [key, value] of form.entries()) {
     if (typeof value === "string") params[key] = value;
   }
-  const signature = request.headers.get("x-twilio-signature") ?? "";
-  if (!token || !signature || !validTwilioSignature(token, signature, signatureUrls(request), params)) {
+
+  const calledNumber = canonicalWhatsappNumber(params.To ?? "");
+  const twilio = await twilioAccountForNumber(calledNumber);
+  if ("error" in twilio) {
+    console.error("[twilio inbound] config", twilio.error);
     return new Response("Forbidden", { status: 403 });
   }
+  const signature = request.headers.get("x-twilio-signature") ?? "";
+  if (!twilio.account || !signature || !validTwilioSignature(twilio.account.authToken, signature, signatureUrls(request), params)) {
+    return new Response("Forbidden", { status: 403 });
+  }
+  const account = twilio.account;
 
   const digits = (params.From ?? "").replace(/^whatsapp:\+/, "").replace(/\D/g, "").slice(0, 15);
   const text = (params.Body ?? "").trim().slice(0, 4000);
@@ -93,7 +101,8 @@ export async function POST(request: NextRequest) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("lead_sessions")
-    .select("id, status, lead_data, agent_id, agents(system_prompt, model, temperature)")
+    .select("id, status, lead_data, agent_id, agents!inner(system_prompt, model, temperature, user_id)")
+    .eq("agents.user_id", account.userId)
     .in("phone", [`+${digits}`, digits])
     .in("status", ["waiting_for_reply", "active_24h_window"])
     .order("updated_at", { ascending: false })
@@ -117,7 +126,6 @@ export async function POST(request: NextRequest) {
   }
   if (!text) return received();
 
-  const from = params.To?.startsWith("whatsapp:") ? params.To : undefined;
   const model = normalizeAgentModel(agent.model);
   const context = leadContext(data.lead_data);
   const prompt = systemPromptWithSplit(typeof agent.system_prompt === "string" ? agent.system_prompt : "", false);
@@ -138,7 +146,7 @@ export async function POST(request: NextRequest) {
         console.error("[twilio inbound] empty reply");
         return;
       }
-      const sent = await sendTextMessage({ phoneDigits: digits, body: reply, from });
+      const sent = await sendTextMessage(account, { phoneDigits: digits, body: reply });
       if ("error" in sent) console.error("[twilio inbound] send", sent.error);
     } catch (failure) {
       console.error("[twilio inbound]", failure instanceof Error ? failure.message : failure);

@@ -4,19 +4,16 @@ const CONTENT_URL = "https://content.twilio.com/v1/Content";
 
 export type TemplateStatus = "pending" | "approved" | "rejected";
 
+export type TwilioAuth = {
+  accountSid: string;
+  authToken: string;
+  whatsappNumber: string;
+};
+
 type TwilioErrorBody = { message?: unknown; code?: unknown };
 
-function credentials() {
-  const accountSid = process.env.TWILIO_ACCOUNT_SID?.trim() ?? "";
-  const authToken = process.env.TWILIO_AUTH_TOKEN?.trim() ?? "";
-  if (!accountSid || !authToken) return null;
-  return { accountSid, authToken };
-}
-
-function authorization() {
-  const keys = credentials();
-  if (!keys) return null;
-  return `Basic ${Buffer.from(`${keys.accountSid}:${keys.authToken}`).toString("base64")}`;
+export function authorization(auth: Pick<TwilioAuth, "accountSid" | "authToken">) {
+  return `Basic ${Buffer.from(`${auth.accountSid}:${auth.authToken}`).toString("base64")}`;
 }
 
 async function readError(response: Response) {
@@ -46,13 +43,27 @@ export function readTemplateStatus(payload: unknown): TemplateStatus {
   return "pending";
 }
 
-export async function createTextContent(input: { name: string; language: string; body: string; variables: Record<string, string> }) {
-  const header = authorization();
-  if (!header) return { error: "Задайте TWILIO_ACCOUNT_SID и TWILIO_AUTH_TOKEN." } as const;
+/** Проверка SID и токена запросом сведений об аккаунте. Секреты в ответе Twilio нет. */
+export async function verifyTwilioAccount(auth: Pick<TwilioAuth, "accountSid" | "authToken">) {
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${encodeURIComponent(auth.accountSid)}.json`, {
+    headers: { Authorization: authorization(auth) },
+    signal: AbortSignal.timeout(15_000),
+    cache: "no-store",
+  });
+  if (response.status === 401 || response.status === 403) {
+    return { error: "Account SID или Auth Token неверны." } as const;
+  }
+  if (!response.ok) return { error: await readError(response) } as const;
+  return { ok: true } as const;
+}
 
+export async function createTextContent(
+  auth: TwilioAuth,
+  input: { name: string; language: string; body: string; variables: Record<string, string> },
+) {
   const response = await fetch(CONTENT_URL, {
     method: "POST",
-    headers: { Authorization: header, "Content-Type": "application/json" },
+    headers: { Authorization: authorization(auth), "Content-Type": "application/json" },
     body: JSON.stringify({
       friendly_name: input.name,
       language: input.language,
@@ -70,13 +81,10 @@ export async function createTextContent(input: { name: string; language: string;
 }
 
 /** Отправка на модерацию WhatsApp. Категория фиксирована: UTILITY. */
-export async function submitWhatsAppApproval(sid: string, name: string) {
-  const header = authorization();
-  if (!header) return { error: "Задайте TWILIO_ACCOUNT_SID и TWILIO_AUTH_TOKEN." } as const;
-
+export async function submitWhatsAppApproval(auth: TwilioAuth, sid: string, name: string) {
   const response = await fetch(`${CONTENT_URL}/${encodeURIComponent(sid)}/ApprovalRequests/whatsapp`, {
     method: "POST",
-    headers: { Authorization: header, "Content-Type": "application/json" },
+    headers: { Authorization: authorization(auth), "Content-Type": "application/json" },
     body: JSON.stringify({ name, category: "UTILITY" }),
     signal: AbortSignal.timeout(20_000),
   });
@@ -84,33 +92,24 @@ export async function submitWhatsAppApproval(sid: string, name: string) {
   return { ok: true } as const;
 }
 
-export async function deleteContent(sid: string) {
-  const header = authorization();
-  if (!header) return;
+export async function deleteContent(auth: TwilioAuth, sid: string) {
   await fetch(`${CONTENT_URL}/${encodeURIComponent(sid)}`, {
     method: "DELETE",
-    headers: { Authorization: header },
+    headers: { Authorization: authorization(auth) },
     signal: AbortSignal.timeout(20_000),
   }).catch(() => undefined);
 }
 
 /** Ответ внутри 24-часового окна: обычный текст, без шаблона. */
-export async function sendTextMessage(input: { phoneDigits: string; body: string; from?: string }) {
-  const keys = credentials();
-  const header = authorization();
-  const sender = process.env.TWILIO_PHONE_NUMBER?.trim() ?? "";
-  const from = input.from?.startsWith("whatsapp:") ? input.from : sender ? `whatsapp:${sender}` : "";
-  if (!keys || !header) return { error: "Задайте TWILIO_ACCOUNT_SID и TWILIO_AUTH_TOKEN." } as const;
-  if (!from) return { error: "Задайте TWILIO_PHONE_NUMBER." } as const;
-
+export async function sendTextMessage(auth: TwilioAuth, input: { phoneDigits: string; body: string }) {
   const form = new URLSearchParams({
     To: `whatsapp:+${input.phoneDigits}`,
-    From: from,
+    From: `whatsapp:${auth.whatsappNumber}`,
     Body: input.body.slice(0, 1600),
   });
-  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${keys.accountSid}/Messages.json`, {
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${auth.accountSid}/Messages.json`, {
     method: "POST",
-    headers: { Authorization: header, "Content-Type": "application/x-www-form-urlencoded" },
+    headers: { Authorization: authorization(auth), "Content-Type": "application/x-www-form-urlencoded" },
     body: form.toString(),
     signal: AbortSignal.timeout(20_000),
   });
@@ -119,22 +118,19 @@ export async function sendTextMessage(input: { phoneDigits: string; body: string
 }
 
 /** Первое сообщение лиду по одобренному шаблону WhatsApp. */
-export async function sendTemplateMessage(input: { phoneDigits: string; contentSid: string; variables: Record<string, string> }) {
-  const keys = credentials();
-  const header = authorization();
-  const sender = process.env.TWILIO_PHONE_NUMBER?.trim() ?? "";
-  if (!keys || !header) return { error: "Задайте TWILIO_ACCOUNT_SID и TWILIO_AUTH_TOKEN." } as const;
-  if (!sender) return { error: "Задайте TWILIO_PHONE_NUMBER." } as const;
-
+export async function sendTemplateMessage(
+  auth: TwilioAuth,
+  input: { phoneDigits: string; contentSid: string; variables: Record<string, string> },
+) {
   const form = new URLSearchParams({
     To: `whatsapp:+${input.phoneDigits}`,
-    From: `whatsapp:${sender}`,
+    From: `whatsapp:${auth.whatsappNumber}`,
     ContentSid: input.contentSid,
     ContentVariables: JSON.stringify(input.variables),
   });
-  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${keys.accountSid}/Messages.json`, {
+  const response = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${auth.accountSid}/Messages.json`, {
     method: "POST",
-    headers: { Authorization: header, "Content-Type": "application/x-www-form-urlencoded" },
+    headers: { Authorization: authorization(auth), "Content-Type": "application/x-www-form-urlencoded" },
     body: form.toString(),
     signal: AbortSignal.timeout(20_000),
   });
@@ -142,12 +138,9 @@ export async function sendTemplateMessage(input: { phoneDigits: string; contentS
   return { ok: true } as const;
 }
 
-export async function fetchApprovalStatus(sid: string) {
-  const header = authorization();
-  if (!header) return { error: "Задайте TWILIO_ACCOUNT_SID и TWILIO_AUTH_TOKEN." } as const;
-
+export async function fetchApprovalStatus(auth: TwilioAuth, sid: string) {
   const response = await fetch(`${CONTENT_URL}/${encodeURIComponent(sid)}/ApprovalRequests`, {
-    headers: { Authorization: header },
+    headers: { Authorization: authorization(auth) },
     signal: AbortSignal.timeout(20_000),
     cache: "no-store",
   });

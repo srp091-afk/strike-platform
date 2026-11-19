@@ -34,6 +34,7 @@ import { SelectField } from "@/components/ui/select-field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toaster";
+import { TwilioConnectCard } from "@/components/twilio-connect-card";
 import { WhatsAppConnectDialog } from "@/components/whatsapp-connect-dialog";
 import {
   AlertDialog,
@@ -1094,6 +1095,7 @@ function ChannelSettings({
       <input type="hidden" name="wa_phone_number" value={phone} />
       {connectError ? <p className="text-sm text-red-400">{connectError}</p> : null}
       <div className="grid gap-3">
+        <TwilioConnectCard />
         <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
           <label className="flex items-center justify-between gap-3">
             <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">

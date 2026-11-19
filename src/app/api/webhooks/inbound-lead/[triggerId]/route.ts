@@ -1,6 +1,7 @@
 import { connection, type NextRequest } from "next/server";
 
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { TWILIO_NOT_CONNECTED, twilioAccountForUser } from "@/lib/twilio-account";
 import { sendTemplateMessage } from "@/lib/twilio-content";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -39,7 +40,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("webhook_triggers")
-    .select("id, agent_id, is_active, mapping_config, agents(id), whatsapp_templates(twilio_content_sid)")
+    .select("id, agent_id, is_active, mapping_config, agents(id, user_id), whatsapp_templates(twilio_content_sid)")
     .eq("id", triggerId)
     .maybeSingle();
   if (error) {
@@ -51,7 +52,7 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
   }
 
   const template = one(data?.whatsapp_templates as { twilio_content_sid: string } | { twilio_content_sid: string }[] | null);
-  const agent = one(data?.agents as { id: string } | { id: string }[] | null);
+  const agent = one(data?.agents as { id: string; user_id: string } | { id: string; user_id: string }[] | null);
   const contentSid = template?.twilio_content_sid?.trim() ?? "";
   if (!data || data.is_active !== true || !agent || !contentSid) {
     return Response.json({ error: "Триггер не найден." }, { status: 404 });
@@ -80,7 +81,11 @@ export async function POST(request: NextRequest, { params }: { params: Promise<{
     variables[key] = value;
   }
 
-  const sent = await sendTemplateMessage({ phoneDigits, contentSid, variables });
+  const twilio = await twilioAccountForUser(agent.user_id);
+  if ("error" in twilio) return Response.json({ error: twilio.error }, { status: 500 });
+  if (!twilio.account) return Response.json({ error: TWILIO_NOT_CONNECTED }, { status: 400 });
+
+  const sent = await sendTemplateMessage(twilio.account, { phoneDigits, contentSid, variables });
   if ("error" in sent) {
     console.error("[inbound-lead] twilio", sent.error);
     return Response.json({ error: "Не удалось отправить шаблон WhatsApp." }, { status: 500 });

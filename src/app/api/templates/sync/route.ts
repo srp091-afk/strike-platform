@@ -2,6 +2,7 @@ import { connection } from "next/server";
 
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { TWILIO_NOT_CONNECTED, twilioAccountForUser } from "@/lib/twilio-account";
 import { fetchApprovalStatus, type TemplateStatus } from "@/lib/twilio-content";
 
 const COLUMNS = "id, name, language, body, twilio_content_sid, status, created_at, updated_at";
@@ -17,6 +18,10 @@ export async function GET() {
   await connection();
   try {
     const userId = await getAuthenticatedUserId();
+    const twilio = await twilioAccountForUser(userId);
+    if ("error" in twilio) return Response.json({ error: twilio.error }, { status: 500 });
+    if (!twilio.account) return Response.json({ error: TWILIO_NOT_CONNECTED }, { status: 400 });
+
     const supabase = createSupabaseAdminClient();
     const { data: pending, error: pendingError } = await supabase
       .from("whatsapp_templates")
@@ -32,7 +37,7 @@ export async function GET() {
     }
 
     for (const row of (pending ?? []) as TemplateRow[]) {
-      const result = await fetchApprovalStatus(row.twilio_content_sid);
+      const result = await fetchApprovalStatus(twilio.account, row.twilio_content_sid);
       if ("error" in result || result.status === row.status) continue;
       await supabase
         .from("whatsapp_templates")
