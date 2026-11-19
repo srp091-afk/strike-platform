@@ -80,6 +80,30 @@ async function grantCredits(userId: string, orderId: string, credits: number, us
   if (grantError) throw new Error(grantError.message);
 }
 
+function paddleId(value: unknown, prefix: string) {
+  const id = text(value);
+  return id.startsWith(prefix) ? id : "";
+}
+
+/** Сохраняет покупателя и подписку Paddle. Пустое поле не затирает уже записанный id. */
+async function savePaddleIdentity(userId: string, data: Json, event: string) {
+  const customerId = paddleId(data.customer_id, "ctm_") || paddleId(asRecord(data.customer).id, "ctm_");
+  const subscriptionId = event === "subscription.created" ? paddleId(data.id, "sub_") : paddleId(data.subscription_id, "sub_");
+  const patch: Record<string, string> = {};
+  if (customerId) patch.paddle_customer_id = customerId;
+  if (subscriptionId) patch.paddle_subscription_id = subscriptionId;
+  if (Object.keys(patch).length === 0) return;
+
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin.from("profiles").update(patch).eq("id", userId);
+  if (!error) return;
+  if (/paddle_customer_id|paddle_subscription_id/.test(error.message)) {
+    console.error("[paddle] apply migration 20261119_paddle_customer.sql");
+    return;
+  }
+  throw new Error(error.message);
+}
+
 async function applyPlan(userId: string, plan: PaddlePlan) {
   const admin = createSupabaseAdminClient();
   const patch = { ...plan.patch, subscription_status: "active" };
@@ -125,6 +149,7 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    await savePaddleIdentity(userId, data, event);
     const ids = priceIds(data);
     if (event === "transaction.completed") {
       // 100% промокод завершает транзакцию с total = 0. Сумму оплаты не читаем:

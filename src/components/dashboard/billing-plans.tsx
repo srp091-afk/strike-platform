@@ -9,7 +9,7 @@ import { PADDLE_PLANS } from "@/lib/paddle-catalog";
 import { loadPaddle, openPaddleCheckout } from "@/lib/paddle-client";
 
 /** Светлая витрина модульных тарифов: те же данные и табы, что на /pricing. */
-export function BillingPlans({ current, subscriptionActive }: { current: CurrentPlans; subscriptionActive: boolean }) {
+export function BillingPlans({ current }: { current: CurrentPlans }) {
   const router = useRouter();
   const [pending, setPending] = useState<string | null>(null);
 
@@ -40,11 +40,7 @@ export function BillingPlans({ current, subscriptionActive }: { current: Current
     <section id="plans" className="mt-5 scroll-mt-24">
       <div className="mb-6">
         <h2 className="text-lg font-semibold text-[#0b0b0f]">Тарифы</h2>
-        <p className="mt-1 text-sm text-gray-500">
-          {subscriptionActive
-            ? "Новый тариф открывается в чекауте Paddle. Текущую подписку Lemon Squeezy можно закрыть в портале управления."
-            : "Подключайте только нужные модули или выберите выгодный бандл STRIKE Business."}
-        </p>
+        <p className="mt-1 text-sm text-gray-500">Выберите подходящий тариф для автоматизации диалогов и продаж.</p>
       </div>
       <ModularPlans theme="light" current={current} onSelect={(key) => void choose(key)} pendingKey={pending} />
     </section>

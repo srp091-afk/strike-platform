@@ -9,7 +9,6 @@ import { toast } from "@/components/ui/toaster";
 import { ConsentCheckbox } from "@/components/consent-checkbox";
 import { BillingPlans } from "@/components/dashboard/billing-plans";
 import { formatSc, TOP_UPS, tierLabel, type TopUp } from "@/lib/billing-catalog";
-import { openCustomerPortal } from "@/lib/lemon-client";
 import { PADDLE_CREDIT_PRICE_IDS } from "@/lib/paddle-catalog";
 import { loadPaddle, onPaddleCheckoutCompleted, openPaddleCheckout } from "@/lib/paddle-client";
 import { cn } from "@/lib/utils";
@@ -129,17 +128,29 @@ export function BillingView({ data }: { data: BillingData }) {
     }
   }
 
-  /** Есть подписка — портал Lemon Squeezy; нет — прокрутка к выбору тарифа. */
+  function choosePlan() {
+    document.getElementById("plans")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  /** Портал Paddle. Вкладка открывается сразу, иначе браузер блокирует window.open после запроса. */
   async function manageSubscription() {
-    if (!data.hasSubscription) {
-      document.getElementById("plans")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      return;
-    }
     if (managing) return;
+    const tab = window.open("", "_blank");
     setManaging(true);
     try {
-      await openCustomerPortal();
+      const response = await fetch("/api/billing/portal", { method: "POST" });
+      const body = (await response.json().catch(() => null)) as { url?: string; error?: string } | null;
+      if (!response.ok || !body?.url) {
+        throw new Error(body?.error ?? "Не удалось открыть портал управления.");
+      }
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = body.url;
+      } else {
+        window.open(body.url, "_blank", "noopener,noreferrer");
+      }
     } catch (error) {
+      tab?.close();
       toast.error(error instanceof Error ? error.message : "Не удалось открыть портал управления.");
     } finally {
       setManaging(false);
@@ -203,14 +214,24 @@ export function BillingView({ data }: { data: BillingData }) {
               </ul>
             </div>
 
-            <button
-              type="button"
-              onClick={() => void manageSubscription()}
-              className="mt-7 inline-flex w-full items-center justify-center rounded-xl border border-gray-200 bg-[#ffffff] px-4 py-3 text-sm font-semibold text-[#0b0b0f] transition-colors hover:border-rose-300 hover:bg-rose-50/50 active:scale-[0.98] sm:w-auto"
-            >
-              {managing ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
-              {data.hasSubscription ? "Управлять подпиской" : "Выбрать тариф"}
-            </button>
+            {data.hasSubscription ? (
+              <button
+                type="button"
+                onClick={() => void manageSubscription()}
+                className="mt-7 inline-flex w-full items-center justify-center rounded-xl border border-gray-200 bg-[#ffffff] px-4 py-3 text-sm font-semibold text-[#0b0b0f] transition-colors hover:border-rose-300 hover:bg-rose-50/50 active:scale-[0.98] sm:w-auto"
+              >
+                {managing ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+                Управлять подпиской
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={choosePlan}
+                className="mt-7 inline-flex w-full items-center justify-center rounded-xl border border-gray-200 bg-[#ffffff] px-4 py-3 text-sm font-semibold text-[#0b0b0f] transition-colors hover:border-rose-300 hover:bg-rose-50/50 active:scale-[0.98] sm:w-auto"
+              >
+                Выбрать тариф
+              </button>
+            )}
           </Card>
 
           {/* Пополнение баланса */}
@@ -342,10 +363,7 @@ export function BillingView({ data }: { data: BillingData }) {
           </Card>
         </div>
 
-        <BillingPlans
-          current={{ ...data.tiers, bundle: data.isBundleActive }}
-          subscriptionActive={data.hasSubscription}
-        />
+        <BillingPlans current={{ ...data.tiers, bundle: data.isBundleActive }} />
         {/* История транзакций */}
         <section className="mt-5">
           <Card>

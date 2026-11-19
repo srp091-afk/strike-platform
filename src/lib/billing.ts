@@ -32,7 +32,7 @@ export type BillingOverview = {
   tiers: { agents: string; smm: string; ads: string; sites: string };
   isBundleActive: boolean;
   usage: { messages: number; agents: number; campaigns: number; sites: number };
-  /** Есть ли привязанная подписка Lemon Squeezy (для портала управления). */
+  /** Есть покупатель или подписка Paddle: можно открыть портал управления. */
   hasSubscription: boolean;
   transactions: BillingTransaction[];
 };
@@ -59,11 +59,14 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
   // tier_ads — отдельная миграция (20261106_add_tier_ads): отдельный запрос, чтобы её отсутствие не ломало остальное.
   const adsQuery = await admin.from("profiles").select("tier_ads").eq("id", userId).maybeSingle();
   const tierAds = adsQuery.error ? "trial" : String(adsQuery.data?.tier_ads ?? "trial");
+  const paddleQuery = await admin.from("profiles").select("paddle_customer_id, paddle_subscription_id").eq("id", userId).maybeSingle();
+  const paddleCustomerId = paddleQuery.error ? "" : String(paddleQuery.data?.paddle_customer_id ?? "");
+  const paddleSubscriptionId = paddleQuery.error ? "" : String(paddleQuery.data?.paddle_subscription_id ?? "");
 
   const [profile, messages, agents, campaigns, sites, transactions] = await Promise.all([
     admin
       .from("profiles")
-      .select("plan, subscription_status, plan_renews_at, balance_usd, lemon_subscription_id")
+      .select("plan, subscription_status, plan_renews_at, balance_usd")
       .eq("id", userId)
       .maybeSingle(),
     admin
@@ -104,7 +107,7 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
       campaigns: campaigns.count ?? 0,
       sites: sites.count ?? 0,
     },
-    hasSubscription: Boolean(profile.data?.lemon_subscription_id),
+    hasSubscription: Boolean(paddleCustomerId || paddleSubscriptionId),
     transactions: (transactions.data ?? []).map((row) => ({
       id: String(row.id),
       createdAt: String(row.created_at),
