@@ -1,14 +1,15 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { AGENT_LIMITS } from "@/lib/billing-catalog";
 
 export type PlanId = "free" | "starter" | "pro" | "agency";
 
-/** Лимиты тарифов (null — без лимита). Совпадают с карточками на /pricing. */
+/** Лимиты тарифов. null — без потолка: у Agency это AGENT_LIMITS.agency. */
 export const PLAN_LIMITS: Record<PlanId, { messages: number | null; agents: number | null; campaigns: number | null; sites: number | null }> = {
   free: { messages: null, agents: null, campaigns: null, sites: null },
-  starter: { messages: 2500, agents: 3, campaigns: 150, sites: 3 },
-  pro: { messages: 10000, agents: 10, campaigns: 500, sites: 10 },
+  starter: { messages: 2500, agents: AGENT_LIMITS.start, campaigns: 150, sites: 3 },
+  pro: { messages: 10000, agents: AGENT_LIMITS.pro, campaigns: 500, sites: 10 },
   agency: { messages: 100000, agents: null, campaigns: null, sites: null },
 };
 

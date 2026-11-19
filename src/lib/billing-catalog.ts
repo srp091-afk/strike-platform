@@ -33,17 +33,49 @@ export const MODULE_BLURBS: Record<ModuleId, Text2> = {
 
 const sc = (n: string): Text2 => ({ ru: `${n} SC в месяц`, en: `${n} SC / month` });
 
+/** Сколько AI-агентов можно создать на тарифе. Agency без потолка. */
+export const AGENT_LIMITS = {
+  start: 3,
+  pro: 10,
+  agency: Number.POSITIVE_INFINITY,
+} as const;
+
 export const TIERS: Record<Exclude<ModuleId, "bundle">, Tier[]> = {
   agents: [
-    { id: "start", name: "Start", price: 49, features: [{ ru: "1 AI-агент", en: "1 AI agent" }, sc("5 000")] },
+    {
+      id: "start",
+      name: "Start",
+      price: 49,
+      features: [
+        { ru: "3 AI-агента", en: "3 AI agents" },
+        sc("5 000"),
+        { ru: "Текстовые каналы (Мессенджеры, соцсети и Web)", en: "Text channels (messengers, social networks and Web)" },
+        { ru: "Базовый Web-to-Knowledge (до 10 страниц/файлов)", en: "Basic Web-to-Knowledge (up to 10 pages/files)" },
+      ],
+    },
     {
       id: "pro",
       name: "Pro",
       price: 99,
       popular: true,
-      features: [{ ru: "5 AI-агентов", en: "5 AI agents" }, { ru: "Голосовой режим", en: "Voice mode" }, sc("12 000")],
+      features: [
+        { ru: "10 AI-агентов", en: "10 AI agents" },
+        sc("12 000"),
+        { ru: "Голосовые ИИ-агенты", en: "Voice AI agents" },
+        { ru: "Глубокий Web-to-Knowledge (до 100 страниц)", en: "Deep Web-to-Knowledge (up to 100 pages)" },
+      ],
     },
-    { id: "agency", name: "Agency", price: 249, features: [{ ru: "20 AI-агентов", en: "20 AI agents" }, sc("35 000")] },
+    {
+      id: "agency",
+      name: "Agency",
+      price: 249,
+      features: [
+        { ru: "Безлимитные AI-агенты", en: "Unlimited AI agents" },
+        sc("35 000"),
+        { ru: "White-label (веб-виджет без логотипа)", en: "White-label (web widget without a logo)" },
+        { ru: "Приоритетная поддержка и API", en: "Priority support and API" },
+      ],
+    },
   ],
   smm: [
     { id: "start", name: "Start", price: 19, features: [{ ru: "1 проект", en: "1 project" }, sc("1 000")] },
