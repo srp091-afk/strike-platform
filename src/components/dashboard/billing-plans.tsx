@@ -20,7 +20,7 @@ export function BillingPlans({ current, subscriptionActive }: { current: Current
   async function choose(key: string) {
     if (pending) return;
     const priceId = PADDLE_PLANS[key]?.priceId;
-    if (!priceId) {
+    if (!priceId || !priceId.startsWith("pri_")) {
       toast.error("Для этого тарифа не задан Price ID Paddle.");
       return;
     }

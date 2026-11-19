@@ -35,15 +35,15 @@ const sc = (n: string): Text2 => ({ ru: `${n} SC в месяц`, en: `${n} SC / 
 
 export const TIERS: Record<Exclude<ModuleId, "bundle">, Tier[]> = {
   agents: [
-    { id: "start", name: "Start", price: 29, features: [{ ru: "1 AI-агент", en: "1 AI agent" }, sc("2 500")] },
+    { id: "start", name: "Start", price: 49, features: [{ ru: "1 AI-агент", en: "1 AI agent" }, sc("5 000")] },
     {
       id: "pro",
       name: "Pro",
-      price: 79,
+      price: 99,
       popular: true,
-      features: [{ ru: "5 AI-агентов", en: "5 AI agents" }, { ru: "Голосовой режим", en: "Voice mode" }, sc("8 000")],
+      features: [{ ru: "5 AI-агентов", en: "5 AI agents" }, { ru: "Голосовой режим", en: "Voice mode" }, sc("12 000")],
     },
-    { id: "agency", name: "Agency", price: 199, features: [{ ru: "20 AI-агентов", en: "20 AI agents" }, sc("25 000")] },
+    { id: "agency", name: "Agency", price: 249, features: [{ ru: "20 AI-агентов", en: "20 AI agents" }, sc("35 000")] },
   ],
   smm: [
     { id: "start", name: "Start", price: 19, features: [{ ru: "1 проект", en: "1 project" }, sc("1 000")] },
