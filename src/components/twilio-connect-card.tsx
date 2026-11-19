@@ -39,7 +39,7 @@ export function TwilioConnectCard() {
     startTransition(async () => {
       const result = await saveTwilioConfig({ accountSid, authToken, whatsappNumber });
       if (!result.ok) {
-        setMessage(result.error);
+        setMessage(result.error ?? "Не удалось сохранить аккаунт Twilio.");
         return;
       }
       setAuthToken("");
