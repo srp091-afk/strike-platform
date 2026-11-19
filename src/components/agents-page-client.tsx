@@ -10,6 +10,7 @@ import { jsonFetcher, useClientReady } from "@/lib/swr";
 type AgentsResponse = {
   agents: AgentRecord[];
   greenDefaults: { instanceId: string; apiToken: string };
+  agentAccess?: { isAdmin: boolean; maxAgents: number | null };
 };
 
 function ManagerSkeleton() {
@@ -56,6 +57,7 @@ export function AgentsPageClient({
           initialEditingId={initialAgentId}
           initialConnectChannel={initialConnectChannel}
           greenDefaults={data?.greenDefaults ?? { instanceId: "", apiToken: "" }}
+          agentAccess={data?.agentAccess}
           loadError={error ? error.message : null}
           onSaved={() => {
             void mutate();

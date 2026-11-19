@@ -21,6 +21,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { startTransition, Suspense, useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
 import { mutate as swrMutate } from "swr";
 import { PlaygroundChat } from "@/components/playground-chat";
 import { deleteAgent, reorderAgents, saveAgent, saveAgentDirect, type SaveState } from "@/app/agents/actions";
@@ -207,6 +208,7 @@ export function AgentManager({
   onSaved,
   initialEditingId,
   initialConnectChannel,
+  agentAccess,
 }: {
   agents: AgentRecord[];
   greenDefaults: GreenDefaults;
@@ -216,6 +218,7 @@ export function AgentManager({
   initialEditingId?: string;
   /** Канал из ?connect=: сразу открыть его модалку в правке initialEditingId. */
   initialConnectChannel?: "whatsapp" | "telegram" | "widget";
+  agentAccess?: { isAdmin: boolean; maxAgents: number | null };
 }) {
   const router = useRouter();
   const [editingBase, setEditing] = useState<AgentRecord | null>(null);
@@ -270,7 +273,14 @@ export function AgentManager({
     // URL не чистим здесь: переход на /agents перемонтирует страницу и закроет диалог.
   }, [agents, initialEditingId]);
 
+  const limitReached =
+    agentAccess != null && !agentAccess.isAdmin && agentAccess.maxAgents != null && agents.length >= agentAccess.maxAgents;
+
   function openCreate() {
+    if (limitReached) {
+      router.push("/dashboard/billing");
+      return;
+    }
     setEditing(null);
     setSessionKey("new");
     setDialogOpen(true);
@@ -336,10 +346,18 @@ export function AgentManager({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-2xl font-semibold">Список агентов</h2>
-        <Button type="button" onClick={openCreate}>
+        <Button type="button" onClick={openCreate} disabled={limitReached}>
           + Создать агента
         </Button>
       </div>
+      {limitReached ? (
+        <p className="mt-3 text-sm text-zinc-500">
+          Вы достигли лимита агентов для вашего тарифа{" "}
+          <Link href="/dashboard/billing" className="font-semibold text-strike">
+            Перейти к тарифам
+          </Link>
+        </p>
+      ) : null}
 
       {reorderError ? (
         <p className="mt-4 rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-200">{reorderError}</p>

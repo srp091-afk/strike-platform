@@ -1,6 +1,7 @@
 import { connection } from "next/server";
 
 import { deniedStatus } from "@/lib/account-context";
+import { readAccess } from "@/lib/access";
 import { listAgents, listChatAgents } from "@/lib/agents";
 import { readOptionalGreenCredentials } from "@/lib/green-api";
 
@@ -17,9 +18,17 @@ export async function GET(request: Request) {
       );
     }
 
-    const [agents, greenDefaults] = await Promise.all([listAgents(), Promise.resolve(readOptionalGreenCredentials())]);
+    const [agents, greenDefaults, access] = await Promise.all([
+      listAgents(),
+      Promise.resolve(readOptionalGreenCredentials()),
+      readAccess(),
+    ]);
     return Response.json(
-      { agents, greenDefaults },
+      {
+        agents,
+        greenDefaults,
+        agentAccess: { isAdmin: access.isAdmin, maxAgents: Number.isFinite(access.maxAgents) ? access.maxAgents : null },
+      },
       { headers: { "Cache-Control": "private, max-age=10, stale-while-revalidate=30" } },
     );
   } catch (error) {

@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Megaphone,
   Send,
+  Lock,
   Menu,
   MessagesSquare,
   PanelLeftClose,
@@ -46,32 +47,37 @@ function NavLink({
   item,
   pathname,
   collapsed,
+  locked = false,
   onNavigate,
 }: {
   item: NavItem;
   pathname: string;
   collapsed: boolean;
+  locked?: boolean;
   onNavigate?: () => void;
 }) {
   const Icon = ICONS[item.icon];
-  const active = !item.soon && isNavActive(pathname, item.href);
+  const active = !item.soon && !locked && isNavActive(pathname, item.href);
   const className = cn(
     "relative flex h-10 items-center gap-3 rounded-lg px-3 text-sm font-medium transition-colors",
     collapsed && "justify-center px-0",
     active ? "bg-strike/10 text-strike" : "text-gray-600 hover:bg-gray-100 hover:text-gray-900",
     item.soon && "cursor-default text-gray-400 hover:bg-transparent hover:text-gray-400",
+    locked && "opacity-50",
   );
   const content = (
     <>
       {active ? <span aria-hidden className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-strike" /> : null}
       <Icon className="size-[18px] shrink-0" strokeWidth={1.75} />
-      {item.beta && collapsed ? <span aria-hidden className="absolute right-2 top-2 size-1.5 rounded-full bg-strike" /> : null}
+      {item.beta && collapsed && !locked ? <span aria-hidden className="absolute right-2 top-2 size-1.5 rounded-full bg-strike" /> : null}
+      {locked && collapsed ? <Lock aria-hidden className="absolute right-1.5 top-1.5 size-3" strokeWidth={2.25} /> : null}
       {collapsed ? null : <span className="min-w-0 flex-1 truncate">{item.label}</span>}
-      {item.beta && !collapsed ? (
+      {item.beta && !collapsed && !locked ? (
         <span className="shrink-0 rounded-full bg-strike/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase leading-none tracking-wide text-strike ring-1 ring-inset ring-strike/20">
           Beta
         </span>
       ) : null}
+      {locked && !collapsed ? <Lock aria-hidden className="size-3.5 shrink-0" strokeWidth={2} /> : null}
       {item.soon && !collapsed ? (
         <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
           Скоро
@@ -93,7 +99,7 @@ function NavLink({
       href={item.href}
       prefetch
       aria-current={active ? "page" : undefined}
-      title={collapsed ? (item.beta ? `${item.label} (Beta)` : item.label) : undefined}
+      title={collapsed ? (locked ? `${item.label} — недоступно` : item.beta ? `${item.label} (Beta)` : item.label) : undefined}
       onMouseEnter={() => preloadNavData(item.href)}
       onFocus={() => preloadNavData(item.href)}
       onClick={onNavigate}
@@ -108,6 +114,7 @@ function SidebarBody({
   account,
   clients,
   activeAccountId,
+  lockedHrefs,
   collapsed,
   pathname,
   onToggle,
@@ -117,6 +124,7 @@ function SidebarBody({
   account: AccountProfile | null;
   clients: ClientAccount[];
   activeAccountId: string;
+  lockedHrefs: readonly string[];
   collapsed: boolean;
   pathname: string;
   onToggle?: () => void;
@@ -151,7 +159,15 @@ function SidebarBody({
 
       <nav aria-label="Основное меню" className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-2">
         {mainNav.map((item) => (
-          <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} onNavigate={onNavigate} />
+          <NavLink
+            key={item.href}
+            item={item}
+            pathname={pathname}
+            lockedHrefs={lockedHrefs}
+          collapsed={collapsed}
+            locked={lockedHrefs.includes(item.href)}
+            onNavigate={onNavigate}
+          />
         ))}
       </nav>
 
@@ -177,10 +193,12 @@ export function AppSidebar({
   account,
   clients = [],
   activeAccountId = "",
+  lockedHrefs = [],
 }: {
   account: AccountProfile | null;
   clients?: ClientAccount[];
   activeAccountId?: string;
+  lockedHrefs?: readonly string[];
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -220,6 +238,7 @@ export function AppSidebar({
           account={account}
           clients={clients}
           activeAccountId={activeAccountId}
+          lockedHrefs={lockedHrefs}
           collapsed={collapsed}
           pathname={pathname}
           onToggle={toggleCollapsed}
@@ -254,6 +273,7 @@ export function AppSidebar({
               account={account}
               clients={clients}
               activeAccountId={activeAccountId}
+              lockedHrefs={lockedHrefs}
               collapsed={false}
               pathname={pathname}
               onToggle={() => setMobileOpen(false)}

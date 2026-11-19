@@ -13,6 +13,7 @@ import {
   type HandoffDuration,
 } from "@/lib/agent-models";
 import { getEffectiveUserId } from "@/lib/account-context";
+import { assertCanCreateAgent } from "@/lib/access";
 import { ensureGreenIncomingWebhook, getGreenPhone } from "@/lib/green-api";
 import { leadEmailSettingsSchema } from "@/lib/lead-notify";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -259,6 +260,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         return failedSave("Агент не найден.");
       }
     } else {
+      await assertCanCreateAgent(userId);
       const inserted = await supabase.from("agents").insert(payload).select("id").single();
       const retried =
         inserted.error && missingEmailColumn(inserted.error.message) && !emailRequested

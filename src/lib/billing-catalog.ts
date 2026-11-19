@@ -1,5 +1,7 @@
 /** Каталог модульных тарифов STRIKE и пакетов STRIKE Credits (SC). Единый источник для /pricing и /dashboard/billing. */
 
+import { TIER_LIMITS } from "@/lib/config/pricing";
+
 export type ModuleId = "agents" | "smm" | "ads" | "sites" | "bundle";
 export type Lang = "en" | "ru";
 export type Text2 = Record<Lang, string>;
@@ -35,9 +37,9 @@ const sc = (n: string): Text2 => ({ ru: `${n} SC в месяц`, en: `${n} SC / 
 
 /** Сколько AI-агентов можно создать на тарифе. Agency без потолка. */
 export const AGENT_LIMITS = {
-  start: 3,
-  pro: 10,
-  agency: Number.POSITIVE_INFINITY,
+  start: TIER_LIMITS.start.maxAgents,
+  pro: TIER_LIMITS.pro.maxAgents,
+  agency: TIER_LIMITS.agency.maxAgents,
 } as const;
 
 export const TIERS: Record<Exclude<ModuleId, "bundle">, Tier[]> = {
