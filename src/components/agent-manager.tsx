@@ -246,7 +246,7 @@ export function AgentManager({
     const item = {
       id: crypto.randomUUID(),
       kind: state.ok ? ("success" as const) : ("error" as const),
-      message: state.ok ? "Настройки агента сохранены" : "Ошибка при сохранении",
+      message: state.ok ? "Настройки агента сохранены" : state.error || "Ошибка при сохранении",
       expiresAt: Date.now() + 4000,
     };
     host.__strikeToasts = [...(host.__strikeToasts ?? []), item];
@@ -255,7 +255,7 @@ export function AgentManager({
       host.__strikeToasts = (host.__strikeToasts ?? []).filter((entry) => entry.id !== item.id);
       window.dispatchEvent(new CustomEvent("strike-toast"));
     }, 4000);
-  }, [state.attemptId, state.ok]);
+  }, [state.attemptId, state.ok, state.error]);
 
   useEffect(() => {
     if (!state.savedId) return;
@@ -768,9 +768,14 @@ function AgentDialog({
       <DialogContent aria-labelledby="agent-dialog-title" className="flex flex-col overflow-hidden">
         <form
           className="flex min-h-0 flex-1 flex-col"
+          noValidate
           onSubmit={(event) => {
             event.preventDefault();
             if (!dirty || pending) return;
+            if (!draft.name.trim()) {
+              toast.error("Укажи имя агента.");
+              return;
+            }
             const data = new FormData(event.currentTarget);
             startTransition(() => {
               action(data);
@@ -1069,7 +1074,6 @@ function SystemPromptField({ value, onChange }: { value: string; onChange: (valu
           ref={areaRef}
           className={`${fieldClass} min-h-80 resize-y`}
           name="system_prompt"
-          required
           value={value}
           placeholder={promptPlaceholder}
           onChange={(event) => onChange(event.target.value)}

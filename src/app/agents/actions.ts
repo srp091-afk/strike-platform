@@ -57,10 +57,6 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "Укажи имя агента." };
   }
 
-  if (!systemPrompt) {
-    return { ok: false as const, error: "Нужна системная инструкция." };
-  }
-
   if (!isAgentModel(model)) {
     return { ok: false as const, error: "Выбери модель из списка." };
   }
