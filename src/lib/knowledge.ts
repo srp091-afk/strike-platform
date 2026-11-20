@@ -1,6 +1,7 @@
 import "server-only";
 
 import mammoth from "mammoth";
+import * as XLSX from "xlsx";
 
 import { getOpenAI } from "@/lib/openai";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -15,7 +16,7 @@ const MATCH_COUNT = 4;
 const KNOWLEDGE_CONTEXT =
   "Контекст из базы знаний компании: \n\n {chunks} \n\n Используй эту информацию для точных ответов на вопросы пользователя.";
 
-type Extension = "pdf" | "docx" | "txt" | "csv";
+type Extension = "pdf" | "docx" | "txt" | "csv" | "xlsx";
 
 export async function indexKnowledgeFile(input: {
   agentId: string;
@@ -84,9 +85,36 @@ async function extractText(extension: Extension, buffer: Buffer) {
     const result = await mammoth.extractRawText({ buffer });
     return result.value;
   }
+  if (extension === "xlsx") return extractSpreadsheet(buffer);
   const pdfParse = (await import("pdf-parse/lib/pdf-parse.js")).default as (data: Buffer) => Promise<{ text?: string }>;
   const parsed = await pdfParse(buffer);
   return parsed.text ?? "";
+}
+
+function extractSpreadsheet(buffer: Buffer) {
+  if (buffer.length < 4 || buffer[0] !== 0x50 || buffer[1] !== 0x4b) {
+    throw new Error("Не удалось прочитать Excel-файл.");
+  }
+  let workbook: XLSX.WorkBook;
+  try {
+    workbook = XLSX.read(buffer, { type: "buffer", cellDates: true });
+  } catch {
+    throw new Error("Не удалось прочитать Excel-файл.");
+  }
+  return workbook.SheetNames.map((name) => {
+    const sheet = workbook.Sheets[name];
+    if (!sheet) return "";
+    const csv = XLSX.utils
+      .sheet_to_csv(sheet, { blankrows: false })
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.replace(/[,"]/g, "").length > 0)
+      .join("\n");
+    if (!csv) return "";
+    return `# ${name}\n${csv}`;
+  })
+    .filter(Boolean)
+    .join("\n\n");
 }
 
 async function embedTexts(input: string[]) {

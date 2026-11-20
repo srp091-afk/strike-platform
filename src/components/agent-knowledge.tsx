@@ -9,7 +9,7 @@ import { activeAccountHeader } from "@/lib/active-account";
 import { cn } from "@/lib/utils";
 
 const MAX_BYTES = 10 * 1024 * 1024;
-const ALLOWED = new Set(["pdf", "docx", "txt", "csv"]);
+const ALLOWED = new Set(["pdf", "docx", "txt", "csv", "xlsx"]);
 const DATE_FORMAT = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" });
 
 type KnowledgeFile = {
@@ -40,7 +40,7 @@ function formatDate(iso: string) {
 
 function rejectReason(file: File) {
   const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (!ALLOWED.has(extension)) return "Можно загрузить только PDF, DOCX, TXT и CSV.";
+  if (!ALLOWED.has(extension)) return "Можно загрузить только PDF, DOCX, TXT, CSV и XLSX.";
   if (file.size <= 0) return "Файл пустой.";
   if (file.size > MAX_BYTES) return "Файл больше 10 МБ.";
   return null;
@@ -152,7 +152,7 @@ export function AgentKnowledge({ agentId }: { agentId: string }) {
     <section className="grid gap-5">
       <div>
         <h3 className="font-heading text-lg font-semibold text-white">База знаний (Файлы)</h3>
-        <p className="mt-1 text-sm text-zinc-400">PDF, DOCX, TXT и CSV. Один файл не больше 10 МБ.</p>
+        <p className="mt-1 text-sm text-zinc-400">PDF, DOCX, TXT, CSV и XLSX. Один файл не больше 10 МБ.</p>
       </div>
 
       <label
@@ -187,11 +187,11 @@ export function AgentKnowledge({ agentId }: { agentId: string }) {
         <span className="text-sm font-medium text-white">
           {uploadingName ? `Загружаем ${uploadingName}` : "Перетащите файлы или нажмите, чтобы выбрать"}
         </span>
-        <span className="text-xs text-zinc-500">PDF, DOCX, TXT, CSV · до 10 МБ</span>
+        <span className="text-xs text-zinc-500">PDF, DOCX, TXT, CSV и XLSX · до 10 МБ</span>
         <input
           ref={inputRef}
           type="file"
-          accept=".pdf,.docx,.txt,.csv,application/pdf,text/plain,text/csv"
+          accept=".pdf,.docx,.txt,.csv,.xlsx,application/pdf,text/plain,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
           multiple
           className="sr-only"
           disabled={Boolean(uploadingName)}

@@ -14,6 +14,7 @@ const EXTENSIONS = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   txt: "text/plain",
   csv: "text/csv",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 } as const;
 
 type Extension = keyof typeof EXTENSIONS;
@@ -58,13 +59,18 @@ async function ownedAgent(agentId: string) {
 
 async function ensureBucket() {
   const admin = createSupabaseAdminClient();
-  const existing = await admin.storage.getBucket(BUCKET);
-  if (existing.data) return;
-  const created = await admin.storage.createBucket(BUCKET, {
+  const options = {
     public: false,
     fileSizeLimit: MAX_BYTES,
-    allowedMimeTypes: Object.values(EXTENSIONS),
-  });
+    allowedMimeTypes: [...Object.values(EXTENSIONS)],
+  };
+  const existing = await admin.storage.getBucket(BUCKET);
+  if (existing.data) {
+    const updated = await admin.storage.updateBucket(BUCKET, options);
+    if (updated.error) throw new Error(updated.error.message);
+    return;
+  }
+  const created = await admin.storage.createBucket(BUCKET, options);
   if (created.error && !/already exists|duplicate/i.test(created.error.message)) {
     throw new Error(created.error.message);
   }
@@ -120,7 +126,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     const file = form.get("file");
     if (!(file instanceof File)) return Response.json({ error: "Файл не передан." }, { status: 400 });
     const extension = extensionOf(file.name);
-    if (!extension) return Response.json({ error: "Можно загрузить только PDF, DOCX, TXT и CSV." }, { status: 400 });
+    if (!extension) return Response.json({ error: "Можно загрузить только PDF, DOCX, TXT, CSV и XLSX." }, { status: 400 });
     if (file.size <= 0) return Response.json({ error: "Файл пустой." }, { status: 400 });
     if (file.size > MAX_BYTES) return Response.json({ error: "Файл больше 10 МБ." }, { status: 400 });
 
