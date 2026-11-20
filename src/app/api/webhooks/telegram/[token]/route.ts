@@ -4,6 +4,7 @@ import { normalizeAgentModel, readChannelDelays, readMessageLimit } from "@/lib/
 import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { markAgentReplied, markClientReplied } from "@/lib/followup";
 import { withKnowledge } from "@/lib/knowledge";
+import { interpolatePrompt } from "@/lib/utils/prompt-parser";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -144,7 +145,10 @@ async function handleUpdate(token: string, body: unknown) {
         role: "system",
         content: await withKnowledge(
           systemPromptWithSplit(
-            (agent.system_prompt as string) || "You are a STRIKE agent.",
+            interpolatePrompt((agent.system_prompt as string) || "You are a STRIKE agent.", {
+              source: "telegram",
+              client_name: message.firstName,
+            }),
             agent.split_messages,
           ),
           String(agent.id),

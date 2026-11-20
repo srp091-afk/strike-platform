@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { normalizeAgentModel } from "@/lib/agent-models";
 import { getLanding } from "@/lib/landings";
 import { getOpenAI } from "@/lib/openai";
+import { interpolatePrompt } from "@/lib/utils/prompt-parser";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 60;
@@ -35,8 +36,11 @@ export async function POST(request: NextRequest) {
         {
           role: "system",
           content:
-            agent?.system_prompt ||
-            `Ты консультант лендинга «${landing.title}». ${landing.welcomeMessage} Веди к следующему шагу коротко и по делу.`,
+            interpolatePrompt(
+              agent?.system_prompt ||
+                `Ты консультант лендинга «${landing.title}». ${landing.welcomeMessage} Веди к следующему шагу коротко и по делу.`,
+              { source: "web" },
+            ),
         },
         ...dialogue,
       ],

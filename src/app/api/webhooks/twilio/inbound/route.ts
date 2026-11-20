@@ -4,6 +4,7 @@ import { after, connection, type NextRequest } from "next/server";
 
 import { normalizeAgentModel } from "@/lib/agent-models";
 import { withKnowledge } from "@/lib/knowledge";
+import { interpolatePrompt, nameFromRecord, phoneFromHandle } from "@/lib/utils/prompt-parser";
 import { getOpenAI } from "@/lib/openai";
 import { stripMarkdown, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -129,7 +130,15 @@ export async function POST(request: NextRequest) {
 
   const model = normalizeAgentModel(agent.model);
   const context = leadContext(data.lead_data);
-  const prompt = systemPromptWithSplit(typeof agent.system_prompt === "string" ? agent.system_prompt : "", false);
+  const leadName = nameFromRecord(data.lead_data);
+  const prompt = systemPromptWithSplit(
+    interpolatePrompt(typeof agent.system_prompt === "string" ? agent.system_prompt : "", {
+      source: "whatsapp",
+      ...(leadName ? { client_name: leadName } : {}),
+      ...(phoneFromHandle(digits) ? { client_phone: phoneFromHandle(digits) } : {}),
+    }),
+    false,
+  );
 
   after(async () => {
     try {

@@ -69,6 +69,7 @@ import {
   type HandoffDuration,
 } from "@/lib/agent-models";
 import type { IntegrationProvider } from "@/lib/integration-catalog";
+import { PROMPT_VARIABLES } from "@/lib/utils/prompt-parser";
 
 type GreenDefaults = {
   instanceId: string;
@@ -929,6 +930,7 @@ const promptPlaceholder = "#ROLE\nТы оператор STRIKE. Отвечай �
 
 function SystemPromptField({ value, onChange }: { value: string; onChange: (value: string) => void }) {
   const [open, setOpen] = useState(false);
+  const areaRef = useRef<HTMLTextAreaElement>(null);
 
   return (
     <div className="grid gap-4">
@@ -949,6 +951,7 @@ function SystemPromptField({ value, onChange }: { value: string; onChange: (valu
           </Button>
         </div>
         <textarea
+          ref={areaRef}
           className={`${fieldClass} min-h-80 resize-y`}
           name="system_prompt"
           required
@@ -956,6 +959,7 @@ function SystemPromptField({ value, onChange }: { value: string; onChange: (valu
           placeholder={promptPlaceholder}
           onChange={(event) => onChange(event.target.value)}
         />
+        <PromptVariables onInsert={(token) => insertPromptToken(areaRef.current, value, token, onChange)} />
         {open ? <SystemPromptDialog value={value} onChange={onChange} onClose={() => setOpen(false)} /> : null}
       </div>
     </div>
@@ -1033,6 +1037,8 @@ function SystemPromptDialog({
   onChange: (value: string) => void;
   onClose: () => void;
 }) {
+  const areaRef = useRef<HTMLTextAreaElement>(null);
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.key === "Escape") onClose();
@@ -1062,12 +1068,16 @@ function SystemPromptDialog({
           </h2>
         </div>
         <textarea
+          ref={areaRef}
           className={`${fieldClass} mt-4 min-h-0 flex-1 resize-none`}
           value={value}
           autoFocus
           placeholder={promptPlaceholder}
           onChange={(event) => onChange(event.target.value)}
         />
+        <div className="mt-3">
+          <PromptVariables onInsert={(token) => insertPromptToken(areaRef.current, value, token, onChange)} />
+        </div>
         <div className="mt-4 flex justify-end">
           <Button type="button" onClick={onClose}>
             Готово
@@ -1077,6 +1087,43 @@ function SystemPromptDialog({
     </div>,
     document.body,
   );
+}
+
+function PromptVariables({ onInsert }: { onInsert: (token: string) => void }) {
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <p className="text-xs text-zinc-500">Вы можете использовать переменные в тексте:</p>
+      {PROMPT_VARIABLES.map((item) => (
+        <button
+          key={item.token}
+          type="button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onInsert(item.token)}
+          className="inline-flex items-center gap-1.5 rounded-full border border-zinc-700 bg-zinc-900 px-2.5 py-1 text-[11px] text-zinc-400 transition-colors hover:border-zinc-500 hover:text-zinc-200"
+        >
+          <span className="font-mono text-zinc-100">{item.token}</span>
+          <span>— {item.label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function insertPromptToken(
+  area: HTMLTextAreaElement | null,
+  value: string,
+  token: string,
+  onChange: (value: string) => void,
+) {
+  const focused = area !== null && document.activeElement === area;
+  const start = focused ? area.selectionStart : value.length;
+  const end = focused ? area.selectionEnd : value.length;
+  onChange(`${value.slice(0, start)}${token}${value.slice(end)}`);
+  const cursor = start + token.length;
+  requestAnimationFrame(() => {
+    area?.focus();
+    area?.setSelectionRange(cursor, cursor);
+  });
 }
 
 const channelTone: Record<IntegrationProvider, string> = {

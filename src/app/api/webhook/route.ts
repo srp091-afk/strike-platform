@@ -4,6 +4,7 @@ import { normalizeAgentModel } from "@/lib/agent-models";
 import { readBotFlags } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
 import { withKnowledge } from "@/lib/knowledge";
+import { interpolatePrompt, phoneFromHandle } from "@/lib/utils/prompt-parser";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -143,7 +144,11 @@ export async function POST(request: NextRequest) {
           role: "system",
           content: await withKnowledge(
             systemPromptWithSplit(
-              (agent.system_prompt as string) || "You are a STRIKE agent.",
+              interpolatePrompt((agent.system_prompt as string) || "You are a STRIKE agent.", {
+                source: sourceOf(integration.provider),
+                ...(incoming.contactName ? { client_name: incoming.contactName } : {}),
+                ...(phoneFromHandle(incoming.externalChatId) ? { client_phone: phoneFromHandle(incoming.externalChatId) } : {}),
+              }),
               agent.split_messages,
             ),
             String(agent.id),
@@ -241,6 +246,15 @@ export async function POST(request: NextRequest) {
     conversation_id: conversationId,
     chunks: sent,
   });
+}
+
+function sourceOf(provider: unknown) {
+  const value = typeof provider === "string" ? provider.toLowerCase() : "";
+  if (value.includes("telegram")) return "telegram";
+  if (value.includes("whatsapp") || value.includes("green")) return "whatsapp";
+  if (value.includes("instagram")) return "instagram";
+  if (value.includes("widget") || value.includes("web")) return "web";
+  return value || "webhook";
 }
 
 function parseIncoming(url: URL, body: unknown): IncomingMessage | { error: string } {

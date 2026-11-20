@@ -6,6 +6,7 @@ import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/li
 import { markAgentReplied, markClientReplied } from "@/lib/followup";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { withKnowledge } from "@/lib/knowledge";
+import { interpolatePrompt, phoneFromHandle } from "@/lib/utils/prompt-parser";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { readGreenMedia, resolveWhatsAppMedia, visionModel, type VisionImage, type WhatsAppMedia } from "@/lib/whatsapp-media";
@@ -280,7 +281,11 @@ async function processIncomingAi(job: IncomingJob) {
           role: "system",
           content: await withKnowledge(
             systemPromptWithSplit(
-              (agent.system_prompt as string) || "You are a STRIKE agent.",
+              interpolatePrompt((agent.system_prompt as string) || "You are a STRIKE agent.", {
+                source: "whatsapp",
+                ...(job.contactName ? { client_name: job.contactName } : {}),
+                ...(phoneFromHandle(job.from) ? { client_phone: phoneFromHandle(job.from) } : {}),
+              }),
               agent.split_messages,
             ),
             String(agent.id),
@@ -615,7 +620,11 @@ function readIncoming(body: unknown): ChatText | null {
     from,
     text,
     messageId,
-    contactName: stringValue(sender.senderName) || stringValue(sender.senderContactName) || null,
+    contactName:
+      stringValue(asRecord(sender.profile).name) ||
+      stringValue(sender.senderName) ||
+      stringValue(sender.senderContactName) ||
+      null,
     sentAt: readMessageTimestamp(record),
     media,
   };

@@ -5,6 +5,7 @@ import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
 import { GRAPH, graphJson, verifySignature } from "@/lib/instagram";
 import { withKnowledge } from "@/lib/knowledge";
+import { interpolatePrompt } from "@/lib/utils/prompt-parser";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -168,7 +169,13 @@ async function handleMessage(message: IncomingEvent) {
       {
         role: "system",
         content: await withKnowledge(
-          systemPromptWithSplit((agent.system_prompt as string) || "You are a STRIKE agent.", agent.split_messages),
+          systemPromptWithSplit(
+            interpolatePrompt((agent.system_prompt as string) || "You are a STRIKE agent.", {
+              source: "instagram",
+              ...(conversation.contactName ? { client_name: conversation.contactName } : {}),
+            }),
+            agent.split_messages,
+          ),
           String(agent.id),
           question,
         ),
