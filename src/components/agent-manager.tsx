@@ -35,6 +35,7 @@ import { SelectField } from "@/components/ui/select-field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toaster";
+import { AgentKnowledge } from "@/components/agent-knowledge";
 import { TwilioConnectCard } from "@/components/twilio-connect-card";
 import { WhatsAppConnectDialog } from "@/components/whatsapp-connect-dialog";
 import {
@@ -469,6 +470,7 @@ function SimulatorDialog({
 const AGENT_TABS = [
   { value: "main", label: "Основные" },
   { value: "prompt", label: "Инструкции" },
+  { value: "knowledge", label: "База знаний" },
   { value: "channels", label: "Каналы связи" },
   { value: "behavior", label: "Поведение и автоматизации" },
 ] as const;
@@ -750,6 +752,12 @@ function AgentDialog({
                       value={draft.system_prompt}
                       onChange={(system_prompt) => patchDraft({ system_prompt })}
                     />
+                  </section>
+                </TabsContent>
+
+                <TabsContent value="knowledge" forceMount className="data-[state=inactive]:hidden">
+                  <section className={tabCardClass}>
+                    <AgentKnowledge agentId={persistedId} />
                   </section>
                 </TabsContent>
 
