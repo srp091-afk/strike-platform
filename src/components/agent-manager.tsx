@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, GripVertical, Globe, Maximize, Play, Trash } from "lucide-react";
+import { CalendarDays, GripVertical, Globe, Loader2, Maximize, Play, Sparkles, Trash } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -923,32 +923,95 @@ function SystemPromptField({ value, onChange }: { value: string; onChange: (valu
   const [open, setOpen] = useState(false);
 
   return (
-    <div className="grid gap-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
-          Системная инструкция <span className="text-white">#ROLE</span>
-        </span>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          aria-label="Развернуть системную инструкцию"
-          onClick={() => setOpen(true)}
-        >
-          <Maximize className="size-4" />
+    <div className="grid gap-4">
+      <WebToKnowledge value={value} onChange={onChange} />
+      <div className="grid gap-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
+            Системная инструкция <span className="text-white">#ROLE</span>
+          </span>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Развернуть системную инструкцию"
+            onClick={() => setOpen(true)}
+          >
+            <Maximize className="size-4" />
+          </Button>
+        </div>
+        <textarea
+          className={`${fieldClass} min-h-80 resize-y`}
+          name="system_prompt"
+          required
+          value={value}
+          placeholder={promptPlaceholder}
+          onChange={(event) => onChange(event.target.value)}
+        />
+        {open ? <SystemPromptDialog value={value} onChange={onChange} onClose={() => setOpen(false)} /> : null}
+      </div>
+    </div>
+  );
+}
+
+function WebToKnowledge({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+  const [url, setUrl] = useState("");
+  const [isParsing, setIsParsing] = useState(false);
+
+  async function generate() {
+    const site = url.trim();
+    if (!/^https?:\/\/.+\..+/i.test(site) && !/^[^\s]+\.[^\s]+$/.test(site)) {
+      toast.error("Введите корректный адрес сайта.");
+      return;
+    }
+    setIsParsing(true);
+    try {
+      const response = await fetch("/api/agents/parse-website", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ url: site }),
+      });
+      const data = (await response.json().catch(() => null)) as { prompt?: string; error?: string } | null;
+      const prompt = data?.prompt?.trim() ?? "";
+      if (!response.ok || !prompt) {
+        toast.error(data?.error || "Не удалось разобрать сайт.");
+        return;
+      }
+      const current = value.trim();
+      onChange(current ? `${current}\n\n${prompt}` : prompt);
+      toast.success(current ? "Инструкция добавлена к текущему тексту" : "Инструкция составлена по сайту");
+    } catch {
+      toast.error("Не удалось разобрать сайт.");
+    } finally {
+      setIsParsing(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-zinc-800 bg-black p-4">
+      <p className="text-sm font-medium text-white">Автогенерация из сайта (Web-to-Knowledge)</p>
+      <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+        <input
+          type="url"
+          inputMode="url"
+          value={url}
+          disabled={isParsing}
+          placeholder="https://example.com"
+          onChange={(event) => setUrl(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter") {
+              event.preventDefault();
+              if (!isParsing) void generate();
+            }
+          }}
+          className={fieldClass}
+        />
+        <Button type="button" disabled={isParsing} onClick={() => void generate()} className="shrink-0">
+          {isParsing ? <Loader2 className="size-4 animate-spin" /> : <Sparkles className="size-4" />}
+          {isParsing ? "Анализируем сайт..." : "Сгенерировать инструкцию"}
         </Button>
       </div>
-      <textarea
-        className={`${fieldClass} min-h-80 resize-y`}
-        name="system_prompt"
-        required
-        value={value}
-        placeholder={promptPlaceholder}
-        onChange={(event) => onChange(event.target.value)}
-      />
-      {open ? (
-        <SystemPromptDialog value={value} onChange={onChange} onClose={() => setOpen(false)} />
-      ) : null}
     </div>
   );
 }
