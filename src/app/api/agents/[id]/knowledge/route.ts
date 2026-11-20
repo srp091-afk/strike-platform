@@ -1,9 +1,10 @@
 import { connection } from "next/server";
 
 import { deniedStatus, getEffectiveUserId } from "@/lib/account-context";
+import { indexKnowledgeFile } from "@/lib/knowledge";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export const maxDuration = 60;
+export const maxDuration = 120;
 
 const BUCKET = "knowledge_bases";
 const MAX_BYTES = 10 * 1024 * 1024;
@@ -126,7 +127,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     await ensureBucket();
     const fileName = safeFileName(file.name);
     const path = `${id}/${Date.now()}_${fileName}`;
-    const upload = await admin.storage.from(BUCKET).upload(path, Buffer.from(await file.arrayBuffer()), {
+    const buffer = Buffer.from(await file.arrayBuffer());
+    const upload = await admin.storage.from(BUCKET).upload(path, buffer, {
       contentType: EXTENSIONS[extension],
       upsert: false,
     });
@@ -143,6 +145,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
         return Response.json({ error: "Примените миграцию 20261120_agent_knowledge_files.sql." }, { status: 503 });
       }
       throw new Error(error?.message ?? "Не удалось сохранить файл.");
+    }
+    try {
+      await indexKnowledgeFile({ agentId: id, fileId: String(data.id), extension, buffer });
+    } catch (indexError) {
+      await admin.from("agent_knowledge_files").delete().eq("id", data.id);
+      await admin.storage.from(BUCKET).remove([path]);
+      throw indexError;
     }
     return Response.json({ file: fileRow(data) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
@@ -185,6 +194,8 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
       const removed = await admin.storage.from(BUCKET).remove([path]);
       if (removed.error) throw new Error(removed.error.message);
     }
+    const chunks = await admin.from("knowledge_chunks").delete().eq("file_id", fileId).eq("agent_id", id);
+    if (chunks.error && !/knowledge_chunks|schema cache/i.test(chunks.error.message)) throw new Error(chunks.error.message);
     const deleted = await admin.from("agent_knowledge_files").delete().eq("id", fileId).eq("agent_id", id);
     if (deleted.error) throw new Error(deleted.error.message);
     return Response.json({ ok: true }, { headers: { "Cache-Control": "no-store" } });

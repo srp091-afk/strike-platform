@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { normalizeAgentModel, readChannelDelays, readMessageLimit } from "@/lib/agent-models";
 import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { markAgentReplied, markClientReplied } from "@/lib/followup";
+import { withKnowledge } from "@/lib/knowledge";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -125,6 +126,7 @@ async function handleUpdate(token: string, body: unknown) {
   // сообщение клиента уходит с системной заметкой — так агент знает имя и в
   // следующих ходах (каждый новый запрос аннотирует своё последнее сообщение).
   const lastUserIndex = dialogue.map((item) => item.role).lastIndexOf("user");
+  const question = lastUserIndex >= 0 ? dialogue[lastUserIndex].content : message.text;
   if (lastUserIndex >= 0) {
     const original = dialogue[lastUserIndex];
     dialogue[lastUserIndex] = {
@@ -140,9 +142,13 @@ async function handleUpdate(token: string, body: unknown) {
     messages: [
       {
         role: "system",
-        content: systemPromptWithSplit(
-          (agent.system_prompt as string) || "You are a STRIKE agent.",
-          agent.split_messages,
+        content: await withKnowledge(
+          systemPromptWithSplit(
+            (agent.system_prompt as string) || "You are a STRIKE agent.",
+            agent.split_messages,
+          ),
+          String(agent.id),
+          question,
         ),
       },
       ...dialogue,

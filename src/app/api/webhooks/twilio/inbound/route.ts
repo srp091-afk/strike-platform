@@ -3,6 +3,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { after, connection, type NextRequest } from "next/server";
 
 import { normalizeAgentModel } from "@/lib/agent-models";
+import { withKnowledge } from "@/lib/knowledge";
 import { getOpenAI } from "@/lib/openai";
 import { stripMarkdown, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -129,10 +130,10 @@ export async function POST(request: NextRequest) {
   const model = normalizeAgentModel(agent.model);
   const context = leadContext(data.lead_data);
   const prompt = systemPromptWithSplit(typeof agent.system_prompt === "string" ? agent.system_prompt : "", false);
-  const system = context ? `${prompt}\n\n${context}` : prompt;
 
   after(async () => {
     try {
+      const system = await withKnowledge(context ? `${prompt}\n\n${context}` : prompt, String(data.agent_id), text);
       const completion = await getOpenAI().chat.completions.create({
         model,
         temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),

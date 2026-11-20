@@ -1,6 +1,7 @@
 import type { NextRequest } from "next/server";
 
 import { normalizeAgentModel, readActiveChannels, readChannelDelays, WIDGET_DELAY_CAP_SECONDS } from "@/lib/agent-models";
+import { withKnowledge } from "@/lib/knowledge";
 import { getOpenAI } from "@/lib/openai";
 import { replyChunks, sleep, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -97,9 +98,13 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "system",
-          content: systemPromptWithSplit(
-            typeof agent.system_prompt === "string" && agent.system_prompt ? agent.system_prompt : "You are a STRIKE agent.",
-            agent.split_messages,
+          content: await withKnowledge(
+            systemPromptWithSplit(
+              typeof agent.system_prompt === "string" && agent.system_prompt ? agent.system_prompt : "You are a STRIKE agent.",
+              agent.split_messages,
+            ),
+            agentId,
+            userText,
           ),
         },
         ...messages,

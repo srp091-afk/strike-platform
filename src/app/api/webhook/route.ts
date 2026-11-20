@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { normalizeAgentModel } from "@/lib/agent-models";
 import { readBotFlags } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
+import { withKnowledge } from "@/lib/knowledge";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -140,9 +141,13 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: "system",
-          content: systemPromptWithSplit(
-            (agent.system_prompt as string) || "You are a STRIKE agent.",
-            agent.split_messages,
+          content: await withKnowledge(
+            systemPromptWithSplit(
+              (agent.system_prompt as string) || "You are a STRIKE agent.",
+              agent.split_messages,
+            ),
+            String(agent.id),
+            incoming.text,
           ),
         },
         ...dialogue,

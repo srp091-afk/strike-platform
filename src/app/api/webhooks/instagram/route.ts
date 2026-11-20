@@ -4,6 +4,7 @@ import { normalizeAgentModel, readActiveChannels, readChannelDelays, readMessage
 import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
 import { GRAPH, graphJson, verifySignature } from "@/lib/instagram";
+import { withKnowledge } from "@/lib/knowledge";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -158,12 +159,20 @@ async function handleMessage(message: IncomingEvent) {
     .filter((item) => item.role === "user" || item.role === "assistant")
     .map((item) => ({ role: item.role as "user" | "assistant", content: item.content as string }));
 
+  const question = [...dialogue].reverse().find((item) => item.role === "user")?.content ?? message.text;
   const model = normalizeAgentModel(agent.model);
   const completion = await completeWithNotifyManager({
     model,
     temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
     messages: [
-      { role: "system", content: systemPromptWithSplit((agent.system_prompt as string) || "You are a STRIKE agent.", agent.split_messages) },
+      {
+        role: "system",
+        content: await withKnowledge(
+          systemPromptWithSplit((agent.system_prompt as string) || "You are a STRIKE agent.", agent.split_messages),
+          String(agent.id),
+          question,
+        ),
+      },
       ...dialogue,
     ],
     chat: {

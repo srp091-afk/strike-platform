@@ -5,6 +5,7 @@ import { normalizeAgentModel, readChannelDelays, readHandoffDuration, readMessag
 import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { markAgentReplied, markClientReplied } from "@/lib/followup";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
+import { withKnowledge } from "@/lib/knowledge";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { readGreenMedia, resolveWhatsAppMedia, visionModel, type VisionImage, type WhatsAppMedia } from "@/lib/whatsapp-media";
@@ -277,9 +278,13 @@ async function processIncomingAi(job: IncomingJob) {
       messages: [
         {
           role: "system",
-          content: systemPromptWithSplit(
-            (agent.system_prompt as string) || "You are a STRIKE agent.",
-            agent.split_messages,
+          content: await withKnowledge(
+            systemPromptWithSplit(
+              (agent.system_prompt as string) || "You are a STRIKE agent.",
+              agent.split_messages,
+            ),
+            String(agent.id),
+            latest.content,
           ),
         },
         ...completionMessages(dialogue, image),
