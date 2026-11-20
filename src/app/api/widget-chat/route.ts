@@ -2,8 +2,8 @@ import type { NextRequest } from "next/server";
 
 import { normalizeAgentModel, readActiveChannels, readChannelDelays, WIDGET_DELAY_CAP_SECONDS } from "@/lib/agent-models";
 import { withKnowledge } from "@/lib/knowledge";
+import { completeWithCalendar } from "@/lib/notify-manager";
 import { interpolatePrompt } from "@/lib/utils/prompt-parser";
-import { getOpenAI } from "@/lib/openai";
 import { replyChunks, sleep, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { appendWidgetReply, openWidgetThread, readVisitorId, type WidgetThread } from "@/lib/widget-inbox";
@@ -93,9 +93,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const model = normalizeAgentModel(agent.model);
-    const completion = await getOpenAI().chat.completions.create({
+    const completion = await completeWithCalendar({
       model,
       temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
+      agentId,
       messages: [
         {
           role: "system",
@@ -115,7 +116,7 @@ export async function POST(request: NextRequest) {
       ],
     });
 
-    const replies = replyChunks(completion.choices[0]?.message?.content?.trim() ?? "", agent.split_messages);
+    const replies = replyChunks(completion.text, agent.split_messages);
     if (replies.length === 0) {
       return Response.json({ error: "Модель вернула пустой ответ." }, { status: 502 });
     }

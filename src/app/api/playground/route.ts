@@ -2,8 +2,8 @@ import type { NextRequest } from "next/server";
 
 import { normalizeAgentModel, readChannelDelays, WIDGET_DELAY_CAP_SECONDS, type ChannelDelayKey } from "@/lib/agent-models";
 import { withKnowledge } from "@/lib/knowledge";
+import { completeWithCalendar } from "@/lib/notify-manager";
 import { interpolatePrompt } from "@/lib/utils/prompt-parser";
-import { getOpenAI } from "@/lib/openai";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -63,9 +63,10 @@ export async function POST(request: NextRequest) {
 
       try {
         const model = normalizeAgentModel(agent.model);
-        const completion = await getOpenAI().chat.completions.create({
+        const completion = await completeWithCalendar({
           model,
           temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
+          agentId,
           messages: [
             {
               role: "system",
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
           ],
         });
 
-        const reply = completion.choices[0]?.message?.content?.trim() ?? "";
+        const reply = completion.text;
         const chunks = replyChunks(reply, agent.split_messages);
         // Задержка выбранного канала, потолок 30 с: симулятор отвечает в рамках одного запроса.
         const configuredDelay = manualDelay ?? readChannelDelays(agent.channel_delays)[channel];

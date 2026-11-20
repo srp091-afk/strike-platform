@@ -200,6 +200,18 @@ export async function listAgents(): Promise<AgentRecord[]> {
           },
         ] as const),
   );
+  const calendarRows = await supabase.from("agents").select("id, gcal_refresh_token, gcal_timezone").eq("user_id", userId);
+  const calendars = new Map<string, { connected: boolean; timezone: string }>(
+    calendarRows.error
+      ? []
+      : (calendarRows.data ?? []).map((row) => [
+          String(row.id),
+          {
+            connected: typeof row.gcal_refresh_token === "string" && row.gcal_refresh_token.length > 0,
+            timezone: typeof row.gcal_timezone === "string" && row.gcal_timezone ? row.gcal_timezone : "UTC",
+          },
+        ] as const),
+  );
 
   const instagram = new Map<string, { id: string | null; username: string | null; avatar: string | null }>(
     igRows.error
@@ -254,6 +266,8 @@ export async function listAgents(): Promise<AgentRecord[]> {
     telegram_chat_id: "telegram_chat_id" in row && row.telegram_chat_id ? String(row.telegram_chat_id) : null,
     notify_email_enabled: emails.get(String(row.id))?.enabled ?? false,
     notify_email_address: emails.get(String(row.id))?.address ?? null,
+    gcalConnected: calendars.get(String(row.id))?.connected ?? false,
+    gcalTimezone: calendars.get(String(row.id))?.timezone ?? "UTC",
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
 

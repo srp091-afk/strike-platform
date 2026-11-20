@@ -185,6 +185,9 @@ export type AgentRecord = {
   telegram_chat_id: string | null;
   notify_email_enabled: boolean;
   notify_email_address: string | null;
+  /** Google Calendar подключён. Сам refresh token в клиент не попадает. */
+  gcalConnected: boolean;
+  gcalTimezone: string;
   widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;

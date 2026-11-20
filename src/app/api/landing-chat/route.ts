@@ -2,7 +2,7 @@ import type { NextRequest } from "next/server";
 
 import { normalizeAgentModel } from "@/lib/agent-models";
 import { getLanding } from "@/lib/landings";
-import { getOpenAI } from "@/lib/openai";
+import { completeWithCalendar } from "@/lib/notify-manager";
 import { interpolatePrompt } from "@/lib/utils/prompt-parser";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -29,24 +29,24 @@ export async function POST(request: NextRequest) {
 
     const agent = landing.agentId ? await loadAgent(landing.agentId) : null;
     const model = normalizeAgentModel(agent?.model);
-    const completion = await getOpenAI().chat.completions.create({
+    const completion = await completeWithCalendar({
       model,
       temperature: model.includes("gpt-6") ? 1 : clamp(agent?.temperature),
+      agentId: landing.agentId || "",
       messages: [
         {
           role: "system",
-          content:
-            interpolatePrompt(
-              agent?.system_prompt ||
-                `Ты консультант лендинга «${landing.title}». ${landing.welcomeMessage} Веди к следующему шагу коротко и по делу.`,
-              { source: "web" },
-            ),
+          content: interpolatePrompt(
+            agent?.system_prompt ||
+              `Ты консультант лендинга «${landing.title}». ${landing.welcomeMessage} Веди к следующему шагу коротко и по делу.`,
+            { source: "web" },
+          ),
         },
         ...dialogue,
       ],
     });
 
-    const reply = completion.choices[0]?.message?.content?.trim() || "Уточните, пожалуйста, задачу.";
+    const reply = completion.text || "Уточните, пожалуйста, задачу.";
     return Response.json({ reply });
   } catch (error) {
     console.error("[landing-chat]", error instanceof Error ? error.message : error);

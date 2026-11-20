@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, GripVertical, Globe, Loader2, Maximize, Play, Sparkles, Trash } from "lucide-react";
+import { CalendarDays, Check, GripVertical, Globe, Loader2, Maximize, Play, Sparkles, Trash } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -68,6 +68,8 @@ import {
   type AgentRecord,
   type HandoffDuration,
 } from "@/lib/agent-models";
+import { activeAccountHeader } from "@/lib/active-account";
+import { CALENDAR_TIMEZONES } from "@/lib/calendar-timezones";
 import type { IntegrationProvider } from "@/lib/integration-catalog";
 import { PROMPT_VARIABLES } from "@/lib/utils/prompt-parser";
 
@@ -478,8 +480,89 @@ const AGENT_TABS = [
 
 const tabCardClass = "grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm";
 
-/** Заглушка будущей интеграции: сейчас только показывает, что раздел появится. */
-function GoogleCalendarStub() {
+function GoogleCalendarCard({
+  agentId,
+  connected,
+  timezone,
+}: {
+  agentId: string;
+  connected: boolean;
+  timezone: string;
+}) {
+  const [isConnected, setConnected] = useState(connected);
+  const [zone, setZone] = useState(timezone);
+  const [pending, setPending] = useState<"off" | "zone" | null>(null);
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  useEffect(() => {
+    setConnected(connected);
+    setZone(timezone);
+  }, [connected, timezone, agentId]);
+
+  useEffect(() => {
+    const status = searchParams.get("calendar");
+    if (status !== "connected" && status !== "error") return;
+    if (status === "connected") toast.success("Google Calendar подключён");
+    if (status === "error") toast.error(searchParams.get("message") || "Не удалось подключить Google Calendar.");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("calendar");
+    url.searchParams.delete("message");
+    const next = `${url.pathname}${url.search}${url.hash}`;
+    window.history.replaceState(null, "", next);
+  }, [searchParams]);
+
+  async function disconnect() {
+    setPending("off");
+    try {
+      const headers = new Headers();
+      const accountId = activeAccountHeader();
+      if (accountId) headers.set("x-account-id", accountId);
+      const response = await fetch(`/api/agents/${agentId}/calendar`, { method: "DELETE", credentials: "same-origin", headers });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        toast.error(data?.error || "Не удалось отключить календарь.");
+        return;
+      }
+      setConnected(false);
+      router.refresh();
+      toast.success("Google Calendar отключён");
+    } catch {
+      toast.error("Не удалось отключить календарь.");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function changeZone(next: string) {
+    const previous = zone;
+    setZone(next);
+    setPending("zone");
+    try {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const accountId = activeAccountHeader();
+      if (accountId) headers.set("x-account-id", accountId);
+      const response = await fetch(`/api/agents/${agentId}/calendar`, {
+        method: "PATCH",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify({ timezone: next }),
+      });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        setZone(previous);
+        toast.error(data?.error || "Не удалось сохранить таймзону.");
+        return;
+      }
+      router.refresh();
+    } catch {
+      setZone(previous);
+      toast.error("Не удалось сохранить таймзону.");
+    } finally {
+      setPending(null);
+    }
+  }
+
   return (
     <section className="flex flex-wrap items-center gap-4 rounded-2xl border border-dashed border-zinc-700 bg-zinc-900 p-6">
       <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-zinc-800 bg-black text-zinc-400">
@@ -488,17 +571,45 @@ function GoogleCalendarStub() {
       <div className="min-w-0 flex-1">
         <h3 className="flex items-center gap-2 font-heading text-lg font-semibold text-white">
           Google Calendar
-          <span className="rounded-full bg-zinc-800 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-zinc-400">
-            Скоро
-          </span>
+          {isConnected ? (
+            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
+              <Check className="size-3" />
+              Подключено
+            </span>
+          ) : null}
         </h3>
         <p className="mt-1 text-sm text-zinc-400">
-          Агент сможет сам предлагать свободные слоты и записывать клиентов на встречи прямо из диалога.
+          Агент проверяет свободные слоты и записывает клиента на встречу прямо в диалоге.
         </p>
+        {isConnected ? (
+          <label className="mt-3 grid max-w-xs gap-1 text-xs text-zinc-500">
+            Таймзона записи
+            <select
+              className={fieldClass}
+              value={zone}
+              disabled={pending === "zone"}
+              onChange={(event) => void changeZone(event.target.value)}
+            >
+              {CALENDAR_TIMEZONES.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : null}
       </div>
-      <Button type="button" variant="outline" disabled>
-        Подключить
-      </Button>
+      {!agentId ? (
+        <p className="text-sm text-zinc-500">Сначала сохраните агента.</p>
+      ) : isConnected ? (
+        <Button type="button" variant="outline" disabled={pending === "off"} onClick={() => void disconnect()}>
+          {pending === "off" ? "Отключаем..." : "Отключить"}
+        </Button>
+      ) : (
+        <Button type="button" variant="outline" onClick={() => { window.location.href = `/api/agents/${agentId}/calendar/auth`; }}>
+          Подключить
+        </Button>
+      )}
     </section>
   );
 }
@@ -826,7 +937,11 @@ function AgentDialog({
                       template={draft.followup_template}
                       onChange={patchDraft}
                     />
-                    <GoogleCalendarStub />
+                    <GoogleCalendarCard
+                      agentId={persistedId}
+                      connected={channelAgent?.gcalConnected ?? false}
+                      timezone={channelAgent?.gcalTimezone ?? "UTC"}
+                    />
                   </div>
                 </TabsContent>
               </Tabs>

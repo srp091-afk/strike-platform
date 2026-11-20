@@ -5,6 +5,7 @@ import type OpenAI from "openai";
 
 import { pauseBotForHandoff } from "@/lib/bot-state";
 import { sendLeadEmail } from "@/lib/email-notify";
+import { calendarSystemRule, calendarTimezone, runCalendarTool } from "@/lib/google-calendar";
 import { getOpenAI } from "@/lib/openai";
 import { sendTelegramNotification } from "@/lib/telegram-notify";
 
@@ -58,45 +59,129 @@ const notifyManagerResponseTool: OpenAI.Responses.FunctionTool = {
   strict: false,
 };
 
+const checkAvailabilityParameters = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    date: { type: "string", description: "Дата в формате YYYY-MM-DD." },
+  },
+  required: ["date"],
+};
+
+const bookSlotParameters = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    start_time: { type: "string", description: "Начало слота, как в ответе check_availability." },
+    end_time: { type: "string", description: "Конец слота, как в ответе check_availability." },
+    client_name: { type: "string", description: "Имя клиента." },
+    client_contact: { type: "string", description: "Телефон или другой контакт клиента." },
+  },
+  required: ["start_time", "end_time", "client_name", "client_contact"],
+};
+
+const calendarChatTools: OpenAI.Chat.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "check_availability",
+      description: "Используй для проверки свободных мест на конкретную дату.",
+      parameters: checkAvailabilityParameters,
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "book_slot",
+      description: "Используй для записи клиента, когда он выбрал конкретное время.",
+      parameters: bookSlotParameters,
+    },
+  },
+];
+
+const calendarResponseTools: OpenAI.Responses.FunctionTool[] = [
+  {
+    type: "function",
+    name: "check_availability",
+    description: "Используй для проверки свободных мест на конкретную дату.",
+    parameters: checkAvailabilityParameters,
+    strict: false,
+  },
+  {
+    type: "function",
+    name: "book_slot",
+    description: "Используй для записи клиента, когда он выбрал конкретное время.",
+    parameters: bookSlotParameters,
+    strict: false,
+  },
+];
+
 export async function completeWithNotifyManager(input: {
   model: string;
   temperature: number;
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
   chat: NotifyChat;
 }) {
-  if (input.model.includes("gpt-6")) return completeWithResponses(input);
-  return completeWithChat(input);
+  return completeTurn({ ...input, agentId: input.chat.agentId, chat: input.chat });
+}
+
+/** Ответ песочницы, виджета и звонков Twilio: календарь есть, уведомление менеджера нет. */
+export async function completeWithCalendar(input: {
+  model: string;
+  temperature: number;
+  messages: OpenAI.Chat.ChatCompletionMessageParam[];
+  agentId: string;
+}) {
+  return completeTurn({ ...input, chat: null });
+}
+
+async function completeTurn(input: {
+  model: string;
+  temperature: number;
+  messages: OpenAI.Chat.ChatCompletionMessageParam[];
+  agentId: string | null;
+  chat: NotifyChat | null;
+}) {
+  const timezone = input.agentId ? await calendarTimezone(input.agentId) : null;
+  const prepared = {
+    ...input,
+    messages: timezone ? withCalendarRule(input.messages, timezone) : input.messages,
+    calendar: Boolean(timezone),
+  };
+  if (input.model.includes("gpt-6")) return completeWithResponses(prepared);
+  return completeWithChat(prepared);
 }
 
 async function completeWithResponses(input: {
   model: string;
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
-  chat: NotifyChat;
+  agentId: string | null;
+  chat: NotifyChat | null;
+  calendar: boolean;
 }) {
   const client = getOpenAI();
+  const tools = responseTools(input.chat, input.calendar);
   const first = await client.responses.create({
     model: input.model,
     input: toResponseInput(input.messages),
-    tools: [notifyManagerResponseTool],
-    tool_choice: "auto",
+    ...(tools.length ? { tools, tool_choice: "auto" as const } : {}),
     store: true,
   });
 
   const calls = first.output.filter(
-    (item): item is OpenAI.Responses.ResponseFunctionToolCall =>
-      item.type === "function_call" && item.name === "notify_manager",
+    (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call",
   );
   if (calls.length === 0) return { text: first.output_text.trim(), pausedByTool: false };
 
   let pausedByTool = false;
   const toolOutputs: OpenAI.Responses.ResponseInputItem.FunctionCallOutput[] = [];
   for (const call of calls) {
-    const result = await runNotifyManager(call.arguments, input.chat);
+    const result = await runTool(call.name, call.arguments, input);
     if (result.paused) pausedByTool = true;
     toolOutputs.push({
       type: "function_call_output",
       call_id: call.call_id,
-      output: JSON.stringify(result),
+      output: result.output,
     });
   }
 
@@ -104,8 +189,7 @@ async function completeWithResponses(input: {
     model: input.model,
     previous_response_id: first.id,
     input: toolOutputs,
-    tools: [notifyManagerResponseTool],
-    tool_choice: "none",
+    ...(tools.length ? { tools, tool_choice: "none" as const } : {}),
   });
 
   return { text: second.output_text.trim(), pausedByTool };
@@ -145,20 +229,21 @@ async function completeWithChat(input: {
   model: string;
   temperature: number;
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
-  chat: NotifyChat;
+  agentId: string | null;
+  chat: NotifyChat | null;
+  calendar: boolean;
 }) {
+  const tools = chatTools(input.chat, input.calendar);
   const first = await getOpenAI().chat.completions.create({
     model: input.model,
     temperature: input.temperature,
     messages: input.messages,
-    tools: [notifyManagerTool],
-    tool_choice: "auto",
+    ...(tools.length ? { tools, tool_choice: "auto" as const } : {}),
   });
 
   const choice = first.choices[0]?.message;
   const calls = (choice?.tool_calls ?? []).filter(
-    (call): call is OpenAI.Chat.ChatCompletionMessageFunctionToolCall =>
-      call.type === "function" && call.function.name === "notify_manager",
+    (call): call is OpenAI.Chat.ChatCompletionMessageFunctionToolCall => call.type === "function",
   );
   if (!choice || calls.length === 0) {
     return { text: choice?.content?.trim() ?? "", pausedByTool: false };
@@ -167,12 +252,12 @@ async function completeWithChat(input: {
   let pausedByTool = false;
   const toolMessages: OpenAI.Chat.ChatCompletionToolMessageParam[] = [];
   for (const call of calls) {
-    const result = await runNotifyManager(call.function.arguments, input.chat);
+    const result = await runTool(call.function.name, call.function.arguments, input);
     if (result.paused) pausedByTool = true;
     toolMessages.push({
       role: "tool",
       tool_call_id: call.id,
-      content: JSON.stringify(result),
+      content: result.output,
     });
   }
 
@@ -191,6 +276,42 @@ async function completeWithChat(input: {
   });
 
   return { text: second.choices[0]?.message?.content?.trim() ?? "", pausedByTool };
+}
+
+function chatTools(chat: NotifyChat | null, calendar: boolean): OpenAI.Chat.ChatCompletionTool[] {
+  return [...(chat ? [notifyManagerTool] : []), ...(calendar ? calendarChatTools : [])];
+}
+
+function responseTools(chat: NotifyChat | null, calendar: boolean): OpenAI.Responses.FunctionTool[] {
+  return [...(chat ? [notifyManagerResponseTool] : []), ...(calendar ? calendarResponseTools : [])];
+}
+
+function withCalendarRule(messages: OpenAI.Chat.ChatCompletionMessageParam[], timezone: string) {
+  const rule = calendarSystemRule(timezone);
+  const index = messages.findIndex((message) => message.role === "system" && typeof message.content === "string");
+  if (index === -1) return [{ role: "system" as const, content: rule }, ...messages];
+  return messages.map((message, item) =>
+    item === index && message.role === "system" && typeof message.content === "string"
+      ? { ...message, content: `${message.content}\n\n${rule}` }
+      : message,
+  );
+}
+
+async function runTool(
+  name: string,
+  args: string,
+  input: { agentId: string | null; chat: NotifyChat | null },
+) {
+  if (name === "notify_manager") {
+    if (!input.chat) return { paused: false, output: JSON.stringify({ ok: false, error: "Уведомление менеджера здесь недоступно." }) };
+    const result = await runNotifyManager(args, input.chat);
+    return { paused: result.paused, output: JSON.stringify(result) };
+  }
+  if (name === "check_availability" || name === "book_slot") {
+    if (!input.agentId) return { paused: false, output: JSON.stringify({ ok: false, error: "Календарь не привязан к агенту." }) };
+    return { paused: false, output: await runCalendarTool(name, args, input.agentId) };
+  }
+  return { paused: false, output: JSON.stringify({ ok: false, error: "Неизвестная функция." }) };
 }
 
 /**

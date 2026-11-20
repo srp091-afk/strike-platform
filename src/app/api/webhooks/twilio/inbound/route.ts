@@ -4,8 +4,8 @@ import { after, connection, type NextRequest } from "next/server";
 
 import { normalizeAgentModel } from "@/lib/agent-models";
 import { withKnowledge } from "@/lib/knowledge";
+import { completeWithCalendar } from "@/lib/notify-manager";
 import { interpolatePrompt, nameFromRecord, phoneFromHandle } from "@/lib/utils/prompt-parser";
-import { getOpenAI } from "@/lib/openai";
 import { stripMarkdown, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { canonicalWhatsappNumber, twilioAccountForNumber } from "@/lib/twilio-account";
@@ -143,15 +143,16 @@ export async function POST(request: NextRequest) {
   after(async () => {
     try {
       const system = await withKnowledge(context ? `${prompt}\n\n${context}` : prompt, String(data.agent_id), text);
-      const completion = await getOpenAI().chat.completions.create({
+      const completion = await completeWithCalendar({
         model,
         temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
+        agentId: String(data.agent_id),
         messages: [
           { role: "system", content: system },
           { role: "user", content: text },
         ],
       });
-      const reply = stripMarkdown(completion.choices[0]?.message?.content ?? "").trim();
+      const reply = stripMarkdown(completion.text).trim();
       if (!reply) {
         console.error("[twilio inbound] empty reply");
         return;
