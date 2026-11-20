@@ -28,10 +28,25 @@ function migrationMissing(message: string) {
   return /agent_knowledge_files|schema cache/i.test(message);
 }
 
-function safeFileName(name: string) {
-  const base = name.split(/[/\\]/).pop()?.trim() || "file";
-  const cleaned = base.replace(/[^\p{L}\p{N}._ -]+/gu, "_").replace(/^\.+/, "").slice(0, 140);
-  return cleaned || "file";
+function fileBase(name: string) {
+  return name.split(/[/\\]/).pop()?.replace(/[\u0000-\u001f\u007f]/g, "").trim() || "file";
+}
+
+/** Имя в списке файлов. Кириллица здесь допустима: это поле базы, не ключ Storage. */
+function displayFileName(name: string) {
+  return fileBase(name).slice(0, 180) || "file";
+}
+
+/** Ключ объекта. Storage принимает только ASCII, поэтому «для сергея сайт.xlsx» становится file.xlsx. */
+function storageFileName(name: string, extension: Extension) {
+  const stem = fileBase(name).replace(/\.[^.]+$/, "");
+  const ascii = stem
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80);
+  return `${ascii || "file"}.${extension}`;
 }
 
 function extensionOf(name: string): Extension | null {
@@ -131,14 +146,19 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
     if (file.size > MAX_BYTES) return Response.json({ error: "Файл больше 10 МБ." }, { status: 400 });
 
     await ensureBucket();
-    const fileName = safeFileName(file.name);
-    const path = `${id}/${Date.now()}_${fileName}`;
+    const fileName = displayFileName(file.name);
+    const path = `${id}/${Date.now()}_${storageFileName(file.name, extension)}`;
     const buffer = Buffer.from(await file.arrayBuffer());
     const upload = await admin.storage.from(BUCKET).upload(path, buffer, {
       contentType: EXTENSIONS[extension],
       upsert: false,
     });
-    if (upload.error) throw new Error(upload.error.message);
+    if (upload.error) {
+      const message = /invalid key/i.test(upload.error.message)
+        ? "Имя файла не подошло для хранилища. Переименуйте файл латиницей и загрузите снова."
+        : upload.error.message;
+      throw new Error(message);
+    }
 
     const { data, error } = await admin
       .from("agent_knowledge_files")
