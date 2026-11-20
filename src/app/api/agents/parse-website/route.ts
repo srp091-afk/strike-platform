@@ -6,6 +6,14 @@ import { getOpenAI } from "@/lib/openai";
 
 export const maxDuration = 60;
 
+function stripCodeFence(value: string) {
+  return value
+    .trim()
+    .replace(/^```(?:markdown|html)?\s*/i, "")
+    .replace(/\s*```$/, "")
+    .trim();
+}
+
 const SYSTEM_PROMPT =
   "Ты — эксперт по настройке AI-агентов. Твоя задача: проанализировать текст сайта и составить детальный системный промпт для ИИ-ассистента этой компании. Вытащи: название компании, тон общения, список услуг, цены, контакты и главные правила. Отвечай только готовым текстом промпта (без вводных слов), используй маркдаун-списки.";
 
@@ -73,7 +81,7 @@ export async function POST(request: Request) {
         { role: "user", content: site.markdown },
       ],
     });
-    const prompt = completion.choices[0]?.message?.content?.trim() ?? "";
+    const prompt = stripCodeFence(completion.choices[0]?.message?.content ?? "");
     if (!prompt) return Response.json({ error: "Модель не вернула инструкцию." }, { status: 502 });
     return Response.json({ prompt }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
