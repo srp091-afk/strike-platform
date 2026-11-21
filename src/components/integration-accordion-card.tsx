@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronDown, Webhook } from "lucide-react";
+import { ChevronDown, MessageSquare, Webhook } from "lucide-react";
 import { useState, type ReactNode } from "react";
 
 export function IntegrationAccordionCard({
@@ -9,12 +9,15 @@ export function IntegrationAccordionCard({
   connected,
   icon,
   children,
+  showStatus = true,
 }: {
   title: string;
   description: string;
   connected: boolean;
   icon: ReactNode;
   children: ReactNode;
+  /** Для настроек без подключения бейдж «Не подключено» не нужен. */
+  showStatus?: boolean;
 }) {
   const [open, setOpen] = useState(false);
 
@@ -33,16 +36,18 @@ export function IntegrationAccordionCard({
           <span className="block font-sans text-sm font-bold text-white">{title}</span>
           <span className="block truncate text-xs leading-5 text-zinc-400">{description}</span>
         </span>
-        <span
-          className={
-            connected
-              ? "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400"
-              : "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400"
-          }
-        >
-          <span className={`size-1.5 rounded-full ${connected ? "bg-emerald-400" : "bg-zinc-500"}`} />
-          {connected ? "Подключено" : "Не подключено"}
-        </span>
+        {showStatus ? (
+          <span
+            className={
+              connected
+                ? "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-emerald-400"
+                : "inline-flex shrink-0 items-center gap-1.5 rounded-full bg-zinc-800 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-400"
+            }
+          >
+            <span className={`size-1.5 rounded-full ${connected ? "bg-emerald-400" : "bg-zinc-500"}`} />
+            {connected ? "Подключено" : "Не подключено"}
+          </span>
+        ) : null}
         <ChevronDown className={`size-4 shrink-0 text-zinc-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
       <div hidden={!open} className={open ? "grid gap-4 border-t border-zinc-800 p-4 sm:p-6" : undefined}>
@@ -50,6 +55,10 @@ export function IntegrationAccordionCard({
       </div>
     </section>
   );
+}
+
+export function PaymentNoticeIcon() {
+  return <MessageSquare className="size-4 text-zinc-100" strokeWidth={2} aria-hidden />;
 }
 
 export function AmoCrmIcon() {

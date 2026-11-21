@@ -43,6 +43,7 @@ import {
   DikidiIcon,
   GoogleCalendarIcon,
   IntegrationAccordionCard,
+  PaymentNoticeIcon,
   PipedriveIcon,
   ProdamusIcon,
   StripeIcon,
@@ -2486,7 +2487,13 @@ function AgentDialog({
                         secret={draft.prodamus_secret_key}
                         onChange={patchDraft}
                       />
-                      <section className="grid gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-sm sm:p-6">
+                      <IntegrationAccordionCard
+                        title="После оплаты"
+                        description="Сообщение клиенту и страница, куда его вернёт шлюз."
+                        connected={false}
+                        showStatus={false}
+                        icon={<PaymentNoticeIcon />}
+                      >
                         <label className="grid gap-2 text-sm text-zinc-300">
                           Сообщение после успешной оплаты
                           <textarea
@@ -2510,7 +2517,7 @@ function AgentDialog({
                             className={fieldClass}
                           />
                         </label>
-                      </section>
+                      </IntegrationAccordionCard>
                     </section>
                     <section className="grid gap-3">
                       <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Автоматизация и API</h3>
