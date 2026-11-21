@@ -480,7 +480,7 @@ function SimulatorDialog({
         <header className="flex items-center justify-between gap-3 border-b border-zinc-800 px-5 py-4">
           <div className="min-w-0">
             <p className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Симулятор</p>
-            <h2 id="simulator-dialog-title" className="truncate font-heading text-lg font-semibold text-white">
+            <h2 id="simulator-dialog-title" className="truncate font-sans text-lg font-bold text-white">
               {agent.name}
             </h2>
           </div>
@@ -598,7 +598,7 @@ function GoogleCalendarCard({
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <div className="grid gap-2">
-        <h3 className="flex items-center gap-2 font-heading text-lg font-semibold text-white">
+        <h3 className="flex items-center gap-2 font-sans text-lg font-bold text-white">
           Google Calendar
           {isConnected ? (
             <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
@@ -704,7 +704,7 @@ function OutboundWebhookCard({
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <div className="grid gap-2">
-        <h3 className="font-heading text-lg font-semibold text-white">Исходящий Webhook (CRM / Make / n8n)</h3>
+        <h3 className="font-sans text-lg font-bold text-white">Исходящий Webhook (CRM / Make / n8n)</h3>
         <p className="text-sm leading-6 text-zinc-400">STRIKE будет отправлять POST-запрос с каждым сообщением диалога и сменой статуса агента.</p>
       </div>
       <label className="grid gap-2 text-sm text-zinc-300">
@@ -1487,7 +1487,7 @@ function ChannelSettings({
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <div>
-        <h3 className="font-heading text-lg font-semibold text-white">Активные каналы</h3>
+        <h3 className="font-sans text-lg font-bold text-white">Активные каналы</h3>
         <p className="mt-1 text-sm leading-6 text-zinc-400">
           У агента один номер WhatsApp и один Telegram-канал (бот или личный аккаунт). Выключенный канал не вызывает модель.
         </p>
@@ -1959,7 +1959,7 @@ function HumanHandoffField({
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <div className="grid gap-2">
-        <h3 className="font-heading text-lg font-semibold text-white">Вмешательство оператора</h3>
+        <h3 className="font-sans text-lg font-bold text-white">Вмешательство оператора</h3>
         <p className="text-sm leading-6 text-zinc-400">
           На какое время бот замолчит, если вы ответите клиенту вручную с телефона или ПК.
         </p>
@@ -2001,7 +2001,7 @@ function LeadNotificationsField({
 
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <h3 className="font-heading text-lg font-semibold text-white">Уведомления о лидах</h3>
+      <h3 className="font-sans text-lg font-bold text-white">Уведомления о лидах</h3>
       <input type="hidden" name="notify_email_enabled" value={emailEnabled ? "true" : "false"} />
       {enabled ? null : <input type="hidden" name="telegram_chat_id" value="" />}
       {emailEnabled ? null : <input type="hidden" name="notify_email_address" value={emailAddress} />}
@@ -2068,7 +2068,7 @@ function MessageLimitsField({
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <div className="grid gap-2">
-        <h3 className="font-heading text-lg font-semibold text-white">Защита от зацикливания (Лимиты)</h3>
+        <h3 className="font-sans text-lg font-bold text-white">Защита от зацикливания (Лимиты)</h3>
         <p className="text-sm leading-6 text-zinc-400">
           Если указан 0, лимит отключен. При превышении лимита бот автоматически перейдет в статус &apos;На паузе&apos; для
           этого диалога.
@@ -2127,7 +2127,7 @@ function SplitMessagesField({ enabled, onChange }: { enabled: boolean; onChange:
 
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <h3 className="font-heading text-lg font-semibold text-white">Форматирование</h3>
+      <h3 className="font-sans text-lg font-bold text-white">Форматирование</h3>
       <input type="hidden" name="split_messages" value={enabled ? "true" : "false"} />
       <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
         <span className="text-sm font-medium text-zinc-200">Дробить текст на отдельные сообщения</span>
@@ -2156,7 +2156,7 @@ function FollowupField({
   return (
     <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
       <div className="grid gap-2">
-        <h3 className="font-heading text-lg font-semibold text-white">Умные напоминания (Follow-up)</h3>
+        <h3 className="font-sans text-lg font-bold text-white">Умные напоминания (Follow-up)</h3>
         <p className="text-sm leading-6 text-zinc-400">
           Если клиент перестал отвечать, ИИ сам решит, уместно ли напомнить о себе. Отказавшимся клиентам и диалогам,
           где мы ждём действия от себя, напоминания не уходят.

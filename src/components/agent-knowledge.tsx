@@ -151,7 +151,7 @@ export function AgentKnowledge({ agentId }: { agentId: string }) {
   return (
     <section className="grid gap-5">
       <div>
-        <h3 className="font-heading text-lg font-semibold text-white">База знаний (Файлы)</h3>
+        <h3 className="font-sans text-lg font-bold text-white">База знаний (Файлы)</h3>
         <p className="mt-1 text-sm text-zinc-400">PDF, DOCX, TXT, CSV и XLSX. Один файл не больше 10 МБ.</p>
       </div>
 
