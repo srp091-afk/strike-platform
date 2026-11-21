@@ -13,6 +13,7 @@ import {
   type HandoffDuration,
 } from "@/lib/agent-models";
 import { readAmoDomain } from "@/lib/amocrm";
+import { readBitrixWebhook } from "@/lib/bitrix24";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { assertCanCreateAgent } from "@/lib/access";
 import { ensureGreenIncomingWebhook, getGreenPhone } from "@/lib/green-api";
@@ -116,6 +117,22 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "ID воронки и этапа Pipedrive должны быть числами." };
   }
 
+  const bitrixProvided = formData.has("bitrix_webhook_url") || formData.has("bitrix_openline_id") || formData.has("bitrix_responsible_id") || formData.has("bitrix_handoff_status_id");
+  const bitrixWebhookRaw = String(formData.get("bitrix_webhook_url") ?? "");
+  const bitrixWebhook = readBitrixWebhook(bitrixWebhookRaw);
+  const bitrixOpenLineId = readOptionalCode(formData.get("bitrix_openline_id"));
+  const bitrixResponsibleId = readOptionalBigint(formData.get("bitrix_responsible_id"));
+  const bitrixStatusId = readOptionalCode(formData.get("bitrix_handoff_status_id"));
+  if (formData.has("bitrix_webhook_url") && bitrixWebhookRaw.trim() && bitrixWebhook === null) {
+    return { ok: false as const, error: "Входящий вебхук Битрикс24 должен быть вида https://company.bitrix24.ru/rest/1/код/." };
+  }
+  if (bitrixOpenLineId === undefined || bitrixStatusId === undefined) {
+    return { ok: false as const, error: "ID Открытой Линии и стадии лида Битрикс24 содержат недопустимые символы." };
+  }
+  if (bitrixResponsibleId === undefined) {
+    return { ok: false as const, error: "ID ответственного сотрудника Битрикс24 должен быть числом." };
+  }
+
   return {
     ok: true as const,
     followupEnabled,
@@ -151,7 +168,19 @@ function readAgentFields(formData: FormData) {
     pipedriveToken,
     pipedrivePipelineId,
     pipedriveStageId,
+    bitrixProvided,
+    bitrixWebhook: bitrixWebhook || "",
+    bitrixOpenLineId,
+    bitrixResponsibleId,
+    bitrixStatusId,
   };
+}
+
+function readOptionalCode(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const code = value.trim();
+  if (!/^[A-Za-z0-9_-]{1,64}$/.test(code)) return undefined;
+  return code;
 }
 
 function readOptionalBigint(value: FormDataEntryValue | null) {
@@ -271,6 +300,14 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
             ...(fields.pipedriveToken ? { pipedrive_api_token: fields.pipedriveToken } : {}),
           }
         : {}),
+      ...(fields.bitrixProvided
+        ? {
+            bitrix_openline_id: fields.bitrixOpenLineId,
+            bitrix_responsible_id: fields.bitrixResponsibleId ? Number(fields.bitrixResponsibleId) : null,
+            bitrix_handoff_status_id: fields.bitrixStatusId,
+            ...(fields.bitrixWebhook ? { bitrix_webhook_url: fields.bitrixWebhook } : {}),
+          }
+        : {}),
       active_channels: fields.activeChannels,
       user_id: userId,
       ...(fields.waInstanceId && fields.waApiToken
@@ -294,6 +331,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     const webhookRequested = Boolean(fields.webhookUrl || fields.webhookSecret);
     const amoRequested = Boolean(fields.amoDomain || fields.amoToken || fields.amoPipelineId || fields.amoStatusId);
     const pipedriveRequested = Boolean(fields.pipedriveToken || fields.pipedrivePipelineId || fields.pipedriveStageId);
+    const bitrixRequested = Boolean(fields.bitrixWebhook || fields.bitrixOpenLineId || fields.bitrixResponsibleId || fields.bitrixStatusId);
     let agentId = fields.id;
     if (fields.id) {
       const updated = await supabase
@@ -303,7 +341,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         .eq("user_id", userId)
         .select("id")
         .maybeSingle();
-      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested }) : null;
+      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested }) : null;
       const retried = updateFallback
         ? await supabase.from("agents").update(updateFallback).eq("id", fields.id).eq("user_id", userId).select("id").maybeSingle()
         : updated;
@@ -318,7 +356,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     } else {
       await assertCanCreateAgent(userId);
       const inserted = await supabase.from("agents").insert(payload).select("id").single();
-      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested }) : null;
+      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested }) : null;
       const retried = insertFallback ? await supabase.from("agents").insert(insertFallback).select("id").single() : inserted;
       if (retried.error || !retried.data) {
         return failedSave(columnError(retried.error?.message ?? "Не удалось сохранить агента."));
@@ -355,7 +393,7 @@ async function readWhatsAppPhone(instanceId: string, apiToken: string) {
 function dropUnavailableColumns<T extends Record<string, unknown>>(
   payload: T,
   message: string,
-  requested: { emailRequested: boolean; webhookRequested: boolean; amoRequested: boolean; pipedriveRequested: boolean },
+  requested: { emailRequested: boolean; webhookRequested: boolean; amoRequested: boolean; pipedriveRequested: boolean; bitrixRequested: boolean },
 ) {
   const next: Record<string, unknown> = { ...payload };
   let changed = false;
@@ -382,6 +420,13 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     delete next.pipedrive_handoff_stage_id;
     changed = true;
   }
+  if (!requested.bitrixRequested && missingBitrixColumn(message)) {
+    delete next.bitrix_webhook_url;
+    delete next.bitrix_openline_id;
+    delete next.bitrix_responsible_id;
+    delete next.bitrix_handoff_status_id;
+    changed = true;
+  }
   return changed ? (next as T) : null;
 }
 
@@ -390,7 +435,7 @@ function missingEmailColumn(message: string) {
 }
 
 function missingWebhookColumn(message: string) {
-  return message.includes("webhook_url") || message.includes("webhook_secret");
+  return /(?<!bitrix_)webhook_url/.test(message) || message.includes("webhook_secret");
 }
 
 function missingAmoColumn(message: string) {
@@ -401,7 +446,12 @@ function missingPipedriveColumn(message: string) {
   return message.includes("pipedrive_api_token") || message.includes("pipedrive_pipeline_id") || message.includes("pipedrive_handoff_stage_id");
 }
 
+function missingBitrixColumn(message: string) {
+  return message.includes("bitrix_webhook_url") || message.includes("bitrix_openline_id") || message.includes("bitrix_responsible_id") || message.includes("bitrix_handoff_status_id");
+}
+
 function columnError(message: string) {
+  if (missingBitrixColumn(message)) return "Чтобы подключить Битрикс24, выполните миграцию 20261121_agent_bitrix24.sql.";
   if (missingPipedriveColumn(message)) return "Чтобы подключить Pipedrive, выполните миграцию 20261121_agent_pipedrive.sql.";
   if (missingAmoColumn(message)) return "Чтобы подключить amoCRM, выполните миграцию 20261121_agent_amocrm.sql.";
   if (missingWebhookColumn(message)) return "Чтобы сохранять исходящий webhook, выполните миграцию 20261121_agent_outbound_webhook.sql.";

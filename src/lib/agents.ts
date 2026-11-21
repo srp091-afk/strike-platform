@@ -210,6 +210,23 @@ export async function listAgents(): Promise<AgentRecord[]> {
     .from("agents")
     .select("id, pipedrive_api_token, pipedrive_pipeline_id, pipedrive_handoff_stage_id")
     .eq("user_id", userId);
+  const bitrixRows = await supabase
+    .from("agents")
+    .select("id, bitrix_webhook_url, bitrix_openline_id, bitrix_responsible_id, bitrix_handoff_status_id")
+    .eq("user_id", userId);
+  const bitrix = new Map<string, { connected: boolean; openLineId: string | null; responsibleId: string | null; statusId: string | null }>(
+    bitrixRows.error
+      ? []
+      : (bitrixRows.data ?? []).map((row) => [
+          String(row.id),
+          {
+            connected: typeof row.bitrix_webhook_url === "string" && row.bitrix_webhook_url.trim().length > 0,
+            openLineId: typeof row.bitrix_openline_id === "string" && row.bitrix_openline_id.trim() ? row.bitrix_openline_id.trim() : null,
+            responsibleId: row.bitrix_responsible_id ? String(row.bitrix_responsible_id) : null,
+            statusId: typeof row.bitrix_handoff_status_id === "string" && row.bitrix_handoff_status_id.trim() ? row.bitrix_handoff_status_id.trim() : null,
+          },
+        ] as const),
+  );
   const pipedrive = new Map<string, { connected: boolean; pipelineId: string | null; stageId: string | null }>(
     pipedriveRows.error
       ? []
@@ -322,6 +339,10 @@ export async function listAgents(): Promise<AgentRecord[]> {
     pipedriveConnected: pipedrive.get(String(row.id))?.connected ?? false,
     pipedrive_pipeline_id: pipedrive.get(String(row.id))?.pipelineId ?? null,
     pipedrive_handoff_stage_id: pipedrive.get(String(row.id))?.stageId ?? null,
+    bitrixConnected: bitrix.get(String(row.id))?.connected ?? false,
+    bitrix_openline_id: bitrix.get(String(row.id))?.openLineId ?? null,
+    bitrix_responsible_id: bitrix.get(String(row.id))?.responsibleId ?? null,
+    bitrix_handoff_status_id: bitrix.get(String(row.id))?.statusId ?? null,
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
 

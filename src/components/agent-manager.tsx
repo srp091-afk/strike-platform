@@ -1184,6 +1184,223 @@ function PipedriveCard({
   );
 }
 
+function BitrixCard({
+  agentId,
+  connected,
+  webhook,
+  openLineId,
+  responsibleId,
+  statusId,
+  onChange,
+}: {
+  agentId: string;
+  connected: boolean;
+  webhook: string;
+  openLineId: string;
+  responsibleId: string;
+  statusId: string;
+  onChange: (patch: { bitrix_webhook_url?: string; bitrix_openline_id?: string; bitrix_responsible_id?: string; bitrix_handoff_status_id?: string }) => void;
+}) {
+  const router = useRouter();
+  const [isConnected, setConnected] = useState(connected);
+  const [webhookOpen, setWebhookOpen] = useState(!connected);
+  const [pending, setPending] = useState<"test" | "off" | null>(null);
+  const [portalName, setPortalName] = useState("");
+  const [error, setError] = useState("");
+  const [openLines, setOpenLines] = useState<{ id: string; name: string }[]>([]);
+  const [users, setUsers] = useState<{ id: string; name: string }[]>([]);
+  const [statuses, setStatuses] = useState<{ id: string; name: string }[]>([]);
+
+  useEffect(() => {
+    setConnected(connected);
+    setWebhookOpen(!connected);
+  }, [connected, agentId]);
+
+  const webhookUrl = agentId ? `https://www.strikeplatform.io/api/webhooks/bitrix24/${agentId}` : "";
+  const showLists = openLines.length > 0 || users.length > 0 || statuses.length > 0 || Boolean(openLineId || responsibleId || statusId);
+
+  async function accountHeaders() {
+    const headers = new Headers({ "Content-Type": "application/json" });
+    const accountId = activeAccountHeader();
+    if (accountId) headers.set("x-account-id", accountId);
+    return headers;
+  }
+
+  async function checkConnection() {
+    if (!agentId) {
+      toast.error("Сначала сохраните агента.");
+      return;
+    }
+    setPending("test");
+    setError("");
+    try {
+      const response = await fetch(`/api/agents/${agentId}/bitrix24/test`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: await accountHeaders(),
+        body: JSON.stringify({ bitrix_webhook_url: webhook.trim() }),
+      });
+      const data = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        portalName?: string;
+        openLines?: { id: string; name: string }[];
+        users?: { id: string; name: string }[];
+        statuses?: { id: string; name: string }[];
+      } | null;
+      if (!response.ok || !data?.ok) {
+        setError(data?.error || "Не удалось подключиться к Битрикс24.");
+        return;
+      }
+      setPortalName(data.portalName || "");
+      setOpenLines(data.openLines ?? []);
+      setUsers(data.users ?? []);
+      setStatuses(data.statuses ?? []);
+      toast.success(data.portalName ? `Портал: ${data.portalName}` : "Битрикс24 отвечает.");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function disconnect() {
+    if (!agentId) return;
+    setPending("off");
+    try {
+      const headers = await accountHeaders();
+      headers.delete("Content-Type");
+      const response = await fetch(`/api/agents/${agentId}/bitrix24`, { method: "DELETE", credentials: "same-origin", headers });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        toast.error(data?.error || "Не удалось отключить Битрикс24.");
+        return;
+      }
+      setConnected(false);
+      setWebhookOpen(true);
+      onChange({ bitrix_webhook_url: "" });
+      toast.success("Битрикс24 отключён");
+      router.refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function copyWebhook() {
+    if (!webhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      toast.success("Ссылка скопирована");
+    } catch {
+      toast.error("Не удалось скопировать ссылку.");
+    }
+  }
+
+  return (
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
+      <div className="grid gap-2">
+        <h3 className="flex items-center gap-2 font-sans text-lg font-bold text-white">
+          Битрикс24 (Открытые Линии + CRM)
+          {isConnected ? (
+            <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
+              Подключено
+            </span>
+          ) : null}
+        </h3>
+        <p className="text-sm leading-6 text-zinc-400">
+          При первом сообщении STRIKE создаёт лид и пишет переписку в таймлайн. Горячий лид переводится на выбранного сотрудника, и бот замолкает.
+        </p>
+      </div>
+      {webhookOpen ? (
+        <label className="grid gap-2 text-sm text-zinc-300">
+          Входящий вебхук Битрикс24
+          <input
+            name="bitrix_webhook_url"
+            type="password"
+            value={webhook}
+            onChange={(event) => onChange({ bitrix_webhook_url: event.target.value })}
+            placeholder="https://company.bitrix24.ru/rest/1/xxxxxxxx/"
+            autoComplete="new-password"
+            spellCheck={false}
+            className={fieldClass}
+          />
+          <span className="text-xs leading-5 text-zinc-500">Разработчикам → Другое → Входящий вебхук (права: crm, im, imopenlines, imconnector, user)</span>
+        </label>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="outline" disabled={pending !== null || (!webhook.trim() && !isConnected)} onClick={() => void checkConnection()}>
+          {pending === "test" ? "Проверяем..." : "Проверить и загрузить настройки"}
+        </Button>
+        {isConnected ? (
+          <>
+            <Button type="button" variant="outline" disabled={pending !== null} onClick={() => setWebhookOpen((current) => !current)}>
+              Обновить
+            </Button>
+            <Button type="button" variant="outline" disabled={pending === "off"} onClick={() => void disconnect()}>
+              {pending === "off" ? "Отключаем..." : "Отключить"}
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {portalName ? <p className="text-sm text-emerald-400">Портал: {portalName}</p> : null}
+      {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      {showLists ? (
+        <div className="grid gap-4">
+          <label className="grid gap-2 text-sm text-zinc-300">
+            Открытая Линия
+            <select name="bitrix_openline_id" value={openLineId} onChange={(event) => onChange({ bitrix_openline_id: event.target.value })} className={fieldClass}>
+              <option value="">Не выбрана</option>
+              {withCurrent(openLines, openLineId, `Линия ${openLineId}`).map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2 text-sm text-zinc-300">
+            Ответственный сотрудник (для перевода горячих лидов)
+            <select name="bitrix_responsible_id" value={responsibleId} onChange={(event) => onChange({ bitrix_responsible_id: event.target.value })} className={fieldClass}>
+              <option value="">Не назначать</option>
+              {withCurrent(users, responsibleId, `Сотрудник ${responsibleId}`).map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2 text-sm text-zinc-300">
+            Стадия лида при переводе на оператора
+            <select name="bitrix_handoff_status_id" value={statusId} onChange={(event) => onChange({ bitrix_handoff_status_id: event.target.value })} className={fieldClass}>
+              <option value="">Не переводить</option>
+              {withCurrent(statuses, statusId, statusId).map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : (
+        <>
+          <input type="hidden" name="bitrix_openline_id" value={openLineId} />
+          <input type="hidden" name="bitrix_responsible_id" value={responsibleId} />
+          <input type="hidden" name="bitrix_handoff_status_id" value={statusId} />
+        </>
+      )}
+      <div className="grid gap-2">
+        <span className="text-sm text-zinc-300">Webhook URL для Битрикс24</span>
+        <div className="flex items-center gap-2">
+          <input readOnly value={webhookUrl} placeholder="Сначала сохраните агента" className={fieldClass} />
+          <button type="button" onClick={() => void copyWebhook()} disabled={!webhookUrl} className="shrink-0 rounded-xl border border-zinc-800 bg-black px-3 py-3 text-xs text-white transition-colors hover:border-zinc-700 disabled:opacity-40">
+            Скопировать
+          </button>
+        </div>
+        <p className="text-xs leading-5 text-zinc-500">Добавьте этот URL в Исходящий вебхук Битрикс24 на события ONIMCONNECTORMESSAGEADD и ONCRMLEADUPDATE, чтобы бот замолкал при перехвате диалога оператором.</p>
+      </div>
+      {!agentId ? <p className="text-sm leading-6 text-zinc-400">Сначала сохраните агента, чтобы проверить подключение.</p> : null}
+    </section>
+  );
+}
+
+function withCurrent(items: { id: string; name: string }[], id: string, label: string) {
+  if (!id || items.some((item) => item.id === id)) return items;
+  return [...items, { id, name: label }];
+}
+
 function AgentDialog({
   editing,
   agents,
@@ -1291,6 +1508,10 @@ function AgentDialog({
     data.set("pipedrive_pipeline_id", current.pipedrive_pipeline_id);
     data.set("pipedrive_handoff_stage_id", current.pipedrive_handoff_stage_id);
     if (current.pipedrive_api_token) data.set("pipedrive_api_token", current.pipedrive_api_token);
+    data.set("bitrix_openline_id", current.bitrix_openline_id);
+    data.set("bitrix_responsible_id", current.bitrix_responsible_id);
+    data.set("bitrix_handoff_status_id", current.bitrix_handoff_status_id);
+    if (current.bitrix_webhook_url) data.set("bitrix_webhook_url", current.bitrix_webhook_url);
     return data;
   }
 
@@ -1550,6 +1771,15 @@ function AgentDialog({
                       stageId={draft.pipedrive_handoff_stage_id}
                       onChange={patchDraft}
                     />
+                    <BitrixCard
+                      agentId={persistedId}
+                      connected={channelAgent?.bitrixConnected ?? false}
+                      webhook={draft.bitrix_webhook_url}
+                      openLineId={draft.bitrix_openline_id}
+                      responsibleId={draft.bitrix_responsible_id}
+                      statusId={draft.bitrix_handoff_status_id}
+                      onChange={patchDraft}
+                    />
                   </div>
                 </TabsContent>
               </Tabs>
@@ -1593,6 +1823,10 @@ type AgentDraft = {
   pipedrive_api_token: string;
   pipedrive_pipeline_id: string;
   pipedrive_handoff_stage_id: string;
+  bitrix_webhook_url: string;
+  bitrix_openline_id: string;
+  bitrix_responsible_id: string;
+  bitrix_handoff_status_id: string;
 };
 
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
@@ -1627,6 +1861,10 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     pipedrive_api_token: "",
     pipedrive_pipeline_id: agent?.pipedrive_pipeline_id ?? "",
     pipedrive_handoff_stage_id: agent?.pipedrive_handoff_stage_id ?? "",
+    bitrix_webhook_url: "",
+    bitrix_openline_id: agent?.bitrix_openline_id ?? "",
+    bitrix_responsible_id: agent?.bitrix_responsible_id ?? "",
+    bitrix_handoff_status_id: agent?.bitrix_handoff_status_id ?? "",
   };
 }
 
@@ -1664,7 +1902,11 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.amo_handoff_status_id === right.amo_handoff_status_id &&
     left.pipedrive_api_token === right.pipedrive_api_token &&
     left.pipedrive_pipeline_id === right.pipedrive_pipeline_id &&
-    left.pipedrive_handoff_stage_id === right.pipedrive_handoff_stage_id
+    left.pipedrive_handoff_stage_id === right.pipedrive_handoff_stage_id &&
+    left.bitrix_webhook_url === right.bitrix_webhook_url &&
+    left.bitrix_openline_id === right.bitrix_openline_id &&
+    left.bitrix_responsible_id === right.bitrix_responsible_id &&
+    left.bitrix_handoff_status_id === right.bitrix_handoff_status_id
   );
 }
 

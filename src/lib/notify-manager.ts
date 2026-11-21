@@ -11,6 +11,7 @@ import { getOpenAI } from "@/lib/openai";
 import { sendTelegramNotification } from "@/lib/telegram-notify";
 import { phoneFromHandle } from "@/lib/utils/prompt-parser";
 import { syncAgentTurnToAmo } from "@/lib/amocrm";
+import { syncAgentTurnToBitrix } from "@/lib/bitrix24";
 import { syncAgentTurnToPipedrive } from "@/lib/pipedrive";
 import { dispatchAgentWebhook, loadAgentWebhook, type WebhookAgent } from "@/lib/webhooks";
 
@@ -374,6 +375,7 @@ function publishReply(turn: TurnSide, text: string, pausedByTool: boolean) {
   }
   scheduleAmoSync(turn, reply);
   schedulePipedriveSync(turn, reply);
+  scheduleBitrixSync(turn, reply);
   return { text: reply, pausedByTool };
 }
 
@@ -383,6 +385,10 @@ function scheduleAmoSync(turn: TurnSide, reply: string) {
 
 function schedulePipedriveSync(turn: TurnSide, reply: string) {
   scheduleCrmSync(turn, reply, syncAgentTurnToPipedrive);
+}
+
+function scheduleBitrixSync(turn: TurnSide, reply: string) {
+  scheduleCrmSync(turn, reply, syncAgentTurnToBitrix);
 }
 
 function scheduleCrmSync(

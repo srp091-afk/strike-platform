@@ -199,6 +199,11 @@ export type AgentRecord = {
   pipedriveConnected: boolean;
   pipedrive_pipeline_id: string | null;
   pipedrive_handoff_stage_id: string | null;
+  /** Битрикс24 подключён. URL входящего вебхука в клиент не попадает. */
+  bitrixConnected: boolean;
+  bitrix_openline_id: string | null;
+  bitrix_responsible_id: string | null;
+  bitrix_handoff_status_id: string | null;
   widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;
