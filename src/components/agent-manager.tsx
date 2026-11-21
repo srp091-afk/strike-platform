@@ -18,7 +18,7 @@ import {
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { startTransition, Suspense, useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
+import { startTransition, Suspense, useActionState, useCallback, useEffect, useMemo, useRef, useState, useTransition, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -894,6 +894,17 @@ function DikidiCard({
 
 const STRIPE_CURRENCIES = ["usd", "eur", "gbp", "gel"] as const;
 
+function PaymentSetupHint({ children }: { children: ReactNode }) {
+  return (
+    <div className="rounded-xl bg-slate-50 px-3.5 py-3">
+      <p className="text-xs font-semibold text-zinc-200">Как подключить за 2 минуты</p>
+      <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-xs leading-5 text-zinc-400 marker:text-zinc-500 [&_code]:font-mono [&_code]:text-[11px] [&_strong]:font-semibold [&_strong]:text-zinc-200">
+        {children}
+      </ol>
+    </div>
+  );
+}
+
 function PaymentWebhookField({ url }: { url: string }) {
   async function copy() {
     if (!url) return;
@@ -1048,8 +1059,12 @@ function StripeCard({
       </div>
       {result ? <p className="text-sm text-emerald-400">{result}</p> : null}
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      <PaymentSetupHint>
+        <li>В кабинете Stripe откройте <strong>Developers → API keys</strong> и скопируйте <strong>Secret key</strong> (<code>sk_live_...</code> или <code>sk_test_...</code> для тестов).</li>
+        <li>Перейдите в <strong>Developers → Webhooks → Add endpoint</strong>, вставьте <strong>Webhook URL</strong> ниже и выберите событие <code>checkout.session.completed</code>.</li>
+        <li>После создания вебхука откройте его, нажмите <strong>Reveal</strong> рядом с <strong>Signing secret</strong> (<code>whsec_...</code>) и вставьте в поле <strong>Webhook Secret</strong> (без него STRIKE не сможет подтверждать оплаты).</li>
+      </PaymentSetupHint>
       <PaymentWebhookField url={webhookUrl} />
-      <p className="text-xs leading-5 text-zinc-500">В Stripe укажите событие checkout.session.completed. Без Webhook Secret оплата не подтверждается.</p>
     </IntegrationAccordionCard>
   );
 }
@@ -1173,8 +1188,12 @@ function YookassaCard({
       </div>
       {result ? <p className="text-sm text-emerald-400">{result}</p> : null}
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      <PaymentSetupHint>
+        <li>В личном кабинете ЮKassa откройте <strong>Интеграция → Ключи API</strong>, скопируйте <strong>shopId</strong> (из шапки кабинета) и выпустите <strong>Секретный ключ</strong>.</li>
+        <li>Перейдите в <strong>Интеграция → HTTP-уведомления</strong>, вставьте <strong>Webhook URL</strong> ниже и отметьте галочкой событие <code>payment.succeeded</code>.</li>
+        <li>Вставьте ключи в поля выше, нажмите «Проверить подключение» и сохраните агента.</li>
+      </PaymentSetupHint>
       <PaymentWebhookField url={webhookUrl} />
-      <p className="text-xs leading-5 text-zinc-500">В кабинете ЮKassa включите уведомление payment.succeeded на этот URL.</p>
     </IntegrationAccordionCard>
   );
 }
@@ -1297,8 +1316,12 @@ function ProdamusCard({
       </div>
       {result ? <p className="text-sm text-emerald-400">{result}</p> : null}
       {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      <PaymentSetupHint>
+        <li>В личном кабинете Продамус откройте <strong>Настройки</strong> и скопируйте адрес вашей платёжной страницы (<code>https://....payform.ru</code>) и <strong>Секретный ключ</strong>.</li>
+        <li>В том же разделе в поле <strong>URL для уведомлений</strong> вставьте <strong>Webhook URL</strong> ниже и сохраните настройки в Продамус.</li>
+        <li>Вставьте данные в поля выше, нажмите «Проверить подключение» и сохраните агента.</li>
+      </PaymentSetupHint>
       <PaymentWebhookField url={webhookUrl} />
-      <p className="text-xs leading-5 text-zinc-500">В Продамус укажите этот URL уведомлений. Подпись приходит в заголовке Sign.</p>
     </IntegrationAccordionCard>
   );
 }
