@@ -23,6 +23,7 @@ import { createPortal } from "react-dom";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { mutate as swrMutate } from "swr";
+import { AgentTemplatesDialog } from "@/components/agent-templates-dialog";
 import { PlaygroundChat } from "@/components/playground-chat";
 import { deleteAgent, reorderAgents, saveAgent, saveAgentDirect, type SaveState } from "@/app/agents/actions";
 import { disconnectInstagram, disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
@@ -235,6 +236,7 @@ export function AgentManager({
   const [testing, setTesting] = useState<AgentRecord | null>(null);
   const closeTesting = useCallback(() => setTesting(null), []);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [templatesOpen, setTemplatesOpen] = useState(false);
   const [sessionKey, setSessionKey] = useState("closed");
   const [state, action, pending] = useActionState(saveAgent, initialState);
 
@@ -350,9 +352,15 @@ export function AgentManager({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <h2 className="text-2xl font-semibold">Список агентов</h2>
-        <Button type="button" onClick={openCreate} disabled={limitReached}>
-          + Создать агента
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          <Button type="button" variant="outline" onClick={() => setTemplatesOpen(true)}>
+            <Sparkles className="size-4" />
+            Шаблоны
+          </Button>
+          <Button type="button" onClick={openCreate} disabled={limitReached}>
+            + Создать агента
+          </Button>
+        </div>
       </div>
       {limitReached ? (
         <p className="mt-3 text-sm text-zinc-500">
@@ -402,6 +410,30 @@ export function AgentManager({
         />
       ) : null}
       {testing ? <SimulatorDialog agent={testing} agents={agents} onClose={closeTesting} /> : null}
+      {templatesOpen ? (
+        <AgentTemplatesDialog
+          onClose={() => setTemplatesOpen(false)}
+          onCreated={async (agentId) => {
+            setTemplatesOpen(false);
+            try {
+              const accountId = activeAccountHeader();
+              await swrMutate("/api/agents", async () => {
+                const response = await fetch("/api/agents", {
+                  cache: "no-store",
+                  credentials: "same-origin",
+                  headers: accountId ? { "x-account-id": accountId } : undefined,
+                });
+                const payload = (await response.json()) as { error?: string };
+                if (!response.ok) throw new Error(payload.error || "Не удалось обновить список агентов.");
+                return payload;
+              });
+            } catch {
+              // Редактор всё равно откроется по ссылке, когда список догрузится.
+            }
+            router.replace(`/agents/${agentId}`, { scroll: false });
+          }}
+        />
+      ) : null}
     </div>
   );
 }
