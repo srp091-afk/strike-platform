@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, GripVertical, Globe, Loader2, Maximize, Play, Sparkles, Trash } from "lucide-react";
+import { GripVertical, Globe, Loader2, Maximize, Play, Sparkles, Trash } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -37,6 +37,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toaster";
 import { AgentKnowledge } from "@/components/agent-knowledge";
+import {
+  AmoCrmIcon,
+  BitrixIcon,
+  GoogleCalendarIcon,
+  IntegrationAccordionCard,
+  PipedriveIcon,
+  WebhookIcon,
+} from "@/components/integration-accordion-card";
 import { TwilioConnectCard } from "@/components/twilio-connect-card";
 import { WhatsAppConnectDialog } from "@/components/whatsapp-connect-dialog";
 import {
@@ -507,7 +515,8 @@ const AGENT_TABS = [
   { value: "prompt", label: "Инструкции" },
   { value: "knowledge", label: "База знаний" },
   { value: "channels", label: "Каналы связи" },
-  { value: "behavior", label: "Поведение и автоматизации" },
+  { value: "behavior", label: "Поведение" },
+  { value: "integrations", label: "Интеграции" },
 ] as const;
 
 const tabCardClass = "grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-6 shadow-sm";
@@ -596,21 +605,12 @@ function GoogleCalendarCard({
   }
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <div className="grid gap-2">
-        <h3 className="flex items-center gap-2 font-sans text-lg font-bold text-white">
-          Google Calendar
-          {isConnected ? (
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
-              <Check className="size-3" />
-              Подключено
-            </span>
-          ) : null}
-        </h3>
-        <p className="text-sm leading-6 text-zinc-400">
-          Агент проверяет свободные слоты и записывает клиента на встречу прямо в диалоге.
-        </p>
-      </div>
+    <IntegrationAccordionCard
+      title="Google Calendar"
+      description="Свободные слоты и запись клиента на встречу в диалоге."
+      connected={isConnected}
+      icon={<GoogleCalendarIcon />}
+    >
       {isConnected ? (
         <label className="grid max-w-xs gap-2">
           <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Таймзона записи</span>
@@ -646,7 +646,7 @@ function GoogleCalendarCard({
           )}
         </div>
       )}
-    </section>
+    </IntegrationAccordionCard>
   );
 }
 
@@ -702,11 +702,12 @@ function OutboundWebhookCard({
   }
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <div className="grid gap-2">
-        <h3 className="font-sans text-lg font-bold text-white">Исходящий Webhook (CRM / Make / n8n)</h3>
-        <p className="text-sm leading-6 text-zinc-400">STRIKE будет отправлять POST-запрос с каждым сообщением диалога и сменой статуса агента.</p>
-      </div>
+    <IntegrationAccordionCard
+      title="Исходящий Webhook (CRM / Make / n8n)"
+      description="POST-запрос на каждое сообщение диалога и смену статуса."
+      connected={Boolean(url.trim())}
+      icon={<WebhookIcon />}
+    >
       <label className="grid gap-2 text-sm text-zinc-300">
         Webhook URL
         <input
@@ -753,7 +754,7 @@ function OutboundWebhookCard({
         ) : null}
       </div>
       {!agentId ? <p className="text-sm leading-6 text-zinc-400">Сначала сохраните агента, чтобы отправить тест.</p> : null}
-    </section>
+    </IntegrationAccordionCard>
   );
 }
 
@@ -871,20 +872,12 @@ function AmoCrmCard({
   }
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <div className="grid gap-2">
-        <h3 className="flex items-center gap-2 font-sans text-lg font-bold text-white">
-          amoCRM / Kommo
-          {isConnected ? (
-            <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
-              Подключено
-            </span>
-          ) : null}
-        </h3>
-        <p className="text-sm leading-6 text-zinc-400">
-          При первом сообщении STRIKE создаёт контакт и сделку, а переписку пишет в карточку. Когда менеджер забирает сделку, бот замолкает.
-        </p>
-      </div>
+    <IntegrationAccordionCard
+      title="amoCRM / Kommo"
+      description="Контакт, сделка и переписка в карточке."
+      connected={isConnected}
+      icon={<AmoCrmIcon />}
+    >
       <label className="grid gap-2 text-sm text-zinc-300">
         Домен аккаунта
         <input
@@ -973,7 +966,7 @@ function AmoCrmCard({
         <p className="text-xs leading-5 text-zinc-500">Добавьте этот URL в Настройки → Интеграции → Webhooks в amoCRM, чтобы бот автоматически замолкал при перехвате сделки менеджером.</p>
       </div>
       {!agentId ? <p className="text-sm leading-6 text-zinc-400">Сначала сохраните агента, чтобы проверить подключение.</p> : null}
-    </section>
+    </IntegrationAccordionCard>
   );
 }
 
@@ -1089,20 +1082,12 @@ function PipedriveCard({
   }
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <div className="grid gap-2">
-        <h3 className="flex items-center gap-2 font-sans text-lg font-bold text-white">
-          Pipedrive CRM
-          {isConnected ? (
-            <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
-              Подключено
-            </span>
-          ) : null}
-        </h3>
-        <p className="text-sm leading-6 text-zinc-400">
-          При первом сообщении STRIKE создаёт контакт и сделку, а переписку пишет в заметки. Когда менеджер забирает сделку, бот замолкает.
-        </p>
-      </div>
+    <IntegrationAccordionCard
+      title="Pipedrive CRM"
+      description="Контакт, сделка и заметки по диалогу."
+      connected={isConnected}
+      icon={<PipedriveIcon />}
+    >
       {tokenOpen ? (
         <label className="grid gap-2 text-sm text-zinc-300">
           API Token
@@ -1180,7 +1165,7 @@ function PipedriveCard({
         <p className="text-xs leading-5 text-zinc-500">Добавьте этот URL в Pipedrive (Инструменты и приложения → Вебхуки) на события updated.deal и added.note, чтобы бот замолкал при перехвате сделки менеджером.</p>
       </div>
       {!agentId ? <p className="text-sm leading-6 text-zinc-400">Сначала сохраните агента, чтобы проверить подключение.</p> : null}
-    </section>
+    </IntegrationAccordionCard>
   );
 }
 
@@ -1297,20 +1282,12 @@ function BitrixCard({
   }
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <div className="grid gap-2">
-        <h3 className="flex items-center gap-2 font-sans text-lg font-bold text-white">
-          Битрикс24 (Открытые Линии + CRM)
-          {isConnected ? (
-            <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
-              Подключено
-            </span>
-          ) : null}
-        </h3>
-        <p className="text-sm leading-6 text-zinc-400">
-          При первом сообщении STRIKE создаёт лид и пишет переписку в таймлайн. Горячий лид переводится на выбранного сотрудника, и бот замолкает.
-        </p>
-      </div>
+    <IntegrationAccordionCard
+      title="Битрикс24 (Открытые Линии + CRM)"
+      description="Лид, таймлайн и перевод на ответственного."
+      connected={isConnected}
+      icon={<BitrixIcon />}
+    >
       {webhookOpen ? (
         <label className="grid gap-2 text-sm text-zinc-300">
           Входящий вебхук Битрикс24
@@ -1392,7 +1369,7 @@ function BitrixCard({
         <p className="text-xs leading-5 text-zinc-500">Добавьте этот URL в Исходящий вебхук Битрикс24 на события ONIMCONNECTORMESSAGEADD и ONCRMLEADUPDATE, чтобы бот замолкал при перехвате диалога оператором.</p>
       </div>
       {!agentId ? <p className="text-sm leading-6 text-zinc-400">Сначала сохраните агента, чтобы проверить подключение.</p> : null}
-    </section>
+    </IntegrationAccordionCard>
   );
 }
 
@@ -1623,7 +1600,7 @@ function AgentDialog({
                     <TabsTrigger
                       key={tab.value}
                       value={tab.value}
-                      className="h-10 flex-none rounded-xl px-4 text-sm data-[state=inactive]:hover:bg-zinc-950 data-[state=inactive]:hover:text-white"
+                      className="h-10 min-w-0 flex-1 whitespace-nowrap rounded-xl px-2 text-sm data-[state=inactive]:hover:bg-zinc-950 data-[state=inactive]:hover:text-white"
                     >
                       {tab.label}
                     </TabsTrigger>
@@ -1743,43 +1720,57 @@ function AgentDialog({
                       template={draft.followup_template}
                       onChange={patchDraft}
                     />
-                    <GoogleCalendarCard
-                      agentId={persistedId}
-                      connected={channelAgent?.gcalConnected ?? false}
-                      timezone={channelAgent?.gcalTimezone ?? "UTC"}
-                    />
-                    <OutboundWebhookCard
-                      agentId={persistedId}
-                      url={draft.webhook_url}
-                      secret={draft.webhook_secret}
-                      onChange={patchDraft}
-                    />
-                    <AmoCrmCard
-                      agentId={persistedId}
-                      connected={channelAgent?.amoConnected ?? false}
-                      domain={draft.amo_domain}
-                      token={draft.amo_access_token}
-                      pipelineId={draft.amo_pipeline_id}
-                      statusId={draft.amo_handoff_status_id}
-                      onChange={patchDraft}
-                    />
-                    <PipedriveCard
-                      agentId={persistedId}
-                      connected={channelAgent?.pipedriveConnected ?? false}
-                      token={draft.pipedrive_api_token}
-                      pipelineId={draft.pipedrive_pipeline_id}
-                      stageId={draft.pipedrive_handoff_stage_id}
-                      onChange={patchDraft}
-                    />
-                    <BitrixCard
-                      agentId={persistedId}
-                      connected={channelAgent?.bitrixConnected ?? false}
-                      webhook={draft.bitrix_webhook_url}
-                      openLineId={draft.bitrix_openline_id}
-                      responsibleId={draft.bitrix_responsible_id}
-                      statusId={draft.bitrix_handoff_status_id}
-                      onChange={patchDraft}
-                    />
+                  </div>
+                </TabsContent>
+
+                <TabsContent value="integrations" forceMount className="data-[state=inactive]:hidden">
+                  <div className="grid content-start gap-6">
+                    <section className="grid gap-3">
+                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">CRM-системы</h3>
+                      <AmoCrmCard
+                        agentId={persistedId}
+                        connected={channelAgent?.amoConnected ?? false}
+                        domain={draft.amo_domain}
+                        token={draft.amo_access_token}
+                        pipelineId={draft.amo_pipeline_id}
+                        statusId={draft.amo_handoff_status_id}
+                        onChange={patchDraft}
+                      />
+                      <PipedriveCard
+                        agentId={persistedId}
+                        connected={channelAgent?.pipedriveConnected ?? false}
+                        token={draft.pipedrive_api_token}
+                        pipelineId={draft.pipedrive_pipeline_id}
+                        stageId={draft.pipedrive_handoff_stage_id}
+                        onChange={patchDraft}
+                      />
+                      <BitrixCard
+                        agentId={persistedId}
+                        connected={channelAgent?.bitrixConnected ?? false}
+                        webhook={draft.bitrix_webhook_url}
+                        openLineId={draft.bitrix_openline_id}
+                        responsibleId={draft.bitrix_responsible_id}
+                        statusId={draft.bitrix_handoff_status_id}
+                        onChange={patchDraft}
+                      />
+                    </section>
+                    <section className="grid gap-3">
+                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Календари</h3>
+                      <GoogleCalendarCard
+                        agentId={persistedId}
+                        connected={channelAgent?.gcalConnected ?? false}
+                        timezone={channelAgent?.gcalTimezone ?? "UTC"}
+                      />
+                    </section>
+                    <section className="grid gap-3">
+                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Автоматизация и API</h3>
+                      <OutboundWebhookCard
+                        agentId={persistedId}
+                        url={draft.webhook_url}
+                        secret={draft.webhook_secret}
+                        onChange={patchDraft}
+                      />
+                    </section>
                   </div>
                 </TabsContent>
               </Tabs>
