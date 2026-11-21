@@ -195,6 +195,10 @@ export type AgentRecord = {
   amo_domain: string | null;
   amo_pipeline_id: string | null;
   amo_handoff_status_id: string | null;
+  /** Pipedrive подключён. API-токен в клиент не попадает. */
+  pipedriveConnected: boolean;
+  pipedrive_pipeline_id: string | null;
+  pipedrive_handoff_stage_id: string | null;
   widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;

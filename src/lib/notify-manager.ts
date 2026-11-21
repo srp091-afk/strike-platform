@@ -11,6 +11,7 @@ import { getOpenAI } from "@/lib/openai";
 import { sendTelegramNotification } from "@/lib/telegram-notify";
 import { phoneFromHandle } from "@/lib/utils/prompt-parser";
 import { syncAgentTurnToAmo } from "@/lib/amocrm";
+import { syncAgentTurnToPipedrive } from "@/lib/pipedrive";
 import { dispatchAgentWebhook, loadAgentWebhook, type WebhookAgent } from "@/lib/webhooks";
 
 export type NotifyChat = {
@@ -372,10 +373,31 @@ function publishReply(turn: TurnSide, text: string, pausedByTool: boolean) {
     emitWebhook(turn, { event: "message.sent", message: { role: "assistant", text: reply }, metadata: {} });
   }
   scheduleAmoSync(turn, reply);
+  schedulePipedriveSync(turn, reply);
   return { text: reply, pausedByTool };
 }
 
 function scheduleAmoSync(turn: TurnSide, reply: string) {
+  scheduleCrmSync(turn, reply, syncAgentTurnToAmo);
+}
+
+function schedulePipedriveSync(turn: TurnSide, reply: string) {
+  scheduleCrmSync(turn, reply, syncAgentTurnToPipedrive);
+}
+
+function scheduleCrmSync(
+  turn: TurnSide,
+  reply: string,
+  sync: (agentId: string, job: {
+    channel: string;
+    chatId: string;
+    clientName: string | null;
+    clientPhone: string | null;
+    inbound: string;
+    reply: string;
+    handoffReason: string | null;
+  }) => Promise<void>,
+) {
   if (!turn.agentId || (!turn.inbound && !reply && turn.handoffReason === null)) return;
   const agentId = turn.agentId;
   const job = {
@@ -388,7 +410,7 @@ function scheduleAmoSync(turn: TurnSide, reply: string) {
     handoffReason: turn.handoffReason,
   };
   const run = () => {
-    void syncAgentTurnToAmo(agentId, job);
+    void sync(agentId, job);
   };
   try {
     after(run);

@@ -108,6 +108,14 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "ID воронки и этапа amoCRM должны быть числами." };
   }
 
+  const pipedriveProvided = formData.has("pipedrive_api_token") || formData.has("pipedrive_pipeline_id") || formData.has("pipedrive_handoff_stage_id");
+  const pipedriveToken = String(formData.get("pipedrive_api_token") ?? "").trim().slice(0, 4000);
+  const pipedrivePipelineId = readOptionalBigint(formData.get("pipedrive_pipeline_id"));
+  const pipedriveStageId = readOptionalBigint(formData.get("pipedrive_handoff_stage_id"));
+  if (pipedrivePipelineId === undefined || pipedriveStageId === undefined) {
+    return { ok: false as const, error: "ID воронки и этапа Pipedrive должны быть числами." };
+  }
+
   return {
     ok: true as const,
     followupEnabled,
@@ -139,6 +147,10 @@ function readAgentFields(formData: FormData) {
     amoToken,
     amoPipelineId,
     amoStatusId,
+    pipedriveProvided,
+    pipedriveToken,
+    pipedrivePipelineId,
+    pipedriveStageId,
   };
 }
 
@@ -252,6 +264,13 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
             ...(fields.amoToken ? { amo_access_token: fields.amoToken } : {}),
           }
         : {}),
+      ...(fields.pipedriveProvided
+        ? {
+            pipedrive_pipeline_id: fields.pipedrivePipelineId ? Number(fields.pipedrivePipelineId) : null,
+            pipedrive_handoff_stage_id: fields.pipedriveStageId ? Number(fields.pipedriveStageId) : null,
+            ...(fields.pipedriveToken ? { pipedrive_api_token: fields.pipedriveToken } : {}),
+          }
+        : {}),
       active_channels: fields.activeChannels,
       user_id: userId,
       ...(fields.waInstanceId && fields.waApiToken
@@ -274,6 +293,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     const emailRequested = fields.notifyEmailEnabled || Boolean(fields.notifyEmailAddress);
     const webhookRequested = Boolean(fields.webhookUrl || fields.webhookSecret);
     const amoRequested = Boolean(fields.amoDomain || fields.amoToken || fields.amoPipelineId || fields.amoStatusId);
+    const pipedriveRequested = Boolean(fields.pipedriveToken || fields.pipedrivePipelineId || fields.pipedriveStageId);
     let agentId = fields.id;
     if (fields.id) {
       const updated = await supabase
@@ -283,7 +303,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         .eq("user_id", userId)
         .select("id")
         .maybeSingle();
-      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested }) : null;
+      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested }) : null;
       const retried = updateFallback
         ? await supabase.from("agents").update(updateFallback).eq("id", fields.id).eq("user_id", userId).select("id").maybeSingle()
         : updated;
@@ -298,7 +318,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     } else {
       await assertCanCreateAgent(userId);
       const inserted = await supabase.from("agents").insert(payload).select("id").single();
-      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested }) : null;
+      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested }) : null;
       const retried = insertFallback ? await supabase.from("agents").insert(insertFallback).select("id").single() : inserted;
       if (retried.error || !retried.data) {
         return failedSave(columnError(retried.error?.message ?? "Не удалось сохранить агента."));
@@ -335,7 +355,7 @@ async function readWhatsAppPhone(instanceId: string, apiToken: string) {
 function dropUnavailableColumns<T extends Record<string, unknown>>(
   payload: T,
   message: string,
-  requested: { emailRequested: boolean; webhookRequested: boolean; amoRequested: boolean },
+  requested: { emailRequested: boolean; webhookRequested: boolean; amoRequested: boolean; pipedriveRequested: boolean },
 ) {
   const next: Record<string, unknown> = { ...payload };
   let changed = false;
@@ -356,6 +376,12 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     delete next.amo_handoff_status_id;
     changed = true;
   }
+  if (!requested.pipedriveRequested && missingPipedriveColumn(message)) {
+    delete next.pipedrive_api_token;
+    delete next.pipedrive_pipeline_id;
+    delete next.pipedrive_handoff_stage_id;
+    changed = true;
+  }
   return changed ? (next as T) : null;
 }
 
@@ -371,7 +397,12 @@ function missingAmoColumn(message: string) {
   return message.includes("amo_domain") || message.includes("amo_access_token") || message.includes("amo_pipeline_id") || message.includes("amo_handoff_status_id");
 }
 
+function missingPipedriveColumn(message: string) {
+  return message.includes("pipedrive_api_token") || message.includes("pipedrive_pipeline_id") || message.includes("pipedrive_handoff_stage_id");
+}
+
 function columnError(message: string) {
+  if (missingPipedriveColumn(message)) return "Чтобы подключить Pipedrive, выполните миграцию 20261121_agent_pipedrive.sql.";
   if (missingAmoColumn(message)) return "Чтобы подключить amoCRM, выполните миграцию 20261121_agent_amocrm.sql.";
   if (missingWebhookColumn(message)) return "Чтобы сохранять исходящий webhook, выполните миграцию 20261121_agent_outbound_webhook.sql.";
   if (missingEmailColumn(message)) return "Чтобы сохранять email для лидов, выполните миграцию 20261111_agent_notify_email.sql.";

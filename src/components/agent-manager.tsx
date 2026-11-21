@@ -977,6 +977,213 @@ function AmoCrmCard({
   );
 }
 
+function PipedriveCard({
+  agentId,
+  connected,
+  token,
+  pipelineId,
+  stageId,
+  onChange,
+}: {
+  agentId: string;
+  connected: boolean;
+  token: string;
+  pipelineId: string;
+  stageId: string;
+  onChange: (patch: { pipedrive_api_token?: string; pipedrive_pipeline_id?: string; pipedrive_handoff_stage_id?: string }) => void;
+}) {
+  const router = useRouter();
+  const [isConnected, setConnected] = useState(connected);
+  const [tokenOpen, setTokenOpen] = useState(!connected);
+  const [pending, setPending] = useState<"test" | "off" | null>(null);
+  const [accountName, setAccountName] = useState("");
+  const [error, setError] = useState("");
+  const [pipelines, setPipelines] = useState<{ id: string; name: string; stages: { id: string; name: string }[] }[]>([]);
+
+  useEffect(() => {
+    setConnected(connected);
+    setTokenOpen(!connected);
+  }, [connected, agentId]);
+
+  const pipeline = pipelines.find((item) => item.id === pipelineId);
+  const stages = pipeline?.stages ?? (pipelineId ? [] : pipelines.flatMap((item) => item.stages));
+  const webhookUrl = agentId ? `https://www.strikeplatform.io/api/webhooks/pipedrive/${agentId}` : "";
+
+  async function accountHeaders() {
+    const headers = new Headers({ "Content-Type": "application/json" });
+    const accountId = activeAccountHeader();
+    if (accountId) headers.set("x-account-id", accountId);
+    return headers;
+  }
+
+  async function checkConnection() {
+    if (!agentId) {
+      toast.error("Сначала сохраните агента.");
+      return;
+    }
+    setPending("test");
+    setError("");
+    try {
+      const response = await fetch(`/api/agents/${agentId}/pipedrive/test`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: await accountHeaders(),
+        body: JSON.stringify({ pipedrive_api_token: token.trim() }),
+      });
+      const data = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        accountName?: string;
+        pipelines?: { id: string; name: string; stages: { id: string; name: string }[] }[];
+      } | null;
+      if (!response.ok || !data?.ok) {
+        setError(data?.error || "Не удалось подключиться к Pipedrive.");
+        return;
+      }
+      setAccountName(data.accountName || "");
+      setPipelines(data.pipelines ?? []);
+      toast.success(data.accountName ? `Аккаунт: ${data.accountName}` : "Pipedrive отвечает.");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function disconnect() {
+    if (!agentId) return;
+    setPending("off");
+    try {
+      const headers = await accountHeaders();
+      headers.delete("Content-Type");
+      const response = await fetch(`/api/agents/${agentId}/pipedrive`, { method: "DELETE", credentials: "same-origin", headers });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        toast.error(data?.error || "Не удалось отключить Pipedrive.");
+        return;
+      }
+      setConnected(false);
+      setTokenOpen(true);
+      onChange({ pipedrive_api_token: "" });
+      toast.success("Pipedrive отключён");
+      router.refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function copyWebhook() {
+    if (!webhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      toast.success("Ссылка скопирована");
+    } catch {
+      toast.error("Не удалось скопировать ссылку.");
+    }
+  }
+
+  function choosePipeline(value: string) {
+    const next = pipelines.find((item) => item.id === value);
+    const keepStage = next?.stages.some((stage) => stage.id === stageId) ?? !value;
+    onChange({ pipedrive_pipeline_id: value, pipedrive_handoff_stage_id: keepStage ? stageId : "" });
+  }
+
+  return (
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
+      <div className="grid gap-2">
+        <h3 className="flex items-center gap-2 font-sans text-lg font-bold text-white">
+          Pipedrive CRM
+          {isConnected ? (
+            <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
+              Подключено
+            </span>
+          ) : null}
+        </h3>
+        <p className="text-sm leading-6 text-zinc-400">
+          При первом сообщении STRIKE создаёт контакт и сделку, а переписку пишет в заметки. Когда менеджер забирает сделку, бот замолкает.
+        </p>
+      </div>
+      {tokenOpen ? (
+        <label className="grid gap-2 text-sm text-zinc-300">
+          API Token
+          <input
+            name="pipedrive_api_token"
+            type="password"
+            value={token}
+            onChange={(event) => onChange({ pipedrive_api_token: event.target.value })}
+            placeholder={isConnected ? "Новый токен" : "API-токен Pipedrive"}
+            autoComplete="new-password"
+            spellCheck={false}
+            className={fieldClass}
+          />
+          <span className="text-xs leading-5 text-zinc-500">Найти в Pipedrive: Профиль → Личные настройки → API</span>
+        </label>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="outline" disabled={pending !== null || (!token.trim() && !isConnected)} onClick={() => void checkConnection()}>
+          {pending === "test" ? "Проверяем..." : "Проверить и загрузить воронки"}
+        </Button>
+        {isConnected ? (
+          <>
+            <Button type="button" variant="outline" disabled={pending !== null} onClick={() => setTokenOpen((current) => !current)}>
+              Обновить токен
+            </Button>
+            <Button type="button" variant="outline" disabled={pending === "off"} onClick={() => void disconnect()}>
+              {pending === "off" ? "Отключаем..." : "Отключить"}
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {accountName ? <p className="text-sm text-emerald-400">Аккаунт: {accountName}</p> : null}
+      {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      {pipelines.length > 0 || pipelineId || stageId ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-2 text-sm text-zinc-300">
+            Воронка для новых сделок
+            <select name="pipedrive_pipeline_id" value={pipelineId} onChange={(event) => choosePipeline(event.target.value)} className={fieldClass}>
+              <option value="">Основная воронка</option>
+              {(pipelines.length > 0 ? pipelines : pipelineId ? [{ id: pipelineId, name: `Воронка ${pipelineId}`, stages: [] }] : []).map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2 text-sm text-zinc-300">
+            Этап для перевода на оператора (Handoff)
+            <select
+              name="pipedrive_handoff_stage_id"
+              value={stageId}
+              onChange={(event) => onChange({ pipedrive_handoff_stage_id: event.target.value })}
+              className={fieldClass}
+              disabled={Boolean(pipelineId) && pipelines.length > 0 && stages.length === 0}
+            >
+              <option value="">Не переводить</option>
+              {(stages.length > 0 ? stages : stageId ? [{ id: stageId, name: `Этап ${stageId}` }] : []).map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : (
+        <>
+          <input type="hidden" name="pipedrive_pipeline_id" value={pipelineId} />
+          <input type="hidden" name="pipedrive_handoff_stage_id" value={stageId} />
+        </>
+      )}
+      <div className="grid gap-2">
+        <span className="text-sm text-zinc-300">Webhook URL для Pipedrive</span>
+        <div className="flex items-center gap-2">
+          <input readOnly value={webhookUrl} placeholder="Сначала сохраните агента" className={fieldClass} />
+          <button type="button" onClick={() => void copyWebhook()} disabled={!webhookUrl} className="shrink-0 rounded-xl border border-zinc-800 bg-black px-3 py-3 text-xs text-white transition-colors hover:border-zinc-700 disabled:opacity-40">
+            Скопировать
+          </button>
+        </div>
+        <p className="text-xs leading-5 text-zinc-500">Добавьте этот URL в Pipedrive (Инструменты и приложения → Вебхуки) на события updated.deal и added.note, чтобы бот замолкал при перехвате сделки менеджером.</p>
+      </div>
+      {!agentId ? <p className="text-sm leading-6 text-zinc-400">Сначала сохраните агента, чтобы проверить подключение.</p> : null}
+    </section>
+  );
+}
+
 function AgentDialog({
   editing,
   agents,
@@ -1081,6 +1288,9 @@ function AgentDialog({
     data.set("amo_pipeline_id", current.amo_pipeline_id);
     data.set("amo_handoff_status_id", current.amo_handoff_status_id);
     if (current.amo_access_token) data.set("amo_access_token", current.amo_access_token);
+    data.set("pipedrive_pipeline_id", current.pipedrive_pipeline_id);
+    data.set("pipedrive_handoff_stage_id", current.pipedrive_handoff_stage_id);
+    if (current.pipedrive_api_token) data.set("pipedrive_api_token", current.pipedrive_api_token);
     return data;
   }
 
@@ -1332,6 +1542,14 @@ function AgentDialog({
                       statusId={draft.amo_handoff_status_id}
                       onChange={patchDraft}
                     />
+                    <PipedriveCard
+                      agentId={persistedId}
+                      connected={channelAgent?.pipedriveConnected ?? false}
+                      token={draft.pipedrive_api_token}
+                      pipelineId={draft.pipedrive_pipeline_id}
+                      stageId={draft.pipedrive_handoff_stage_id}
+                      onChange={patchDraft}
+                    />
                   </div>
                 </TabsContent>
               </Tabs>
@@ -1372,6 +1590,9 @@ type AgentDraft = {
   amo_access_token: string;
   amo_pipeline_id: string;
   amo_handoff_status_id: string;
+  pipedrive_api_token: string;
+  pipedrive_pipeline_id: string;
+  pipedrive_handoff_stage_id: string;
 };
 
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
@@ -1403,6 +1624,9 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     amo_access_token: "",
     amo_pipeline_id: agent?.amo_pipeline_id ?? "",
     amo_handoff_status_id: agent?.amo_handoff_status_id ?? "",
+    pipedrive_api_token: "",
+    pipedrive_pipeline_id: agent?.pipedrive_pipeline_id ?? "",
+    pipedrive_handoff_stage_id: agent?.pipedrive_handoff_stage_id ?? "",
   };
 }
 
@@ -1437,7 +1661,10 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.amo_domain.trim().toLowerCase() === right.amo_domain.trim().toLowerCase() &&
     left.amo_access_token === right.amo_access_token &&
     left.amo_pipeline_id === right.amo_pipeline_id &&
-    left.amo_handoff_status_id === right.amo_handoff_status_id
+    left.amo_handoff_status_id === right.amo_handoff_status_id &&
+    left.pipedrive_api_token === right.pipedrive_api_token &&
+    left.pipedrive_pipeline_id === right.pipedrive_pipeline_id &&
+    left.pipedrive_handoff_stage_id === right.pipedrive_handoff_stage_id
   );
 }
 

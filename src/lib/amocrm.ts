@@ -274,19 +274,45 @@ async function readLink(agentId: string, channel: string, chatId: string) {
 
 async function saveLink(agentId: string, channel: string, chatId: string, ids: { contactId: string; leadId: string }) {
   const supabase = createSupabaseAdminClient();
+  const row = {
+    amo_contact_id: Number(ids.contactId),
+    amo_lead_id: Number(ids.leadId),
+  };
+  const { data: existing, error: readError } = await supabase
+    .from("crm_chat_links")
+    .select("id")
+    .eq("agent_id", agentId)
+    .eq("channel", channel)
+    .eq("chat_id", chatId)
+    .maybeSingle();
+  if (readError) {
+    console.error("[amocrm] link", readError.message);
+    return ids;
+  }
+  if (existing?.id) {
+    const { error } = await supabase.from("crm_chat_links").update(row).eq("id", existing.id);
+    if (error) console.error("[amocrm] link", error.message);
+    return ids;
+  }
   const { error } = await supabase.from("crm_chat_links").insert({
     agent_id: agentId,
     channel,
     chat_id: chatId,
-    amo_contact_id: Number(ids.contactId),
-    amo_lead_id: Number(ids.leadId),
+    ...row,
   });
   if (!error) return ids;
   if (!/duplicate|unique/i.test(error.message)) {
     console.error("[amocrm] link", error.message);
     return ids;
   }
-  return readLink(agentId, channel, chatId);
+  const { error: updateError } = await supabase
+    .from("crm_chat_links")
+    .update(row)
+    .eq("agent_id", agentId)
+    .eq("channel", channel)
+    .eq("chat_id", chatId);
+  if (updateError) console.error("[amocrm] link", updateError.message);
+  return ids;
 }
 
 async function amoRequest(

@@ -206,6 +206,22 @@ export async function listAgents(): Promise<AgentRecord[]> {
     .from("agents")
     .select("id, amo_domain, amo_access_token, amo_pipeline_id, amo_handoff_status_id")
     .eq("user_id", userId);
+  const pipedriveRows = await supabase
+    .from("agents")
+    .select("id, pipedrive_api_token, pipedrive_pipeline_id, pipedrive_handoff_stage_id")
+    .eq("user_id", userId);
+  const pipedrive = new Map<string, { connected: boolean; pipelineId: string | null; stageId: string | null }>(
+    pipedriveRows.error
+      ? []
+      : (pipedriveRows.data ?? []).map((row) => [
+          String(row.id),
+          {
+            connected: typeof row.pipedrive_api_token === "string" && row.pipedrive_api_token.trim().length > 0,
+            pipelineId: row.pipedrive_pipeline_id ? String(row.pipedrive_pipeline_id) : null,
+            stageId: row.pipedrive_handoff_stage_id ? String(row.pipedrive_handoff_stage_id) : null,
+          },
+        ] as const),
+  );
   const amo = new Map<string, { connected: boolean; domain: string | null; pipelineId: string | null; statusId: string | null }>(
     amoRows.error
       ? []
@@ -303,6 +319,9 @@ export async function listAgents(): Promise<AgentRecord[]> {
     amo_domain: amo.get(String(row.id))?.domain ?? null,
     amo_pipeline_id: amo.get(String(row.id))?.pipelineId ?? null,
     amo_handoff_status_id: amo.get(String(row.id))?.statusId ?? null,
+    pipedriveConnected: pipedrive.get(String(row.id))?.connected ?? false,
+    pipedrive_pipeline_id: pipedrive.get(String(row.id))?.pipelineId ?? null,
+    pipedrive_handoff_stage_id: pipedrive.get(String(row.id))?.stageId ?? null,
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
 
