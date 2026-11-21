@@ -1,6 +1,6 @@
 "use client";
 
-import { CalendarDays, Check, GripVertical, Globe, Loader2, Maximize, Play, Sparkles, Trash } from "lucide-react";
+import { Check, GripVertical, Globe, Loader2, Maximize, Play, Sparkles, Trash } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -564,11 +564,8 @@ function GoogleCalendarCard({
   }
 
   return (
-    <section className="flex flex-wrap items-center gap-4 rounded-2xl border border-dashed border-zinc-700 bg-zinc-900 p-6">
-      <span className="grid size-11 shrink-0 place-items-center rounded-xl border border-zinc-800 bg-black text-zinc-400">
-        <CalendarDays className="size-5" strokeWidth={1.75} />
-      </span>
-      <div className="min-w-0 flex-1">
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
+      <div className="grid gap-2">
         <h3 className="flex items-center gap-2 font-heading text-lg font-semibold text-white">
           Google Calendar
           {isConnected ? (
@@ -578,37 +575,44 @@ function GoogleCalendarCard({
             </span>
           ) : null}
         </h3>
-        <p className="mt-1 text-sm text-zinc-400">
+        <p className="text-sm leading-6 text-zinc-400">
           Агент проверяет свободные слоты и записывает клиента на встречу прямо в диалоге.
         </p>
-        {isConnected ? (
-          <label className="mt-3 grid max-w-xs gap-1 text-xs text-zinc-500">
-            Таймзона записи
-            <select
-              className={fieldClass}
-              value={zone}
-              disabled={pending === "zone"}
-              onChange={(event) => void changeZone(event.target.value)}
-            >
-              {CALENDAR_TIMEZONES.map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        ) : null}
       </div>
+      {isConnected ? (
+        <label className="grid max-w-xs gap-2">
+          <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Таймзона записи</span>
+          <select
+            className={fieldClass}
+            value={zone}
+            disabled={pending === "zone"}
+            onChange={(event) => void changeZone(event.target.value)}
+          >
+            {CALENDAR_TIMEZONES.map((item) => (
+              <option key={item.id} value={item.id}>
+                {item.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : null}
       {!agentId ? (
-        <p className="text-sm text-zinc-500">Сначала сохраните агента.</p>
-      ) : isConnected ? (
-        <Button type="button" variant="outline" disabled={pending === "off"} onClick={() => void disconnect()}>
-          {pending === "off" ? "Отключаем..." : "Отключить"}
-        </Button>
+        <p className="text-sm leading-6 text-zinc-400">Сначала сохраните агента.</p>
       ) : (
-        <Button type="button" variant="outline" onClick={() => { window.location.href = `/api/agents/${agentId}/calendar/auth`; }}>
-          Подключить
-        </Button>
+        <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+          <span className="text-sm font-medium text-zinc-200">
+            {isConnected ? "Календарь подключён" : "Подключить Google Calendar"}
+          </span>
+          {isConnected ? (
+            <Button type="button" variant="outline" disabled={pending === "off"} onClick={() => void disconnect()}>
+              {pending === "off" ? "Отключаем..." : "Отключить"}
+            </Button>
+          ) : (
+            <Button type="button" variant="outline" onClick={() => { window.location.href = `/api/agents/${agentId}/calendar/auth`; }}>
+              Подключить
+            </Button>
+          )}
+        </div>
       )}
     </section>
   );
