@@ -1,5 +1,6 @@
 import "server-only";
 
+import { after } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type OpenAI from "openai";
 
@@ -8,12 +9,14 @@ import { sendLeadEmail } from "@/lib/email-notify";
 import { calendarSystemRule, calendarTimezone, runCalendarTool } from "@/lib/google-calendar";
 import { getOpenAI } from "@/lib/openai";
 import { sendTelegramNotification } from "@/lib/telegram-notify";
+import { phoneFromHandle } from "@/lib/utils/prompt-parser";
+import { dispatchAgentWebhook, loadAgentWebhook, type WebhookAgent } from "@/lib/webhooks";
 
 export type NotifyChat = {
   supabase: SupabaseClient;
   conversationId: string;
   agentId: string | null;
-  channel: "whatsapp" | "telegram" | "instagram" | "unknown";
+  channel: string;
   clientHandle: string;
   clientName: string | null;
 };
@@ -116,11 +119,19 @@ const calendarResponseTools: OpenAI.Responses.FunctionTool[] = [
   },
 ];
 
+export type AgentTurnDelivery = {
+  channel: string;
+  chatId: string;
+  client?: { name?: string | null; phone?: string | null; username?: string | null };
+};
+
 export async function completeWithNotifyManager(input: {
   model: string;
   temperature: number;
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
   chat: NotifyChat;
+  /** Перекрывает канал из чата, если провайдер шире, чем whatsapp/telegram/instagram. */
+  delivery?: AgentTurnDelivery;
 }) {
   return completeTurn({ ...input, agentId: input.chat.agentId, chat: input.chat });
 }
@@ -131,9 +142,15 @@ export async function completeWithCalendar(input: {
   temperature: number;
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
   agentId: string;
+  delivery?: AgentTurnDelivery;
 }) {
   return completeTurn({ ...input, chat: null });
 }
+
+type TurnSide = {
+  delivery: { channel: string; chatId: string; client: { name: string | null; phone: string | null; username: string | null } };
+  target: WebhookAgent | null;
+};
 
 async function completeTurn(input: {
   model: string;
@@ -141,12 +158,22 @@ async function completeTurn(input: {
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
   agentId: string | null;
   chat: NotifyChat | null;
+  delivery?: AgentTurnDelivery;
 }) {
-  const timezone = input.agentId ? await calendarTimezone(input.agentId) : null;
+  const [timezone, target] = await Promise.all([
+    input.agentId ? calendarTimezone(input.agentId) : Promise.resolve(null),
+    input.agentId ? loadAgentWebhook(input.agentId) : Promise.resolve(null),
+  ]);
+  const turn: TurnSide = { delivery: resolveDelivery(input), target };
+  const inbound = lastUserText(input.messages);
+  if (inbound) {
+    emitWebhook(turn, { event: "message.received", message: { role: "user", text: inbound }, metadata: {} });
+  }
   const prepared = {
     ...input,
     messages: timezone ? withCalendarRule(input.messages, timezone) : input.messages,
     calendar: Boolean(timezone),
+    turn,
   };
   if (input.model.includes("gpt-6")) return completeWithResponses(prepared);
   return completeWithChat(prepared);
@@ -158,6 +185,7 @@ async function completeWithResponses(input: {
   agentId: string | null;
   chat: NotifyChat | null;
   calendar: boolean;
+  turn: TurnSide;
 }) {
   const client = getOpenAI();
   const tools = responseTools(input.chat, input.calendar);
@@ -171,7 +199,7 @@ async function completeWithResponses(input: {
   const calls = first.output.filter(
     (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call",
   );
-  if (calls.length === 0) return { text: first.output_text.trim(), pausedByTool: false };
+  if (calls.length === 0) return publishReply(input.turn, first.output_text, false);
 
   let pausedByTool = false;
   const toolOutputs: OpenAI.Responses.ResponseInputItem.FunctionCallOutput[] = [];
@@ -192,7 +220,7 @@ async function completeWithResponses(input: {
     ...(tools.length ? { tools, tool_choice: "none" as const } : {}),
   });
 
-  return { text: second.output_text.trim(), pausedByTool };
+  return publishReply(input.turn, second.output_text, pausedByTool);
 }
 
 function toResponseInput(messages: OpenAI.Chat.ChatCompletionMessageParam[]): OpenAI.Responses.ResponseInput {
@@ -232,6 +260,7 @@ async function completeWithChat(input: {
   agentId: string | null;
   chat: NotifyChat | null;
   calendar: boolean;
+  turn: TurnSide;
 }) {
   const tools = chatTools(input.chat, input.calendar);
   const first = await getOpenAI().chat.completions.create({
@@ -246,7 +275,7 @@ async function completeWithChat(input: {
     (call): call is OpenAI.Chat.ChatCompletionMessageFunctionToolCall => call.type === "function",
   );
   if (!choice || calls.length === 0) {
-    return { text: choice?.content?.trim() ?? "", pausedByTool: false };
+    return publishReply(input.turn, choice?.content ?? "", false);
   }
 
   let pausedByTool = false;
@@ -275,7 +304,7 @@ async function completeWithChat(input: {
     ],
   });
 
-  return { text: second.choices[0]?.message?.content?.trim() ?? "", pausedByTool };
+  return publishReply(input.turn, second.choices[0]?.message?.content ?? "", pausedByTool);
 }
 
 function chatTools(chat: NotifyChat | null, calendar: boolean): OpenAI.Chat.ChatCompletionTool[] {
@@ -300,18 +329,163 @@ function withCalendarRule(messages: OpenAI.Chat.ChatCompletionMessageParam[], ti
 async function runTool(
   name: string,
   args: string,
-  input: { agentId: string | null; chat: NotifyChat | null },
+  input: { agentId: string | null; chat: NotifyChat | null; turn: TurnSide },
 ) {
   if (name === "notify_manager") {
     if (!input.chat) return { paused: false, output: JSON.stringify({ ok: false, error: "Уведомление менеджера здесь недоступно." }) };
     const result = await runNotifyManager(args, input.chat);
+    const reason = readEventReason(args);
+    emitWebhook(
+      input.turn,
+      {
+        event: "agent.handoff",
+        status: "handoff",
+        message: { role: "system", text: reason || "Перевод на оператора" },
+        metadata: { reason: reason || null, paused: result.paused, ok: result.ok },
+      },
+    );
     return { paused: result.paused, output: JSON.stringify(result) };
   }
   if (name === "check_availability" || name === "book_slot") {
     if (!input.agentId) return { paused: false, output: JSON.stringify({ ok: false, error: "Календарь не привязан к агенту." }) };
-    return { paused: false, output: await runCalendarTool(name, args, input.agentId) };
+    const output = await runCalendarTool(name, args, input.agentId);
+    if (name === "book_slot") emitBooked(input.turn, args, output);
+    return { paused: false, output };
   }
   return { paused: false, output: JSON.stringify({ ok: false, error: "Неизвестная функция." }) };
+}
+
+function publishReply(turn: TurnSide, text: string, pausedByTool: boolean) {
+  const reply = text.trim();
+  if (reply) {
+    emitWebhook(turn, { event: "message.sent", message: { role: "assistant", text: reply }, metadata: {} });
+  }
+  return { text: reply, pausedByTool };
+}
+
+function emitWebhook(
+  turn: TurnSide,
+  input: {
+    event: string;
+    message: { role: "user" | "assistant" | "system"; text: string };
+    metadata: Record<string, unknown>;
+    status?: "active" | "handoff";
+  },
+) {
+  if (!turn.target) return;
+  const target = turn.target;
+  const payload = {
+    event: input.event,
+    status: input.status,
+    channel: turn.delivery.channel,
+    chat_id: turn.delivery.chatId,
+    client: turn.delivery.client,
+    message: input.message,
+    metadata: input.metadata,
+  };
+  // После ответа клиенту: 5-секундный таймаут приёмника не задерживает реплику.
+  try {
+    after(() => {
+      void dispatchAgentWebhook(target, payload);
+    });
+  } catch {
+    void dispatchAgentWebhook(target, payload);
+  }
+}
+
+function emitBooked(turn: TurnSide, args: string, output: string) {
+  let parsed: { ok?: boolean; booked?: unknown } = {};
+  try {
+    parsed = JSON.parse(output) as { ok?: boolean; booked?: unknown };
+  } catch {
+    return;
+  }
+  if (!parsed.ok) return;
+  emitWebhook(turn, {
+    event: "appointment.booked",
+    message: { role: "system", text: "Запись создана" },
+    metadata: { slot: readJson(args), booked: parsed.booked ?? null },
+  });
+}
+
+function resolveDelivery(input: { agentId: string | null; chat: NotifyChat | null; delivery?: AgentTurnDelivery }) {
+  if (input.delivery) {
+    return {
+      channel: input.delivery.channel.trim() || "sandbox",
+      chatId: input.delivery.chatId.trim(),
+      client: {
+        name: textOrNull(input.delivery.client?.name),
+        phone: textOrNull(input.delivery.client?.phone),
+        username: textOrNull(input.delivery.client?.username),
+      },
+    };
+  }
+  if (input.chat) return deliveryFromChat(input.chat);
+  return {
+    channel: "sandbox",
+    chatId: input.agentId ?? "",
+    client: { name: null, phone: null, username: null },
+  };
+}
+
+function deliveryFromChat(chat: NotifyChat) {
+  const handle = chat.clientHandle.trim();
+  const phone = phoneFromHandle(handle) || null;
+  const username = handle.startsWith("@")
+    ? handle
+    : chat.channel === "instagram" && handle && !phone
+      ? handle
+      : chat.channel === "telegram" && /^[A-Za-z0-9_]{5,}$/.test(handle)
+        ? `@${handle}`
+        : null;
+  return {
+    channel: chat.channel,
+    chatId: chat.conversationId,
+    client: { name: textOrNull(chat.clientName), phone, username },
+  };
+}
+
+function lastUserText(messages: OpenAI.Chat.ChatCompletionMessageParam[]) {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const message = messages[index];
+    if (!message || message.role !== "user") continue;
+    const text = messageContent(message.content);
+    if (text) return cleanClientText(text);
+  }
+  return "";
+}
+
+function messageContent(content: OpenAI.Chat.ChatCompletionMessageParam["content"]) {
+  if (typeof content === "string") return content.trim();
+  if (!Array.isArray(content)) return "";
+  return content
+    .map((part) => (part.type === "text" ? part.text : ""))
+    .join("\n")
+    .trim();
+}
+
+/** Telegram добавляет служебную строку перед текстом клиента. В CRM уходит исходное сообщение. */
+function cleanClientText(text: string) {
+  return text.replace(/^\[[^\]]*\]\s*\nСообщение клиента:\s*/u, "").trim();
+}
+
+function readEventReason(args: string) {
+  const parsed = readJson(args);
+  return typeof parsed.event_reason === "string" ? parsed.event_reason.trim() : "";
+}
+
+function readJson(value: string): Record<string, unknown> {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function textOrNull(value: string | null | undefined) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text || null;
 }
 
 /**

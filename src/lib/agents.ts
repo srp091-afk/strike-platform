@@ -201,6 +201,18 @@ export async function listAgents(): Promise<AgentRecord[]> {
         ] as const),
   );
   const calendarRows = await supabase.from("agents").select("id, gcal_refresh_token, gcal_timezone").eq("user_id", userId);
+  const webhookRows = await supabase.from("agents").select("id, webhook_url, webhook_secret").eq("user_id", userId);
+  const webhooks = new Map<string, { url: string | null; secret: string | null }>(
+    webhookRows.error
+      ? []
+      : (webhookRows.data ?? []).map((row) => [
+          String(row.id),
+          {
+            url: typeof row.webhook_url === "string" && row.webhook_url.trim() ? row.webhook_url.trim() : null,
+            secret: typeof row.webhook_secret === "string" && row.webhook_secret.trim() ? row.webhook_secret.trim() : null,
+          },
+        ] as const),
+  );
   const calendars = new Map<string, { connected: boolean; timezone: string }>(
     calendarRows.error
       ? []
@@ -268,6 +280,8 @@ export async function listAgents(): Promise<AgentRecord[]> {
     notify_email_address: emails.get(String(row.id))?.address ?? null,
     gcalConnected: calendars.get(String(row.id))?.connected ?? false,
     gcalTimezone: calendars.get(String(row.id))?.timezone ?? "UTC",
+    webhook_url: webhooks.get(String(row.id))?.url ?? null,
+    webhook_secret: webhooks.get(String(row.id))?.secret ?? null,
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
 

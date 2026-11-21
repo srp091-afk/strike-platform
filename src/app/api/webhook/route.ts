@@ -165,6 +165,15 @@ export async function POST(request: NextRequest) {
         clientHandle: incoming.externalChatId,
         clientName: incoming.contactName,
       },
+      delivery: {
+        channel: sourceOf(integration.provider),
+        chatId: conversationId,
+        client: {
+          name: incoming.contactName || null,
+          phone: phoneFromHandle(incoming.externalChatId) || null,
+          username: incoming.externalChatId.startsWith("@") ? incoming.externalChatId : null,
+        },
+      },
     });
     reply = completion.text;
   } catch (error) {

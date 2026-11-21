@@ -97,6 +97,7 @@ export async function POST(request: NextRequest) {
       model,
       temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
       agentId,
+      delivery: { channel: "web", chatId: thread?.conversationId || visitorId },
       messages: [
         {
           role: "system",

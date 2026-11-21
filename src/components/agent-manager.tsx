@@ -649,6 +649,114 @@ function GoogleCalendarCard({
     </section>
   );
 }
+
+function OutboundWebhookCard({
+  agentId,
+  url,
+  secret,
+  onChange,
+}: {
+  agentId: string;
+  url: string;
+  secret: string;
+  onChange: (patch: { webhook_url?: string; webhook_secret?: string }) => void;
+}) {
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState<{ ok: boolean; status: number; error?: string } | null>(null);
+  const canTest = url.trim().startsWith("http://") || url.trim().startsWith("https://");
+
+  function generateSecret() {
+    const bytes = new Uint8Array(24);
+    crypto.getRandomValues(bytes);
+    onChange({ webhook_secret: Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("") });
+  }
+
+  async function sendTest() {
+    if (!agentId) {
+      toast.error("Сначала сохраните агента.");
+      return;
+    }
+    setPending(true);
+    setResult(null);
+    try {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const accountId = activeAccountHeader();
+      if (accountId) headers.set("x-account-id", accountId);
+      const response = await fetch(`/api/agents/${agentId}/webhook/test`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify({ webhook_url: url.trim(), webhook_secret: secret.trim() }),
+      });
+      const data = (await response.json().catch(() => null)) as { ok?: boolean; status?: number; error?: string } | null;
+      setResult({
+        ok: Boolean(data?.ok) && response.ok,
+        status: typeof data?.status === "number" ? data.status : response.status,
+        error: data?.error,
+      });
+    } catch (error) {
+      setResult({ ok: false, status: 0, error: error instanceof Error ? error.message : "Сеть недоступна" });
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
+      <div className="grid gap-2">
+        <h3 className="font-heading text-lg font-semibold text-white">Исходящий Webhook (CRM / Make / n8n)</h3>
+        <p className="text-sm leading-6 text-zinc-400">STRIKE будет отправлять POST-запрос с каждым сообщением диалога и сменой статуса агента.</p>
+      </div>
+      <label className="grid gap-2 text-sm text-zinc-300">
+        Webhook URL
+        <input
+          name="webhook_url"
+          value={url}
+          onChange={(event) => onChange({ webhook_url: event.target.value })}
+          placeholder="https://hook.eu2.make.com/..."
+          autoComplete="off"
+          spellCheck={false}
+          className={fieldClass}
+        />
+      </label>
+      <div className="grid gap-2">
+        <span className="text-sm text-zinc-300">Секретный ключ</span>
+        <div className="flex items-center gap-2">
+          <input
+            name="webhook_secret"
+            value={secret}
+            onChange={(event) => onChange({ webhook_secret: event.target.value })}
+            placeholder="Необязательно, для заголовка X-Strike-Signature"
+            autoComplete="off"
+            spellCheck={false}
+            className={fieldClass}
+          />
+          <button type="button" onClick={generateSecret} className="shrink-0 rounded-xl border border-zinc-800 bg-black px-3 py-3 text-xs text-white transition-colors hover:border-zinc-700">
+            Сгенерировать
+          </button>
+        </div>
+        <p className="text-xs leading-5 text-zinc-500">Если ключ задан, STRIKE подписывает тело запроса HMAC-SHA256 и кладёт подпись в заголовок X-Strike-Signature.</p>
+      </div>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="outline" disabled={!canTest || pending} onClick={() => void sendTest()}>
+          {pending ? "Отправляем..." : "Отправить тест"}
+        </Button>
+        {result?.ok ? (
+          <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-400">
+            {result.status} OK — Доставлено
+          </span>
+        ) : result ? (
+          <span className="inline-flex items-center rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-medium text-red-400">
+            {result.status ? `${result.status} — ` : ""}
+            {result.error || "Ошибка"}
+          </span>
+        ) : null}
+      </div>
+      {!agentId ? <p className="text-sm leading-6 text-zinc-400">Сначала сохраните агента, чтобы отправить тест.</p> : null}
+    </section>
+  );
+}
+
 function AgentDialog({
   editing,
   agents,
@@ -747,6 +855,8 @@ function AgentDialog({
     data.set("wa_instance_id", current.wa_instance_id);
     data.set("wa_api_token", current.wa_api_token);
     data.set("wa_phone_number", current.wa_phone_number);
+    data.set("webhook_url", current.webhook_url);
+    data.set("webhook_secret", current.webhook_secret);
     return data;
   }
 
@@ -983,6 +1093,12 @@ function AgentDialog({
                       connected={channelAgent?.gcalConnected ?? false}
                       timezone={channelAgent?.gcalTimezone ?? "UTC"}
                     />
+                    <OutboundWebhookCard
+                      agentId={persistedId}
+                      url={draft.webhook_url}
+                      secret={draft.webhook_secret}
+                      onChange={patchDraft}
+                    />
                   </div>
                 </TabsContent>
               </Tabs>
@@ -1017,6 +1133,8 @@ type AgentDraft = {
   wa_instance_id: string;
   wa_api_token: string;
   wa_phone_number: string;
+  webhook_url: string;
+  webhook_secret: string;
 };
 
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
@@ -1042,6 +1160,8 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     wa_instance_id: agent?.waInstanceId ?? "",
     wa_api_token: agent?.waApiToken ?? "",
     wa_phone_number: agent?.waPhoneNumber ?? "",
+    webhook_url: agent?.webhook_url ?? "",
+    webhook_secret: agent?.webhook_secret ?? "",
   };
 }
 
@@ -1070,7 +1190,9 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.active_channels.widget === right.active_channels.widget &&
     left.wa_instance_id === right.wa_instance_id &&
     left.wa_api_token === right.wa_api_token &&
-    left.wa_phone_number === right.wa_phone_number
+    left.wa_phone_number === right.wa_phone_number &&
+    left.webhook_url.trim() === right.webhook_url.trim() &&
+    left.webhook_secret === right.webhook_secret
   );
 }
 

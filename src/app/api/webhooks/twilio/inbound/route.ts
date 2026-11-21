@@ -147,6 +147,7 @@ export async function POST(request: NextRequest) {
         model,
         temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
         agentId: String(data.agent_id),
+        delivery: { channel: "twilio", chatId: String(data.id), client: { phone: `+${digits}` } },
         messages: [
           { role: "system", content: system },
           { role: "user", content: text },

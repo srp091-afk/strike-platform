@@ -88,6 +88,13 @@ function readAgentFields(formData: FormData) {
     };
   }
 
+  const webhookProvided = formData.has("webhook_url") || formData.has("webhook_secret");
+  const webhookUrl = String(formData.get("webhook_url") ?? "").trim().slice(0, 2000);
+  const webhookSecret = String(formData.get("webhook_secret") ?? "").trim().slice(0, 200);
+  if (webhookProvided && webhookUrl && !webhookUrl.startsWith("http://") && !webhookUrl.startsWith("https://")) {
+    return { ok: false as const, error: "Webhook URL должен начинаться с http:// или https://." };
+  }
+
   return {
     ok: true as const,
     followupEnabled,
@@ -112,6 +119,8 @@ function readAgentFields(formData: FormData) {
     telegramChatId,
     notifyEmailEnabled: emailSettings.data.notify_email_enabled,
     notifyEmailAddress: emailSettings.data.notify_email_address,
+    webhookUrl: webhookProvided ? webhookUrl : undefined,
+    webhookSecret: webhookProvided ? webhookSecret : undefined,
   };
 }
 
@@ -208,6 +217,9 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
       telegram_chat_id: fields.telegramChatId || null,
       notify_email_enabled: fields.notifyEmailEnabled,
       notify_email_address: fields.notifyEmailAddress || null,
+      ...(fields.webhookUrl !== undefined
+        ? { webhook_url: fields.webhookUrl || null, webhook_secret: fields.webhookSecret || null }
+        : {}),
       active_channels: fields.activeChannels,
       user_id: userId,
       ...(fields.waInstanceId && fields.waApiToken
@@ -228,6 +240,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     }
 
     const emailRequested = fields.notifyEmailEnabled || Boolean(fields.notifyEmailAddress);
+    const webhookRequested = Boolean(fields.webhookUrl || fields.webhookSecret);
     let agentId = fields.id;
     if (fields.id) {
       const updated = await supabase
@@ -237,19 +250,13 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         .eq("user_id", userId)
         .select("id")
         .maybeSingle();
-      const retried =
-        updated.error && missingEmailColumn(updated.error.message) && !emailRequested
-          ? await supabase
-              .from("agents")
-              .update(withoutEmail(payload))
-              .eq("id", fields.id)
-              .eq("user_id", userId)
-              .select("id")
-              .maybeSingle()
-          : updated;
+      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested }) : null;
+      const retried = updateFallback
+        ? await supabase.from("agents").update(updateFallback).eq("id", fields.id).eq("user_id", userId).select("id").maybeSingle()
+        : updated;
 
       if (retried.error) {
-        return failedSave(emailColumnError(retried.error.message));
+        return failedSave(columnError(retried.error.message));
       }
 
       if (!retried.data) {
@@ -258,12 +265,10 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     } else {
       await assertCanCreateAgent(userId);
       const inserted = await supabase.from("agents").insert(payload).select("id").single();
-      const retried =
-        inserted.error && missingEmailColumn(inserted.error.message) && !emailRequested
-          ? await supabase.from("agents").insert(withoutEmail(payload)).select("id").single()
-          : inserted;
+      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested }) : null;
+      const retried = insertFallback ? await supabase.from("agents").insert(insertFallback).select("id").single() : inserted;
       if (retried.error || !retried.data) {
-        return failedSave(emailColumnError(retried.error?.message ?? "Не удалось сохранить агента."));
+        return failedSave(columnError(retried.error?.message ?? "Не удалось сохранить агента."));
       }
       agentId = String(retried.data.id);
     }
@@ -294,18 +299,38 @@ async function readWhatsAppPhone(instanceId: string, apiToken: string) {
   }
 }
 
-function withoutEmail<T extends { notify_email_enabled: boolean; notify_email_address: string | null }>(payload: T) {
-  const { notify_email_enabled: _enabled, notify_email_address: _address, ...rest } = payload;
-  return rest;
+function dropUnavailableColumns<T extends Record<string, unknown>>(
+  payload: T,
+  message: string,
+  requested: { emailRequested: boolean; webhookRequested: boolean },
+) {
+  const next: Record<string, unknown> = { ...payload };
+  let changed = false;
+  if (!requested.emailRequested && missingEmailColumn(message)) {
+    delete next.notify_email_enabled;
+    delete next.notify_email_address;
+    changed = true;
+  }
+  if (!requested.webhookRequested && missingWebhookColumn(message)) {
+    delete next.webhook_url;
+    delete next.webhook_secret;
+    changed = true;
+  }
+  return changed ? (next as T) : null;
 }
 
 function missingEmailColumn(message: string) {
   return message.includes("notify_email_enabled") || message.includes("notify_email_address");
 }
 
-function emailColumnError(message: string) {
-  if (!missingEmailColumn(message)) return message;
-  return "Чтобы сохранять email для лидов, выполните миграцию 20261111_agent_notify_email.sql.";
+function missingWebhookColumn(message: string) {
+  return message.includes("webhook_url") || message.includes("webhook_secret");
+}
+
+function columnError(message: string) {
+  if (missingWebhookColumn(message)) return "Чтобы сохранять исходящий webhook, выполните миграцию 20261121_agent_outbound_webhook.sql.";
+  if (missingEmailColumn(message)) return "Чтобы сохранять email для лидов, выполните миграцию 20261111_agent_notify_email.sql.";
+  return message;
 }
 
 function failedSave(error: string): SaveState {

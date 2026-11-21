@@ -188,6 +188,8 @@ export type AgentRecord = {
   /** Google Calendar подключён. Сам refresh token в клиент не попадает. */
   gcalConnected: boolean;
   gcalTimezone: string;
+  webhook_url: string | null;
+  webhook_secret: string | null;
   widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;
