@@ -45,7 +45,9 @@ export function IntegrationAccordionCard({
         </span>
         <ChevronDown className={`size-4 shrink-0 text-zinc-400 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
       </button>
-      <div className={open ? "grid gap-4 border-t border-zinc-800 p-4 sm:p-6" : "hidden"}>{children}</div>
+      <div hidden={!open} className={open ? "grid gap-4 border-t border-zinc-800 p-4 sm:p-6" : undefined}>
+        {children}
+      </div>
     </section>
   );
 }
