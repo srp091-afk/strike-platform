@@ -190,6 +190,11 @@ export type AgentRecord = {
   gcalTimezone: string;
   webhook_url: string | null;
   webhook_secret: string | null;
+  /** amoCRM/Kommo подключён. Долгосрочный токен в клиент не попадает. */
+  amoConnected: boolean;
+  amo_domain: string | null;
+  amo_pipeline_id: string | null;
+  amo_handoff_status_id: string | null;
   widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;

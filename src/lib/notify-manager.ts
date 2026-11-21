@@ -10,6 +10,7 @@ import { calendarSystemRule, calendarTimezone, runCalendarTool } from "@/lib/goo
 import { getOpenAI } from "@/lib/openai";
 import { sendTelegramNotification } from "@/lib/telegram-notify";
 import { phoneFromHandle } from "@/lib/utils/prompt-parser";
+import { syncAgentTurnToAmo } from "@/lib/amocrm";
 import { dispatchAgentWebhook, loadAgentWebhook, type WebhookAgent } from "@/lib/webhooks";
 
 export type NotifyChat = {
@@ -148,8 +149,11 @@ export async function completeWithCalendar(input: {
 }
 
 type TurnSide = {
+  agentId: string | null;
   delivery: { channel: string; chatId: string; client: { name: string | null; phone: string | null; username: string | null } };
   target: WebhookAgent | null;
+  inbound: string;
+  handoffReason: string | null;
 };
 
 async function completeTurn(input: {
@@ -164,8 +168,14 @@ async function completeTurn(input: {
     input.agentId ? calendarTimezone(input.agentId) : Promise.resolve(null),
     input.agentId ? loadAgentWebhook(input.agentId) : Promise.resolve(null),
   ]);
-  const turn: TurnSide = { delivery: resolveDelivery(input), target };
   const inbound = lastUserText(input.messages);
+  const turn: TurnSide = {
+    agentId: input.agentId,
+    delivery: resolveDelivery(input),
+    target,
+    inbound,
+    handoffReason: null,
+  };
   if (inbound) {
     emitWebhook(turn, { event: "message.received", message: { role: "user", text: inbound }, metadata: {} });
   }
@@ -335,6 +345,7 @@ async function runTool(
     if (!input.chat) return { paused: false, output: JSON.stringify({ ok: false, error: "Уведомление менеджера здесь недоступно." }) };
     const result = await runNotifyManager(args, input.chat);
     const reason = readEventReason(args);
+    if (input.turn.handoffReason === null) input.turn.handoffReason = reason;
     emitWebhook(
       input.turn,
       {
@@ -360,7 +371,30 @@ function publishReply(turn: TurnSide, text: string, pausedByTool: boolean) {
   if (reply) {
     emitWebhook(turn, { event: "message.sent", message: { role: "assistant", text: reply }, metadata: {} });
   }
+  scheduleAmoSync(turn, reply);
   return { text: reply, pausedByTool };
+}
+
+function scheduleAmoSync(turn: TurnSide, reply: string) {
+  if (!turn.agentId || (!turn.inbound && !reply && turn.handoffReason === null)) return;
+  const agentId = turn.agentId;
+  const job = {
+    channel: turn.delivery.channel,
+    chatId: turn.delivery.chatId,
+    clientName: turn.delivery.client.name,
+    clientPhone: turn.delivery.client.phone,
+    inbound: turn.inbound,
+    reply,
+    handoffReason: turn.handoffReason,
+  };
+  const run = () => {
+    void syncAgentTurnToAmo(agentId, job);
+  };
+  try {
+    after(run);
+  } catch {
+    run();
+  }
 }
 
 function emitWebhook(

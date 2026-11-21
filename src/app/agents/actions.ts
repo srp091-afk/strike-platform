@@ -12,6 +12,7 @@ import {
   type ActiveChannels,
   type HandoffDuration,
 } from "@/lib/agent-models";
+import { readAmoDomain } from "@/lib/amocrm";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { assertCanCreateAgent } from "@/lib/access";
 import { ensureGreenIncomingWebhook, getGreenPhone } from "@/lib/green-api";
@@ -95,6 +96,18 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "Webhook URL должен начинаться с http:// или https://." };
   }
 
+  const amoProvided = formData.has("amo_domain") || formData.has("amo_pipeline_id") || formData.has("amo_handoff_status_id");
+  const amoDomain = readAmoDomain(String(formData.get("amo_domain") ?? ""));
+  const amoToken = String(formData.get("amo_access_token") ?? "").trim().slice(0, 4000);
+  const amoPipelineId = readOptionalBigint(formData.get("amo_pipeline_id"));
+  const amoStatusId = readOptionalBigint(formData.get("amo_handoff_status_id"));
+  if (amoProvided && amoDomain === null) {
+    return { ok: false as const, error: "Домен amoCRM должен быть вида company.amocrm.ru или company.kommo.com." };
+  }
+  if (amoPipelineId === undefined || amoStatusId === undefined) {
+    return { ok: false as const, error: "ID воронки и этапа amoCRM должны быть числами." };
+  }
+
   return {
     ok: true as const,
     followupEnabled,
@@ -121,7 +134,18 @@ function readAgentFields(formData: FormData) {
     notifyEmailAddress: emailSettings.data.notify_email_address,
     webhookUrl: webhookProvided ? webhookUrl : undefined,
     webhookSecret: webhookProvided ? webhookSecret : undefined,
+    amoProvided,
+    amoDomain: amoDomain || "",
+    amoToken,
+    amoPipelineId,
+    amoStatusId,
   };
+}
+
+function readOptionalBigint(value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  if (!/^\d{1,18}$/.test(value.trim())) return undefined;
+  return value.trim();
 }
 
 function readTelegramChatId(value: FormDataEntryValue | null) {
@@ -220,6 +244,14 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
       ...(fields.webhookUrl !== undefined
         ? { webhook_url: fields.webhookUrl || null, webhook_secret: fields.webhookSecret || null }
         : {}),
+      ...(fields.amoProvided
+        ? {
+            amo_domain: fields.amoDomain || null,
+            amo_pipeline_id: fields.amoPipelineId ? Number(fields.amoPipelineId) : null,
+            amo_handoff_status_id: fields.amoStatusId ? Number(fields.amoStatusId) : null,
+            ...(fields.amoToken ? { amo_access_token: fields.amoToken } : {}),
+          }
+        : {}),
       active_channels: fields.activeChannels,
       user_id: userId,
       ...(fields.waInstanceId && fields.waApiToken
@@ -241,6 +273,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
 
     const emailRequested = fields.notifyEmailEnabled || Boolean(fields.notifyEmailAddress);
     const webhookRequested = Boolean(fields.webhookUrl || fields.webhookSecret);
+    const amoRequested = Boolean(fields.amoDomain || fields.amoToken || fields.amoPipelineId || fields.amoStatusId);
     let agentId = fields.id;
     if (fields.id) {
       const updated = await supabase
@@ -250,7 +283,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         .eq("user_id", userId)
         .select("id")
         .maybeSingle();
-      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested }) : null;
+      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested }) : null;
       const retried = updateFallback
         ? await supabase.from("agents").update(updateFallback).eq("id", fields.id).eq("user_id", userId).select("id").maybeSingle()
         : updated;
@@ -265,7 +298,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     } else {
       await assertCanCreateAgent(userId);
       const inserted = await supabase.from("agents").insert(payload).select("id").single();
-      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested }) : null;
+      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested }) : null;
       const retried = insertFallback ? await supabase.from("agents").insert(insertFallback).select("id").single() : inserted;
       if (retried.error || !retried.data) {
         return failedSave(columnError(retried.error?.message ?? "Не удалось сохранить агента."));
@@ -302,7 +335,7 @@ async function readWhatsAppPhone(instanceId: string, apiToken: string) {
 function dropUnavailableColumns<T extends Record<string, unknown>>(
   payload: T,
   message: string,
-  requested: { emailRequested: boolean; webhookRequested: boolean },
+  requested: { emailRequested: boolean; webhookRequested: boolean; amoRequested: boolean },
 ) {
   const next: Record<string, unknown> = { ...payload };
   let changed = false;
@@ -316,6 +349,13 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     delete next.webhook_secret;
     changed = true;
   }
+  if (!requested.amoRequested && missingAmoColumn(message)) {
+    delete next.amo_domain;
+    delete next.amo_access_token;
+    delete next.amo_pipeline_id;
+    delete next.amo_handoff_status_id;
+    changed = true;
+  }
   return changed ? (next as T) : null;
 }
 
@@ -327,7 +367,12 @@ function missingWebhookColumn(message: string) {
   return message.includes("webhook_url") || message.includes("webhook_secret");
 }
 
+function missingAmoColumn(message: string) {
+  return message.includes("amo_domain") || message.includes("amo_access_token") || message.includes("amo_pipeline_id") || message.includes("amo_handoff_status_id");
+}
+
 function columnError(message: string) {
+  if (missingAmoColumn(message)) return "Чтобы подключить amoCRM, выполните миграцию 20261121_agent_amocrm.sql.";
   if (missingWebhookColumn(message)) return "Чтобы сохранять исходящий webhook, выполните миграцию 20261121_agent_outbound_webhook.sql.";
   if (missingEmailColumn(message)) return "Чтобы сохранять email для лидов, выполните миграцию 20261111_agent_notify_email.sql.";
   return message;

@@ -757,6 +757,226 @@ function OutboundWebhookCard({
   );
 }
 
+function AmoCrmCard({
+  agentId,
+  connected,
+  domain,
+  token,
+  pipelineId,
+  statusId,
+  onChange,
+}: {
+  agentId: string;
+  connected: boolean;
+  domain: string;
+  token: string;
+  pipelineId: string;
+  statusId: string;
+  onChange: (patch: { amo_domain?: string; amo_access_token?: string; amo_pipeline_id?: string; amo_handoff_status_id?: string }) => void;
+}) {
+  const router = useRouter();
+  const [isConnected, setConnected] = useState(connected);
+  const [tokenOpen, setTokenOpen] = useState(!connected);
+  const [pending, setPending] = useState<"test" | "off" | null>(null);
+  const [accountName, setAccountName] = useState("");
+  const [error, setError] = useState("");
+  const [pipelines, setPipelines] = useState<{ id: string; name: string; statuses: { id: string; name: string }[] }[]>([]);
+
+  useEffect(() => {
+    setConnected(connected);
+    setTokenOpen(!connected);
+  }, [connected, agentId]);
+
+  const pipeline = pipelines.find((item) => item.id === pipelineId);
+  const statuses = pipeline?.statuses ?? [];
+  const webhookUrl = agentId ? `https://www.strikeplatform.io/api/webhooks/amocrm/${agentId}` : "";
+
+  async function accountHeaders() {
+    const headers = new Headers({ "Content-Type": "application/json" });
+    const accountId = activeAccountHeader();
+    if (accountId) headers.set("x-account-id", accountId);
+    return headers;
+  }
+
+  async function checkConnection() {
+    if (!agentId) {
+      toast.error("Сначала сохраните агента.");
+      return;
+    }
+    setPending("test");
+    setError("");
+    try {
+      const response = await fetch(`/api/agents/${agentId}/amocrm/test`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: await accountHeaders(),
+        body: JSON.stringify({ amo_domain: domain.trim(), amo_access_token: token.trim() }),
+      });
+      const data = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        error?: string;
+        accountName?: string;
+        pipelines?: { id: string; name: string; statuses: { id: string; name: string }[] }[];
+      } | null;
+      if (!response.ok || !data?.ok) {
+        setError(data?.error || "Не удалось подключиться к amoCRM.");
+        return;
+      }
+      setAccountName(data.accountName || "");
+      setPipelines(data.pipelines ?? []);
+      toast.success(data.accountName ? `Аккаунт: ${data.accountName}` : "amoCRM отвечает.");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function disconnect() {
+    if (!agentId) return;
+    setPending("off");
+    try {
+      const headers = await accountHeaders();
+      headers.delete("Content-Type");
+      const response = await fetch(`/api/agents/${agentId}/amocrm`, { method: "DELETE", credentials: "same-origin", headers });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        toast.error(data?.error || "Не удалось отключить amoCRM.");
+        return;
+      }
+      setConnected(false);
+      setTokenOpen(true);
+      onChange({ amo_access_token: "" });
+      toast.success("amoCRM отключён");
+      router.refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function copyWebhook() {
+    if (!webhookUrl) return;
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      toast.success("Ссылка скопирована");
+    } catch {
+      toast.error("Не удалось скопировать ссылку.");
+    }
+  }
+
+  function choosePipeline(value: string) {
+    const next = pipelines.find((item) => item.id === value);
+    const keepStatus = next?.statuses.some((status) => status.id === statusId) ?? false;
+    onChange({ amo_pipeline_id: value, amo_handoff_status_id: keepStatus ? statusId : "" });
+  }
+
+  return (
+    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
+      <div className="grid gap-2">
+        <h3 className="flex items-center gap-2 font-sans text-lg font-bold text-white">
+          amoCRM / Kommo
+          {isConnected ? (
+            <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2 py-0.5 font-sans text-[10px] font-semibold uppercase tracking-wide text-emerald-400">
+              Подключено
+            </span>
+          ) : null}
+        </h3>
+        <p className="text-sm leading-6 text-zinc-400">
+          При первом сообщении STRIKE создаёт контакт и сделку, а переписку пишет в карточку. Когда менеджер забирает сделку, бот замолкает.
+        </p>
+      </div>
+      <label className="grid gap-2 text-sm text-zinc-300">
+        Домен аккаунта
+        <input
+          name="amo_domain"
+          value={domain}
+          onChange={(event) => onChange({ amo_domain: event.target.value })}
+          placeholder="mycompany.amocrm.ru или mycompany.kommo.com"
+          autoComplete="off"
+          spellCheck={false}
+          className={fieldClass}
+        />
+      </label>
+      {tokenOpen ? (
+        <label className="grid gap-2 text-sm text-zinc-300">
+          Долгосрочный токен (Long-lived token)
+          <input
+            name="amo_access_token"
+            type="password"
+            value={token}
+            onChange={(event) => onChange({ amo_access_token: event.target.value })}
+            placeholder={isConnected ? "Новый токен" : "Токен из amoCRM / Kommo"}
+            autoComplete="new-password"
+            spellCheck={false}
+            className={fieldClass}
+          />
+        </label>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="outline" disabled={!domain.trim() || pending !== null || (!token.trim() && !isConnected)} onClick={() => void checkConnection()}>
+          {pending === "test" ? "Проверяем..." : "Проверить и загрузить воронки"}
+        </Button>
+        {isConnected ? (
+          <>
+            <Button type="button" variant="outline" disabled={pending !== null} onClick={() => setTokenOpen((current) => !current)}>
+              Обновить токен
+            </Button>
+            <Button type="button" variant="outline" disabled={pending === "off"} onClick={() => void disconnect()}>
+              {pending === "off" ? "Отключаем..." : "Отключить"}
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {accountName ? <p className="text-sm text-emerald-400">Аккаунт: {accountName}</p> : null}
+      {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      {pipelines.length > 0 || pipelineId || statusId ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <label className="grid gap-2 text-sm text-zinc-300">
+            Воронка для новых сделок
+            <select name="amo_pipeline_id" value={pipelineId} onChange={(event) => choosePipeline(event.target.value)} className={fieldClass}>
+              <option value="">Основная воронка</option>
+              {(pipelines.length > 0 ? pipelines : pipelineId ? [{ id: pipelineId, name: `Воронка ${pipelineId}`, statuses: [] }] : []).map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-2 text-sm text-zinc-300">
+            Этап для перевода на оператора (Handoff)
+            <select
+              name="amo_handoff_status_id"
+              value={statusId}
+              onChange={(event) => onChange({ amo_handoff_status_id: event.target.value })}
+              className={fieldClass}
+              disabled={Boolean(pipelineId) && pipelines.length > 0 && statuses.length === 0}
+            >
+              <option value="">Не переводить</option>
+              {(statuses.length > 0 ? statuses : statusId ? [{ id: statusId, name: `Этап ${statusId}` }] : []).map((item) => (
+                <option key={item.id} value={item.id}>{item.name}</option>
+              ))}
+            </select>
+          </label>
+        </div>
+      ) : (
+        <>
+          <input type="hidden" name="amo_pipeline_id" value={pipelineId} />
+          <input type="hidden" name="amo_handoff_status_id" value={statusId} />
+        </>
+      )}
+      <div className="grid gap-2">
+        <span className="text-sm text-zinc-300">Webhook URL для amoCRM</span>
+        <div className="flex items-center gap-2">
+          <input readOnly value={webhookUrl} placeholder="Сначала сохраните агента" className={fieldClass} />
+          <button type="button" onClick={() => void copyWebhook()} disabled={!webhookUrl} className="shrink-0 rounded-xl border border-zinc-800 bg-black px-3 py-3 text-xs text-white transition-colors hover:border-zinc-700 disabled:opacity-40">
+            Скопировать
+          </button>
+        </div>
+        <p className="text-xs leading-5 text-zinc-500">Добавьте этот URL в Настройки → Интеграции → Webhooks в amoCRM, чтобы бот автоматически замолкал при перехвате сделки менеджером.</p>
+      </div>
+      {!agentId ? <p className="text-sm leading-6 text-zinc-400">Сначала сохраните агента, чтобы проверить подключение.</p> : null}
+    </section>
+  );
+}
+
 function AgentDialog({
   editing,
   agents,
@@ -857,6 +1077,10 @@ function AgentDialog({
     data.set("wa_phone_number", current.wa_phone_number);
     data.set("webhook_url", current.webhook_url);
     data.set("webhook_secret", current.webhook_secret);
+    data.set("amo_domain", current.amo_domain);
+    data.set("amo_pipeline_id", current.amo_pipeline_id);
+    data.set("amo_handoff_status_id", current.amo_handoff_status_id);
+    if (current.amo_access_token) data.set("amo_access_token", current.amo_access_token);
     return data;
   }
 
@@ -1099,6 +1323,15 @@ function AgentDialog({
                       secret={draft.webhook_secret}
                       onChange={patchDraft}
                     />
+                    <AmoCrmCard
+                      agentId={persistedId}
+                      connected={channelAgent?.amoConnected ?? false}
+                      domain={draft.amo_domain}
+                      token={draft.amo_access_token}
+                      pipelineId={draft.amo_pipeline_id}
+                      statusId={draft.amo_handoff_status_id}
+                      onChange={patchDraft}
+                    />
                   </div>
                 </TabsContent>
               </Tabs>
@@ -1135,6 +1368,10 @@ type AgentDraft = {
   wa_phone_number: string;
   webhook_url: string;
   webhook_secret: string;
+  amo_domain: string;
+  amo_access_token: string;
+  amo_pipeline_id: string;
+  amo_handoff_status_id: string;
 };
 
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
@@ -1162,6 +1399,10 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     wa_phone_number: agent?.waPhoneNumber ?? "",
     webhook_url: agent?.webhook_url ?? "",
     webhook_secret: agent?.webhook_secret ?? "",
+    amo_domain: agent?.amo_domain ?? "",
+    amo_access_token: "",
+    amo_pipeline_id: agent?.amo_pipeline_id ?? "",
+    amo_handoff_status_id: agent?.amo_handoff_status_id ?? "",
   };
 }
 
@@ -1192,7 +1433,11 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.wa_api_token === right.wa_api_token &&
     left.wa_phone_number === right.wa_phone_number &&
     left.webhook_url.trim() === right.webhook_url.trim() &&
-    left.webhook_secret === right.webhook_secret
+    left.webhook_secret === right.webhook_secret &&
+    left.amo_domain.trim().toLowerCase() === right.amo_domain.trim().toLowerCase() &&
+    left.amo_access_token === right.amo_access_token &&
+    left.amo_pipeline_id === right.amo_pipeline_id &&
+    left.amo_handoff_status_id === right.amo_handoff_status_id
   );
 }
 

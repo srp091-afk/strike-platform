@@ -202,6 +202,23 @@ export async function listAgents(): Promise<AgentRecord[]> {
   );
   const calendarRows = await supabase.from("agents").select("id, gcal_refresh_token, gcal_timezone").eq("user_id", userId);
   const webhookRows = await supabase.from("agents").select("id, webhook_url, webhook_secret").eq("user_id", userId);
+  const amoRows = await supabase
+    .from("agents")
+    .select("id, amo_domain, amo_access_token, amo_pipeline_id, amo_handoff_status_id")
+    .eq("user_id", userId);
+  const amo = new Map<string, { connected: boolean; domain: string | null; pipelineId: string | null; statusId: string | null }>(
+    amoRows.error
+      ? []
+      : (amoRows.data ?? []).map((row) => [
+          String(row.id),
+          {
+            connected: typeof row.amo_access_token === "string" && row.amo_access_token.trim().length > 0,
+            domain: typeof row.amo_domain === "string" && row.amo_domain.trim() ? row.amo_domain.trim() : null,
+            pipelineId: row.amo_pipeline_id ? String(row.amo_pipeline_id) : null,
+            statusId: row.amo_handoff_status_id ? String(row.amo_handoff_status_id) : null,
+          },
+        ] as const),
+  );
   const webhooks = new Map<string, { url: string | null; secret: string | null }>(
     webhookRows.error
       ? []
@@ -282,6 +299,10 @@ export async function listAgents(): Promise<AgentRecord[]> {
     gcalTimezone: calendars.get(String(row.id))?.timezone ?? "UTC",
     webhook_url: webhooks.get(String(row.id))?.url ?? null,
     webhook_secret: webhooks.get(String(row.id))?.secret ?? null,
+    amoConnected: amo.get(String(row.id))?.connected ?? false,
+    amo_domain: amo.get(String(row.id))?.domain ?? null,
+    amo_pipeline_id: amo.get(String(row.id))?.pipelineId ?? null,
+    amo_handoff_status_id: amo.get(String(row.id))?.statusId ?? null,
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
 
