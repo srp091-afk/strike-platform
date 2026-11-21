@@ -15,6 +15,7 @@ import { syncAgentTurnToBitrix } from "@/lib/bitrix24";
 import { syncAgentTurnToPipedrive } from "@/lib/pipedrive";
 import { dispatchAgentWebhook, loadAgentWebhook, type WebhookAgent } from "@/lib/webhooks";
 import { bookingSystemRule, dikidiSystemRule, loadAgentBooking, runYclientsTool, type AgentBooking } from "@/lib/yclients";
+import { loadPaymentProviders, paymentSystemRule, runPaymentTool, type PaymentProvider } from "@/lib/payments";
 
 export type NotifyChat = {
   supabase: SupabaseClient;
@@ -220,6 +221,43 @@ const bookingResponseTools: OpenAI.Responses.FunctionTool[] = [
   },
 ];
 
+const paymentParameters = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    amount: { type: "number", description: "Итоговая сумма к оплате. Бери её только из базы знаний или инструкций." },
+    description: { type: "string", description: "Название товара, курса или услуги." },
+    currency: { type: "string", description: "Валюта: USD, EUR, RUB. Если не указана, берётся валюта шлюза." },
+    provider: {
+      type: "string",
+      enum: ["stripe", "yookassa", "prodamus"],
+      description: "Платёжный шлюз. Не передавай, если подключён только один.",
+    },
+  },
+  required: ["amount", "description"],
+};
+
+const paymentChatTools: OpenAI.Chat.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "create_payment_link",
+      description: "Создаёт уникальную платёжную ссылку для клиента и возвращает URL для отправки в чат.",
+      parameters: paymentParameters,
+    },
+  },
+];
+
+const paymentResponseTools: OpenAI.Responses.FunctionTool[] = [
+  {
+    type: "function",
+    name: "create_payment_link",
+    description: "Создаёт уникальную платёжную ссылку для клиента и возвращает URL для отправки в чат.",
+    parameters: paymentParameters,
+    strict: false,
+  },
+];
+
 const calendarResponseTools: OpenAI.Responses.FunctionTool[] = [
   {
     type: "function",
@@ -281,10 +319,11 @@ async function completeTurn(input: {
   chat: NotifyChat | null;
   delivery?: AgentTurnDelivery;
 }) {
-  const [timezone, target, booking] = await Promise.all([
+  const [timezone, target, booking, payments] = await Promise.all([
     input.agentId ? calendarTimezone(input.agentId) : Promise.resolve(null),
     input.agentId ? loadAgentWebhook(input.agentId) : Promise.resolve(null),
     input.agentId ? loadAgentBooking(input.agentId) : Promise.resolve(null),
+    input.agentId ? loadPaymentProviders(input.agentId) : Promise.resolve([] as PaymentProvider[]),
   ]);
   const inbound = lastUserText(input.messages);
   const turn: TurnSide = {
@@ -299,9 +338,10 @@ async function completeTurn(input: {
   }
   const prepared = {
     ...input,
-    messages: withSystemRules(input.messages, agentRules(timezone, booking)),
+    messages: withSystemRules(input.messages, agentRules(timezone, booking, payments)),
     calendar: Boolean(timezone),
     booking: Boolean(booking?.creds),
+    payments: payments.length > 0,
     turn,
   };
   if (input.model.includes("gpt-6")) return completeWithResponses(prepared);
@@ -315,10 +355,11 @@ async function completeWithResponses(input: {
   chat: NotifyChat | null;
   calendar: boolean;
   booking: boolean;
+  payments: boolean;
   turn: TurnSide;
 }) {
   const client = getOpenAI();
-  const tools = responseTools(input.chat, input.calendar, input.booking);
+  const tools = responseTools(input.chat, input.calendar, input.booking, input.payments);
   const first = await client.responses.create({
     model: input.model,
     input: toResponseInput(input.messages),
@@ -391,9 +432,10 @@ async function completeWithChat(input: {
   chat: NotifyChat | null;
   calendar: boolean;
   booking: boolean;
+  payments: boolean;
   turn: TurnSide;
 }) {
-  const tools = chatTools(input.chat, input.calendar, input.booking);
+  const tools = chatTools(input.chat, input.calendar, input.booking, input.payments);
   const first = await getOpenAI().chat.completions.create({
     model: input.model,
     temperature: input.temperature,
@@ -438,19 +480,20 @@ async function completeWithChat(input: {
   return publishReply(input.turn, second.choices[0]?.message?.content ?? "", pausedByTool);
 }
 
-function chatTools(chat: NotifyChat | null, calendar: boolean, booking: boolean): OpenAI.Chat.ChatCompletionTool[] {
-  return [...(chat ? [notifyManagerTool] : []), ...(calendar ? calendarChatTools : []), ...(booking ? bookingChatTools : [])];
+function chatTools(chat: NotifyChat | null, calendar: boolean, booking: boolean, payments: boolean): OpenAI.Chat.ChatCompletionTool[] {
+  return [...(chat ? [notifyManagerTool] : []), ...(calendar ? calendarChatTools : []), ...(booking ? bookingChatTools : []), ...(payments ? paymentChatTools : [])];
 }
 
-function responseTools(chat: NotifyChat | null, calendar: boolean, booking: boolean): OpenAI.Responses.FunctionTool[] {
-  return [...(chat ? [notifyManagerResponseTool] : []), ...(calendar ? calendarResponseTools : []), ...(booking ? bookingResponseTools : [])];
+function responseTools(chat: NotifyChat | null, calendar: boolean, booking: boolean, payments: boolean): OpenAI.Responses.FunctionTool[] {
+  return [...(chat ? [notifyManagerResponseTool] : []), ...(calendar ? calendarResponseTools : []), ...(booking ? bookingResponseTools : []), ...(payments ? paymentResponseTools : [])];
 }
 
-function agentRules(timezone: string | null, booking: AgentBooking | null) {
+function agentRules(timezone: string | null, booking: AgentBooking | null, payments: PaymentProvider[]) {
   const rules: string[] = [];
   if (timezone) rules.push(calendarSystemRule(timezone));
   if (booking?.creds) rules.push(bookingSystemRule(booking.creds.platform, timezone ?? "UTC"));
   if (booking?.dikidiUrl) rules.push(dikidiSystemRule(booking.dikidiUrl));
+  if (payments.length) rules.push(paymentSystemRule(payments));
   return rules;
 }
 
@@ -497,6 +540,11 @@ async function runTool(
     if (!input.agentId) return { paused: false, output: JSON.stringify({ ok: false, error: "Онлайн-запись не привязана к агенту." }) };
     const output = await runYclientsTool(name, args, input.agentId);
     if (name === "booking_create_record") emitYclientsBooked(input.turn, output);
+    return { paused: false, output };
+  }
+  if (name === "create_payment_link") {
+    if (!input.agentId) return { paused: false, output: JSON.stringify({ ok: false, error: "Приём оплат не привязан к агенту." }) };
+    const output = await runPaymentTool(args, input.agentId, input.turn.delivery);
     return { paused: false, output };
   }
   return { paused: false, output: JSON.stringify({ ok: false, error: "Неизвестная функция." }) };

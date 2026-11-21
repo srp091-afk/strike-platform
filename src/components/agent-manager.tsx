@@ -44,8 +44,11 @@ import {
   GoogleCalendarIcon,
   IntegrationAccordionCard,
   PipedriveIcon,
+  ProdamusIcon,
+  StripeIcon,
   WebhookIcon,
   YclientsIcon,
+  YookassaIcon,
 } from "@/components/integration-accordion-card";
 import { TwilioConnectCard } from "@/components/twilio-connect-card";
 import { WhatsAppConnectDialog } from "@/components/whatsapp-connect-dialog";
@@ -885,6 +888,417 @@ function DikidiCard({
       <p className="text-xs leading-5 text-zinc-500">
         У DIKIDI нет открытого публичного API для внешней записи, поэтому ИИ-администратор проконсультирует клиента по услугам и ценам, а затем отправит прямую ссылку на выбор свободного окна.
       </p>
+    </IntegrationAccordionCard>
+  );
+}
+
+const STRIPE_CURRENCIES = ["usd", "eur", "gbp", "gel"] as const;
+
+function PaymentWebhookField({ url }: { url: string }) {
+  async function copy() {
+    if (!url) return;
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("Ссылка скопирована");
+    } catch {
+      toast.error("Не удалось скопировать ссылку.");
+    }
+  }
+
+  return (
+    <div className="grid gap-2">
+      <span className="text-sm text-zinc-300">Webhook URL</span>
+      <div className="flex items-center gap-2">
+        <input readOnly value={url} placeholder="Сначала сохраните агента" className={fieldClass} />
+        <button type="button" onClick={() => void copy()} disabled={!url} className="shrink-0 rounded-xl border border-zinc-800 bg-black px-3 py-3 text-xs text-white transition-colors hover:border-zinc-700 disabled:opacity-40">
+          Скопировать
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function StripeCard({
+  agentId,
+  connected,
+  currency,
+  secret,
+  webhookSecret,
+  onChange,
+}: {
+  agentId: string;
+  connected: boolean;
+  currency: string;
+  secret: string;
+  webhookSecret: string;
+  onChange: (patch: { stripe_currency?: string; stripe_secret_key?: string; stripe_webhook_secret?: string }) => void;
+}) {
+  const router = useRouter();
+  const [isConnected, setConnected] = useState(connected);
+  const [tokenOpen, setTokenOpen] = useState(!connected);
+  const [pending, setPending] = useState<"test" | "off" | null>(null);
+  const [result, setResult] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setConnected(connected);
+    setTokenOpen(!connected);
+  }, [connected, agentId]);
+
+  async function check() {
+    if (!agentId) {
+      toast.error("Сначала сохраните агента.");
+      return;
+    }
+    setPending("test");
+    setResult("");
+    setError("");
+    try {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const accountId = activeAccountHeader();
+      if (accountId) headers.set("x-account-id", accountId);
+      const response = await fetch(`/api/agents/${agentId}/payments/test`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify({ provider: "stripe", stripeSecretKey: secret.trim() }),
+      });
+      const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!response.ok || !data?.ok) {
+        setError(data?.error || "Не удалось подключиться к Stripe.");
+        return;
+      }
+      setResult("Подключено: Stripe отвечает.");
+      toast.success("Stripe отвечает");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function disconnect() {
+    if (!agentId) return;
+    setPending("off");
+    try {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const accountId = activeAccountHeader();
+      if (accountId) headers.set("x-account-id", accountId);
+      const response = await fetch(`/api/agents/${agentId}/payments`, {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify({ provider: "stripe" }),
+      });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        toast.error(data?.error || "Не удалось отключить Stripe.");
+        return;
+      }
+      setConnected(false);
+      setTokenOpen(true);
+      setResult("");
+      onChange({ stripe_secret_key: "", stripe_webhook_secret: "" });
+      toast.success("Stripe отключён");
+      router.refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
+  const webhookUrl = agentId ? `https://www.strikeplatform.io/api/webhooks/payments/stripe/${agentId}` : "";
+
+  return (
+    <IntegrationAccordionCard
+      title="Stripe"
+      description="Платёжная ссылка Checkout прямо в диалоге и подтверждение оплаты."
+      connected={isConnected}
+      icon={<StripeIcon />}
+    >
+      <label className="grid max-w-xs gap-2 text-sm text-zinc-300">
+        Валюта по умолчанию
+        <select name="stripe_currency" value={currency} onChange={(event) => onChange({ stripe_currency: event.target.value })} className={fieldClass}>
+          {STRIPE_CURRENCIES.map((item) => (
+            <option key={item} value={item}>{item.toUpperCase()}</option>
+          ))}
+        </select>
+      </label>
+      {tokenOpen ? (
+        <>
+          <label className="grid gap-2 text-sm text-zinc-300">
+            Secret Key
+            <input name="stripe_secret_key" type="password" value={secret} onChange={(event) => onChange({ stripe_secret_key: event.target.value })} placeholder="sk_live_... или sk_test_..." autoComplete="new-password" spellCheck={false} className={fieldClass} />
+          </label>
+          <label className="grid gap-2 text-sm text-zinc-300">
+            Webhook Secret
+            <input name="stripe_webhook_secret" type="password" value={webhookSecret} onChange={(event) => onChange({ stripe_webhook_secret: event.target.value })} placeholder="whsec_..." autoComplete="new-password" spellCheck={false} className={fieldClass} />
+          </label>
+        </>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="outline" disabled={!agentId || pending !== null || (!secret.trim() && !isConnected)} onClick={() => void check()}>
+          {pending === "test" ? "Проверяем..." : "Проверить подключение"}
+        </Button>
+        {isConnected ? (
+          <>
+            <Button type="button" variant="outline" disabled={pending !== null} onClick={() => setTokenOpen((current) => !current)}>Обновить ключ</Button>
+            <Button type="button" variant="outline" disabled={pending === "off"} onClick={() => void disconnect()}>{pending === "off" ? "Отключаем..." : "Отключить"}</Button>
+          </>
+        ) : null}
+      </div>
+      {result ? <p className="text-sm text-emerald-400">{result}</p> : null}
+      {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      <PaymentWebhookField url={webhookUrl} />
+      <p className="text-xs leading-5 text-zinc-500">В Stripe укажите событие checkout.session.completed. Без Webhook Secret оплата не подтверждается.</p>
+    </IntegrationAccordionCard>
+  );
+}
+
+function YookassaCard({
+  agentId,
+  connected,
+  shopId,
+  secret,
+  onChange,
+}: {
+  agentId: string;
+  connected: boolean;
+  shopId: string;
+  secret: string;
+  onChange: (patch: { yookassa_shop_id?: string; yookassa_secret_key?: string }) => void;
+}) {
+  const router = useRouter();
+  const [isConnected, setConnected] = useState(connected);
+  const [tokenOpen, setTokenOpen] = useState(!connected);
+  const [pending, setPending] = useState<"test" | "off" | null>(null);
+  const [result, setResult] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setConnected(connected);
+    setTokenOpen(!connected);
+  }, [connected, agentId]);
+
+  async function check() {
+    if (!agentId) {
+      toast.error("Сначала сохраните агента.");
+      return;
+    }
+    setPending("test");
+    setResult("");
+    setError("");
+    try {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const accountId = activeAccountHeader();
+      if (accountId) headers.set("x-account-id", accountId);
+      const response = await fetch(`/api/agents/${agentId}/payments/test`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify({ provider: "yookassa", yookassaShopId: shopId.trim(), yookassaSecretKey: secret.trim() }),
+      });
+      const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string; accountId?: string } | null;
+      if (!response.ok || !data?.ok) {
+        setError(data?.error || "Не удалось подключиться к ЮKassa.");
+        return;
+      }
+      const message = data.accountId ? `Подключено: магазин ${data.accountId}` : "Подключено: ЮKassa отвечает.";
+      setResult(message);
+      toast.success(message);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function disconnect() {
+    if (!agentId) return;
+    setPending("off");
+    try {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const accountId = activeAccountHeader();
+      if (accountId) headers.set("x-account-id", accountId);
+      const response = await fetch(`/api/agents/${agentId}/payments`, {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify({ provider: "yookassa" }),
+      });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        toast.error(data?.error || "Не удалось отключить ЮKassa.");
+        return;
+      }
+      setConnected(false);
+      setTokenOpen(true);
+      setResult("");
+      onChange({ yookassa_secret_key: "" });
+      toast.success("ЮKassa отключена");
+      router.refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
+  const webhookUrl = agentId ? `https://www.strikeplatform.io/api/webhooks/payments/yookassa/${agentId}` : "";
+
+  return (
+    <IntegrationAccordionCard
+      title="ЮKassa"
+      description="Ссылка на оплату в рублях и автоматическое подтверждение платежа."
+      connected={isConnected}
+      icon={<YookassaIcon />}
+    >
+      <label className="grid gap-2 text-sm text-zinc-300">
+        Shop ID
+        <input name="yookassa_shop_id" value={shopId} onChange={(event) => onChange({ yookassa_shop_id: event.target.value })} placeholder="123456" inputMode="numeric" autoComplete="off" spellCheck={false} className={fieldClass} />
+      </label>
+      {tokenOpen ? (
+        <label className="grid gap-2 text-sm text-zinc-300">
+          Секретный ключ
+          <input name="yookassa_secret_key" type="password" value={secret} onChange={(event) => onChange({ yookassa_secret_key: event.target.value })} placeholder="live_... или test_..." autoComplete="new-password" spellCheck={false} className={fieldClass} />
+        </label>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="outline" disabled={!agentId || !shopId.trim() || pending !== null || (!secret.trim() && !isConnected)} onClick={() => void check()}>
+          {pending === "test" ? "Проверяем..." : "Проверить подключение"}
+        </Button>
+        {isConnected ? (
+          <>
+            <Button type="button" variant="outline" disabled={pending !== null} onClick={() => setTokenOpen((current) => !current)}>Обновить ключ</Button>
+            <Button type="button" variant="outline" disabled={pending === "off"} onClick={() => void disconnect()}>{pending === "off" ? "Отключаем..." : "Отключить"}</Button>
+          </>
+        ) : null}
+      </div>
+      {result ? <p className="text-sm text-emerald-400">{result}</p> : null}
+      {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      <PaymentWebhookField url={webhookUrl} />
+      <p className="text-xs leading-5 text-zinc-500">В кабинете ЮKassa включите уведомление payment.succeeded на этот URL.</p>
+    </IntegrationAccordionCard>
+  );
+}
+
+function ProdamusCard({
+  agentId,
+  connected,
+  shopUrl,
+  secret,
+  onChange,
+}: {
+  agentId: string;
+  connected: boolean;
+  shopUrl: string;
+  secret: string;
+  onChange: (patch: { prodamus_shop_url?: string; prodamus_secret_key?: string }) => void;
+}) {
+  const router = useRouter();
+  const [isConnected, setConnected] = useState(connected);
+  const [tokenOpen, setTokenOpen] = useState(!connected);
+  const [pending, setPending] = useState<"test" | "off" | null>(null);
+  const [result, setResult] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setConnected(connected);
+    setTokenOpen(!connected);
+  }, [connected, agentId]);
+
+  async function check() {
+    if (!agentId) {
+      toast.error("Сначала сохраните агента.");
+      return;
+    }
+    setPending("test");
+    setResult("");
+    setError("");
+    try {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const accountId = activeAccountHeader();
+      if (accountId) headers.set("x-account-id", accountId);
+      const response = await fetch(`/api/agents/${agentId}/payments/test`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify({ provider: "prodamus", prodamusShopUrl: shopUrl.trim(), prodamusSecretKey: secret.trim() }),
+      });
+      const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!response.ok || !data?.ok) {
+        setError(data?.error || "Не удалось подключиться к Продамус.");
+        return;
+      }
+      setResult("Подключено: ссылка на оплату создаётся.");
+      toast.success("Продамус отвечает");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function disconnect() {
+    if (!agentId) return;
+    setPending("off");
+    try {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const accountId = activeAccountHeader();
+      if (accountId) headers.set("x-account-id", accountId);
+      const response = await fetch(`/api/agents/${agentId}/payments`, {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify({ provider: "prodamus" }),
+      });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        toast.error(data?.error || "Не удалось отключить Продамус.");
+        return;
+      }
+      setConnected(false);
+      setTokenOpen(true);
+      setResult("");
+      onChange({ prodamus_secret_key: "" });
+      toast.success("Продамус отключён");
+      router.refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
+  const webhookUrl = agentId ? `https://www.strikeplatform.io/api/webhooks/payments/prodamus/${agentId}` : "";
+
+  return (
+    <IntegrationAccordionCard
+      title="Продамус (Prodamus)"
+      description="Короткая ссылка payform и отметка об оплате по подписи Sign."
+      connected={isConnected}
+      icon={<ProdamusIcon />}
+    >
+      <label className="grid gap-2 text-sm text-zinc-300">
+        URL платёжной страницы
+        <input name="prodamus_shop_url" value={shopUrl} onChange={(event) => onChange({ prodamus_shop_url: event.target.value })} placeholder="https://myshop.payform.ru" autoComplete="off" spellCheck={false} className={fieldClass} />
+      </label>
+      {tokenOpen ? (
+        <label className="grid gap-2 text-sm text-zinc-300">
+          Секретный ключ
+          <input name="prodamus_secret_key" type="password" value={secret} onChange={(event) => onChange({ prodamus_secret_key: event.target.value })} placeholder="Секретный ключ" autoComplete="new-password" spellCheck={false} className={fieldClass} />
+        </label>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="outline" disabled={!agentId || !shopUrl.trim() || pending !== null || (!secret.trim() && !isConnected)} onClick={() => void check()}>
+          {pending === "test" ? "Проверяем..." : "Проверить подключение"}
+        </Button>
+        {isConnected ? (
+          <>
+            <Button type="button" variant="outline" disabled={pending !== null} onClick={() => setTokenOpen((current) => !current)}>Обновить ключ</Button>
+            <Button type="button" variant="outline" disabled={pending === "off"} onClick={() => void disconnect()}>{pending === "off" ? "Отключаем..." : "Отключить"}</Button>
+          </>
+        ) : null}
+      </div>
+      {result ? <p className="text-sm text-emerald-400">{result}</p> : null}
+      {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      <PaymentWebhookField url={webhookUrl} />
+      <p className="text-xs leading-5 text-zinc-500">В Продамус укажите этот URL уведомлений. Подпись приходит в заголовке Sign.</p>
     </IntegrationAccordionCard>
   );
 }
@@ -1733,6 +2147,15 @@ function AgentDialog({
     if (current.yclients_partner_token) data.set("yclients_partner_token", current.yclients_partner_token);
     if (current.yclients_user_token) data.set("yclients_user_token", current.yclients_user_token);
     data.set("dikidi_booking_url", current.dikidi_booking_url);
+    data.set("stripe_currency", current.stripe_currency);
+    if (current.stripe_secret_key) data.set("stripe_secret_key", current.stripe_secret_key);
+    if (current.stripe_webhook_secret) data.set("stripe_webhook_secret", current.stripe_webhook_secret);
+    data.set("yookassa_shop_id", current.yookassa_shop_id);
+    if (current.yookassa_secret_key) data.set("yookassa_secret_key", current.yookassa_secret_key);
+    data.set("prodamus_shop_url", current.prodamus_shop_url);
+    if (current.prodamus_secret_key) data.set("prodamus_secret_key", current.prodamus_secret_key);
+    data.set("payment_success_message", current.payment_success_message);
+    data.set("payment_return_url", current.payment_return_url);
     return data;
   }
 
@@ -2017,6 +2440,56 @@ function AgentDialog({
                       <DikidiCard url={draft.dikidi_booking_url} onChange={patchDraft} />
                     </section>
                     <section className="grid gap-3">
+                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Платёжные шлюзы (e-commerce)</h3>
+                      <StripeCard
+                        agentId={persistedId}
+                        connected={channelAgent?.stripeConnected ?? false}
+                        currency={draft.stripe_currency}
+                        secret={draft.stripe_secret_key}
+                        webhookSecret={draft.stripe_webhook_secret}
+                        onChange={patchDraft}
+                      />
+                      <YookassaCard
+                        agentId={persistedId}
+                        connected={channelAgent?.yookassaConnected ?? false}
+                        shopId={draft.yookassa_shop_id}
+                        secret={draft.yookassa_secret_key}
+                        onChange={patchDraft}
+                      />
+                      <ProdamusCard
+                        agentId={persistedId}
+                        connected={channelAgent?.prodamusConnected ?? false}
+                        shopUrl={draft.prodamus_shop_url}
+                        secret={draft.prodamus_secret_key}
+                        onChange={patchDraft}
+                      />
+                      <section className="grid gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 p-4 shadow-sm sm:p-6">
+                        <label className="grid gap-2 text-sm text-zinc-300">
+                          Сообщение после успешной оплаты
+                          <textarea
+                            name="payment_success_message"
+                            value={draft.payment_success_message}
+                            onChange={(event) => patchDraft({ payment_success_message: event.target.value })}
+                            placeholder="Оплата прошла успешно! Вот ссылка на ваш доступ: ..."
+                            rows={3}
+                            className={fieldClass}
+                          />
+                        </label>
+                        <label className="grid gap-2 text-sm text-zinc-300">
+                          URL возврата после оплаты
+                          <input
+                            name="payment_return_url"
+                            value={draft.payment_return_url}
+                            onChange={(event) => patchDraft({ payment_return_url: event.target.value })}
+                            placeholder="https://vash-site.com/thank-you"
+                            autoComplete="off"
+                            spellCheck={false}
+                            className={fieldClass}
+                          />
+                        </label>
+                      </section>
+                    </section>
+                    <section className="grid gap-3">
                       <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Автоматизация и API</h3>
                       <OutboundWebhookCard
                         agentId={persistedId}
@@ -2077,6 +2550,15 @@ type AgentDraft = {
   yclients_partner_token: string;
   yclients_user_token: string;
   dikidi_booking_url: string;
+  stripe_currency: string;
+  stripe_secret_key: string;
+  stripe_webhook_secret: string;
+  yookassa_shop_id: string;
+  yookassa_secret_key: string;
+  prodamus_shop_url: string;
+  prodamus_secret_key: string;
+  payment_success_message: string;
+  payment_return_url: string;
 };
 
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
@@ -2120,6 +2602,15 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     yclients_partner_token: "",
     yclients_user_token: "",
     dikidi_booking_url: agent?.dikidi_booking_url ?? "",
+    stripe_currency: agent?.stripe_currency || "usd",
+    stripe_secret_key: "",
+    stripe_webhook_secret: "",
+    yookassa_shop_id: agent?.yookassa_shop_id ?? "",
+    yookassa_secret_key: "",
+    prodamus_shop_url: agent?.prodamus_shop_url ?? "",
+    prodamus_secret_key: "",
+    payment_success_message: agent?.payment_success_message ?? "",
+    payment_return_url: agent?.payment_return_url ?? "",
   };
 }
 
@@ -2166,7 +2657,16 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.yclients_company_id.trim() === right.yclients_company_id.trim() &&
     left.yclients_partner_token === right.yclients_partner_token &&
     left.yclients_user_token === right.yclients_user_token &&
-    left.dikidi_booking_url.trim() === right.dikidi_booking_url.trim()
+    left.dikidi_booking_url.trim() === right.dikidi_booking_url.trim() &&
+    left.stripe_currency === right.stripe_currency &&
+    left.stripe_secret_key === right.stripe_secret_key &&
+    left.stripe_webhook_secret === right.stripe_webhook_secret &&
+    left.yookassa_shop_id.trim() === right.yookassa_shop_id.trim() &&
+    left.yookassa_secret_key === right.yookassa_secret_key &&
+    left.prodamus_shop_url.trim() === right.prodamus_shop_url.trim() &&
+    left.prodamus_secret_key === right.prodamus_secret_key &&
+    left.payment_success_message.trim() === right.payment_success_message.trim() &&
+    left.payment_return_url.trim() === right.payment_return_url.trim()
   );
 }
 

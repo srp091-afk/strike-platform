@@ -15,6 +15,7 @@ import {
 import { readAmoDomain } from "@/lib/amocrm";
 import { readBitrixWebhook } from "@/lib/bitrix24";
 import { readDikidiBookingUrl, readYclientsCompanyId, readYclientsPlatform, readYclientsToken } from "@/lib/yclients";
+import { readPaymentReturnUrl, readPaymentSecret, readProdamusShopUrl, readStripeCurrency } from "@/lib/payments";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { assertCanCreateAgent } from "@/lib/access";
 import { ensureGreenIncomingWebhook, getGreenPhone } from "@/lib/green-api";
@@ -158,6 +159,38 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "Ссылка DIKIDI должна быть https-адресом на dikidi.net, dikidi.ru или dikidi.app." };
   }
 
+  const stripeProvided = formData.has("stripe_currency") || formData.has("stripe_secret_key") || formData.has("stripe_webhook_secret");
+  const stripeCurrency = readStripeCurrency(String(formData.get("stripe_currency") ?? ""));
+  const stripeSecret = readPaymentSecret(String(formData.get("stripe_secret_key") ?? ""));
+  const stripeWebhookSecret = readPaymentSecret(String(formData.get("stripe_webhook_secret") ?? ""));
+  if (stripeProvided && !stripeCurrency) return { ok: false as const, error: "Валюта Stripe: USD, EUR, GBP или GEL." };
+  if (formData.has("stripe_secret_key") && stripeSecret === null) return { ok: false as const, error: "Secret Key Stripe содержит пробелы или слишком короткий." };
+  if (formData.has("stripe_webhook_secret") && stripeWebhookSecret === null) return { ok: false as const, error: "Webhook Secret Stripe содержит пробелы или слишком короткий." };
+
+  const yookassaProvided = formData.has("yookassa_shop_id") || formData.has("yookassa_secret_key");
+  const yookassaShopId = String(formData.get("yookassa_shop_id") ?? "").trim();
+  const yookassaSecret = readPaymentSecret(String(formData.get("yookassa_secret_key") ?? ""));
+  if (formData.has("yookassa_shop_id") && yookassaShopId && !/^\d{1,20}$/.test(yookassaShopId)) {
+    return { ok: false as const, error: "Shop ID ЮKassa должен быть числом." };
+  }
+  if (formData.has("yookassa_secret_key") && yookassaSecret === null) return { ok: false as const, error: "Секретный ключ ЮKassa содержит пробелы или слишком короткий." };
+
+  const prodamusProvided = formData.has("prodamus_shop_url") || formData.has("prodamus_secret_key");
+  const prodamusShopUrl = readProdamusShopUrl(String(formData.get("prodamus_shop_url") ?? ""));
+  const prodamusSecret = readPaymentSecret(String(formData.get("prodamus_secret_key") ?? ""));
+  if (formData.has("prodamus_shop_url") && prodamusShopUrl === null) {
+    return { ok: false as const, error: "URL Продамус должен быть https-адресом на payform.ru." };
+  }
+  if (formData.has("prodamus_secret_key") && prodamusSecret === null) return { ok: false as const, error: "Секретный ключ Продамус содержит пробелы или слишком короткий." };
+
+  const paymentMessageProvided = formData.has("payment_success_message");
+  const paymentReturnProvided = formData.has("payment_return_url");
+  const paymentSuccessMessage = String(formData.get("payment_success_message") ?? "").trim().slice(0, 2000);
+  const paymentReturnUrl = readPaymentReturnUrl(String(formData.get("payment_return_url") ?? ""));
+  if (paymentReturnProvided && paymentReturnUrl === null) {
+    return { ok: false as const, error: "URL возврата после оплаты должен начинаться с https://." };
+  }
+
   return {
     ok: true as const,
     followupEnabled,
@@ -205,6 +238,20 @@ function readAgentFields(formData: FormData) {
     yclientsUserToken: yclientsUserToken || "",
     dikidiProvided,
     dikidiUrl: dikidiUrl || "",
+    stripeProvided,
+    stripeCurrency: stripeCurrency || "usd",
+    stripeSecret: stripeSecret || "",
+    stripeWebhookSecret: stripeWebhookSecret || "",
+    yookassaProvided,
+    yookassaShopId,
+    yookassaSecret: yookassaSecret || "",
+    prodamusProvided,
+    prodamusShopUrl: prodamusShopUrl || "",
+    prodamusSecret: prodamusSecret || "",
+    paymentMessageProvided,
+    paymentSuccessMessage,
+    paymentReturnProvided,
+    paymentReturnUrl: paymentReturnUrl || "",
   };
 }
 
@@ -349,6 +396,27 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
           }
         : {}),
       ...(fields.dikidiProvided ? { dikidi_booking_url: fields.dikidiUrl || null } : {}),
+      ...(fields.stripeProvided
+        ? {
+            stripe_currency: fields.stripeCurrency,
+            ...(fields.stripeSecret ? { stripe_secret_key: fields.stripeSecret } : {}),
+            ...(fields.stripeWebhookSecret ? { stripe_webhook_secret: fields.stripeWebhookSecret } : {}),
+          }
+        : {}),
+      ...(fields.yookassaProvided
+        ? {
+            yookassa_shop_id: fields.yookassaShopId || null,
+            ...(fields.yookassaSecret ? { yookassa_secret_key: fields.yookassaSecret } : {}),
+          }
+        : {}),
+      ...(fields.prodamusProvided
+        ? {
+            prodamus_shop_url: fields.prodamusShopUrl || null,
+            ...(fields.prodamusSecret ? { prodamus_secret_key: fields.prodamusSecret } : {}),
+          }
+        : {}),
+      ...(fields.paymentMessageProvided ? { payment_success_message: fields.paymentSuccessMessage || null } : {}),
+      ...(fields.paymentReturnProvided ? { payment_return_url: fields.paymentReturnUrl || null } : {}),
       active_channels: fields.activeChannels,
       user_id: userId,
       ...(fields.waInstanceId && fields.waApiToken
@@ -375,6 +443,10 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     const bitrixRequested = Boolean(fields.bitrixWebhook || fields.bitrixOpenLineId || fields.bitrixResponsibleId || fields.bitrixStatusId);
     const yclientsRequested = Boolean(fields.yclientsCompanyId || fields.yclientsPartnerToken || fields.yclientsUserToken);
     const dikidiRequested = Boolean(fields.dikidiUrl);
+    const stripeRequested = Boolean(fields.stripeSecret || fields.stripeWebhookSecret || (fields.stripeCurrency && fields.stripeCurrency !== "usd"));
+    const yookassaRequested = Boolean(fields.yookassaShopId || fields.yookassaSecret);
+    const prodamusRequested = Boolean(fields.prodamusShopUrl || fields.prodamusSecret);
+    const paymentCopyRequested = Boolean(fields.paymentSuccessMessage || fields.paymentReturnUrl);
     let agentId = fields.id;
     if (fields.id) {
       const updated = await supabase
@@ -384,7 +456,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         .eq("user_id", userId)
         .select("id")
         .maybeSingle();
-      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested }) : null;
+      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested }) : null;
       const retried = updateFallback
         ? await supabase.from("agents").update(updateFallback).eq("id", fields.id).eq("user_id", userId).select("id").maybeSingle()
         : updated;
@@ -399,7 +471,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     } else {
       await assertCanCreateAgent(userId);
       const inserted = await supabase.from("agents").insert(payload).select("id").single();
-      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested }) : null;
+      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested }) : null;
       const retried = insertFallback ? await supabase.from("agents").insert(insertFallback).select("id").single() : inserted;
       if (retried.error || !retried.data) {
         return failedSave(columnError(retried.error?.message ?? "Не удалось сохранить агента."));
@@ -444,6 +516,10 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     bitrixRequested: boolean;
     yclientsRequested: boolean;
     dikidiRequested: boolean;
+    stripeRequested: boolean;
+    yookassaRequested: boolean;
+    prodamusRequested: boolean;
+    paymentCopyRequested: boolean;
   },
 ) {
   const known =
@@ -453,7 +529,8 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     missingPipedriveColumn(message) ||
     missingBitrixColumn(message) ||
     missingYclientsColumn(message) ||
-    missingDikidiColumn(message);
+    missingDikidiColumn(message) ||
+    missingPaymentColumn(message);
   if (!known) return null;
   const next: Record<string, unknown> = { ...payload };
   let changed = false;
@@ -498,6 +575,27 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     delete next.dikidi_booking_url;
     changed = true;
   }
+  if (!requested.stripeRequested) {
+    delete next.stripe_secret_key;
+    delete next.stripe_webhook_secret;
+    delete next.stripe_currency;
+    changed = true;
+  }
+  if (!requested.yookassaRequested) {
+    delete next.yookassa_shop_id;
+    delete next.yookassa_secret_key;
+    changed = true;
+  }
+  if (!requested.prodamusRequested) {
+    delete next.prodamus_shop_url;
+    delete next.prodamus_secret_key;
+    changed = true;
+  }
+  if (!requested.paymentCopyRequested) {
+    delete next.payment_success_message;
+    delete next.payment_return_url;
+    changed = true;
+  }
   return changed ? (next as T) : null;
 }
 
@@ -506,7 +604,11 @@ function missingEmailColumn(message: string) {
 }
 
 function missingWebhookColumn(message: string) {
-  return /(?<!bitrix_)webhook_url/.test(message) || message.includes("webhook_secret");
+  return /(?<!bitrix_)webhook_url/.test(message) || /(?<!stripe_)webhook_secret/.test(message);
+}
+
+function missingPaymentColumn(message: string) {
+  return message.includes("stripe_secret_key") || message.includes("stripe_webhook_secret") || message.includes("stripe_currency") || message.includes("yookassa_shop_id") || message.includes("yookassa_secret_key") || message.includes("prodamus_shop_url") || message.includes("prodamus_secret_key") || message.includes("payment_success_message") || message.includes("payment_return_url");
 }
 
 function missingAmoColumn(message: string) {
@@ -530,6 +632,7 @@ function missingDikidiColumn(message: string) {
 }
 
 function columnError(message: string) {
+  if (missingPaymentColumn(message)) return "Чтобы принимать оплаты, выполните миграцию 20261121_agent_payments.sql.";
   if (missingYclientsColumn(message) || missingDikidiColumn(message)) return "Чтобы подключить YCLIENTS или DIKIDI, выполните миграцию 20261121_agent_yclients_dikidi.sql.";
   if (missingBitrixColumn(message)) return "Чтобы подключить Битрикс24, выполните миграцию 20261121_agent_bitrix24.sql.";
   if (missingPipedriveColumn(message)) return "Чтобы подключить Pipedrive, выполните миграцию 20261121_agent_pipedrive.sql.";

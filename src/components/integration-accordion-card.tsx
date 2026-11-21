@@ -105,6 +105,31 @@ export function YclientsIcon() {
   );
 }
 
+export function StripeIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+      <path fill="#635BFF" d="M12.4 5.2c-2.5 0-4.1 1.2-4.1 3.2 0 2.5 3.6 3.1 3.6 4.3 0 .5-.5.8-1.4.8-1.3 0-2.8-.5-3.9-1.2l-.7 2.4c1.1.7 2.8 1.2 4.6 1.2 2.7 0 4.4-1.3 4.4-3.3 0-2.7-3.7-3.2-3.7-4.4 0-.4.4-.7 1.2-.7 1.1 0 2.4.4 3.3 1l.7-2.3c-.9-.6-2.3-1-3.6-1Z" />
+    </svg>
+  );
+}
+
+export function YookassaIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+      <path fill="#0066FF" d="M7 5.5h6.2c2.6 0 4.3 1.5 4.3 3.8 0 2.4-1.8 3.9-4.4 3.9H10v5.3H7V5.5Zm3 5.5h2.8c1.1 0 1.8-.6 1.8-1.6S13.9 7.8 12.8 7.8H10v3.2Z" />
+    </svg>
+  );
+}
+
+export function ProdamusIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+      <path fill="#111827" d="M7 4.5h6.1c2.8 0 4.6 1.6 4.6 4.1 0 2.6-1.9 4.2-4.7 4.2H10V19.5H7V4.5Zm3 6.2h2.7c1.2 0 1.9-.6 1.9-1.6s-.7-1.6-1.9-1.6H10v3.2Z" />
+      <circle cx="17.4" cy="17.6" r="1.6" fill="#21A038" />
+    </svg>
+  );
+}
+
 export function DikidiIcon() {
   return (
     <svg viewBox="0 0 24 24" className="size-5" aria-hidden>

@@ -210,6 +210,17 @@ export type AgentRecord = {
   yclients_company_id: string | null;
   /** Прямая ссылка онлайн-записи DIKIDI. Пустая строка на клиенте значит, что ссылки нет. */
   dikidi_booking_url: string | null;
+  /** Stripe подключён. Secret Key и Webhook Secret в клиент не попадают. */
+  stripeConnected: boolean;
+  stripe_currency: string;
+  /** ЮKassa подключена. Секретный ключ в клиент не попадает. */
+  yookassaConnected: boolean;
+  yookassa_shop_id: string | null;
+  /** Продамус подключён. Секретный ключ в клиент не попадает. */
+  prodamusConnected: boolean;
+  prodamus_shop_url: string | null;
+  payment_success_message: string | null;
+  payment_return_url: string | null;
   widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;

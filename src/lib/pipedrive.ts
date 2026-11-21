@@ -195,6 +195,38 @@ export async function loadPipedriveAgent(agentId: string): Promise<PipedriveAgen
   }
 }
 
+/** Заметка в сделку, уже связанную с этим диалогом. Ошибка CRM не пробрасывается. */
+export async function notePipedrivePayment(agentId: string, chatId: string, text: string) {
+  try {
+    const agent = await loadPipedriveAgent(agentId);
+    const note = text.trim();
+    if (!agent || !note || !chatId.trim()) return;
+    const supabase = createSupabaseAdminClient();
+    const { data } = await supabase
+      .from("crm_chat_links")
+      .select("pipedrive_deal_id, pipedrive_person_id")
+      .eq("agent_id", agentId)
+      .eq("chat_id", chatId)
+      .not("pipedrive_deal_id", "is", null)
+      .limit(1);
+    const dealId = data?.[0]?.pipedrive_deal_id ? String(data[0].pipedrive_deal_id) : "";
+    const personId = data?.[0]?.pipedrive_person_id ? String(data[0].pipedrive_person_id) : "";
+    if (!/^\d+$/.test(dealId)) return;
+    const safe = note.slice(0, 4000).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const noted = await pipedriveRequest(agent.token, "/notes", {
+      method: "POST",
+      body: {
+        content: safe,
+        deal_id: Number(dealId),
+        ...( /^\d+$/.test(personId) ? { person_id: Number(personId) } : {}),
+      },
+    });
+    if (!noted.ok) console.error("[pipedrive] payment note", agentId, noted.error);
+  } catch (error) {
+    console.error("[pipedrive] payment note", agentId, error instanceof Error ? error.message : error);
+  }
+}
+
 async function findPerson(agent: PipedriveAgent, term: string) {
   const result = await pipedriveRequest(
     agent.token,

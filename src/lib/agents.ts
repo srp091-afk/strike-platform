@@ -214,6 +214,32 @@ export async function listAgents(): Promise<AgentRecord[]> {
     .from("agents")
     .select("id, bitrix_webhook_url, bitrix_openline_id, bitrix_responsible_id, bitrix_handoff_status_id")
     .eq("user_id", userId);
+  const paymentRows = await supabase
+    .from("agents")
+    .select("id, stripe_secret_key, stripe_currency, yookassa_shop_id, yookassa_secret_key, prodamus_shop_url, prodamus_secret_key, payment_success_message, payment_return_url")
+    .eq("user_id", userId);
+  const payments = new Map<string, { stripe: boolean; currency: string; yookassa: boolean; shopId: string | null; prodamus: boolean; shopUrl: string | null; successMessage: string | null; returnUrl: string | null }>(
+    paymentRows.error
+      ? []
+      : (paymentRows.data ?? []).map((row) => {
+          const shopId = typeof row.yookassa_shop_id === "string" && row.yookassa_shop_id.trim() ? row.yookassa_shop_id.trim() : "";
+          const shopUrl = typeof row.prodamus_shop_url === "string" && row.prodamus_shop_url.trim() ? row.prodamus_shop_url.trim() : "";
+          const currency = typeof row.stripe_currency === "string" && row.stripe_currency.trim() ? row.stripe_currency.trim().toLowerCase() : "usd";
+          return [
+            String(row.id),
+            {
+              stripe: typeof row.stripe_secret_key === "string" && row.stripe_secret_key.trim().length > 0,
+              currency,
+              yookassa: Boolean(shopId) && typeof row.yookassa_secret_key === "string" && row.yookassa_secret_key.trim().length > 0,
+              shopId: shopId || null,
+              prodamus: Boolean(shopUrl) && typeof row.prodamus_secret_key === "string" && row.prodamus_secret_key.trim().length > 0,
+              shopUrl: shopUrl || null,
+              successMessage: typeof row.payment_success_message === "string" && row.payment_success_message.trim() ? row.payment_success_message : null,
+              returnUrl: typeof row.payment_return_url === "string" && row.payment_return_url.trim() ? row.payment_return_url.trim() : null,
+            },
+          ] as const;
+        }),
+  );
   const bookingRows = await supabase
     .from("agents")
     .select("id, yclients_platform, yclients_company_id, yclients_partner_token, dikidi_booking_url")
@@ -369,6 +395,14 @@ export async function listAgents(): Promise<AgentRecord[]> {
     yclients_platform: booking.get(String(row.id))?.platform ?? "yclients",
     yclients_company_id: booking.get(String(row.id))?.companyId ?? null,
     dikidi_booking_url: booking.get(String(row.id))?.dikidiUrl ?? null,
+    stripeConnected: payments.get(String(row.id))?.stripe ?? false,
+    stripe_currency: payments.get(String(row.id))?.currency ?? "usd",
+    yookassaConnected: payments.get(String(row.id))?.yookassa ?? false,
+    yookassa_shop_id: payments.get(String(row.id))?.shopId ?? null,
+    prodamusConnected: payments.get(String(row.id))?.prodamus ?? false,
+    prodamus_shop_url: payments.get(String(row.id))?.shopUrl ?? null,
+    payment_success_message: payments.get(String(row.id))?.successMessage ?? null,
+    payment_return_url: payments.get(String(row.id))?.returnUrl ?? null,
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
 

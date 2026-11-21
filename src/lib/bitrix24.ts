@@ -264,6 +264,31 @@ export async function loadBitrixAgent(agentId: string): Promise<BitrixAgent | nu
   }
 }
 
+/** Комментарий в лид, уже связанный с этим диалогом. Ошибка CRM не пробрасывается. */
+export async function noteBitrixPayment(agentId: string, chatId: string, text: string) {
+  try {
+    const agent = await loadBitrixAgent(agentId);
+    const note = text.trim();
+    if (!agent || !note || !chatId.trim()) return;
+    const supabase = createSupabaseAdminClient();
+    const { data } = await supabase
+      .from("crm_chat_links")
+      .select("bitrix_lead_id")
+      .eq("agent_id", agentId)
+      .eq("chat_id", chatId)
+      .not("bitrix_lead_id", "is", null)
+      .limit(1);
+    const leadId = data?.[0]?.bitrix_lead_id ? String(data[0].bitrix_lead_id) : "";
+    if (!/^\d+$/.test(leadId)) return;
+    const noted = await bitrixRequest(agent.webhookUrl, "crm.timeline.comment.add", {
+      body: { fields: { ENTITY_ID: Number(leadId), ENTITY_TYPE: "lead", COMMENT: note.slice(0, 4000) } },
+    });
+    if (!noted.ok) console.error("[bitrix24] payment note", agentId, noted.error);
+  } catch (error) {
+    console.error("[bitrix24] payment note", agentId, error instanceof Error ? error.message : error);
+  }
+}
+
 async function findLeadByPhone(agent: BitrixAgent, phone: string) {
   const result = await bitrixRequest(agent.webhookUrl, "crm.duplicate.findbycomm", {
     body: { type: "PHONE", values: [phone.slice(0, 40)] },

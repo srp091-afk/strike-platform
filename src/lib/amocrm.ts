@@ -201,6 +201,32 @@ export async function loadAmoAgent(agentId: string): Promise<AmoAgent | null> {
   }
 }
 
+/** Заметка в сделку, уже связанную с этим диалогом. Ошибка CRM не пробрасывается. */
+export async function noteAmoPayment(agentId: string, chatId: string, text: string) {
+  try {
+    const agent = await loadAmoAgent(agentId);
+    const note = text.trim();
+    if (!agent || !note || !chatId.trim()) return;
+    const supabase = createSupabaseAdminClient();
+    const { data } = await supabase
+      .from("crm_chat_links")
+      .select("amo_lead_id")
+      .eq("agent_id", agentId)
+      .eq("chat_id", chatId)
+      .not("amo_lead_id", "is", null)
+      .limit(1);
+    const leadId = data?.[0]?.amo_lead_id ? String(data[0].amo_lead_id) : "";
+    if (!/^\d+$/.test(leadId)) return;
+    const noted = await amoRequest(agent.domain, agent.token, `/api/v4/leads/${leadId}/notes`, {
+      method: "POST",
+      body: [{ note_type: "common", params: { text: note.slice(0, 4000) } }],
+    });
+    if (!noted.ok) console.error("[amocrm] payment note", agentId, noted.error);
+  } catch (error) {
+    console.error("[amocrm] payment note", agentId, error instanceof Error ? error.message : error);
+  }
+}
+
 async function findContact(agent: AmoAgent, query: string) {
   const result = await amoRequest(agent.domain, agent.token, `/api/v4/contacts?query=${encodeURIComponent(query)}`);
   if (!result.ok) return null;
