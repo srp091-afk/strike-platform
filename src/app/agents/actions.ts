@@ -14,6 +14,7 @@ import {
 } from "@/lib/agent-models";
 import { readAmoDomain } from "@/lib/amocrm";
 import { readBitrixWebhook } from "@/lib/bitrix24";
+import { readDikidiBookingUrl, readYclientsCompanyId, readYclientsPlatform, readYclientsToken } from "@/lib/yclients";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { assertCanCreateAgent } from "@/lib/access";
 import { ensureGreenIncomingWebhook, getGreenPhone } from "@/lib/green-api";
@@ -133,6 +134,30 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "ID ответственного сотрудника Битрикс24 должен быть числом." };
   }
 
+  const yclientsProvided = formData.has("yclients_platform") || formData.has("yclients_company_id") || formData.has("yclients_partner_token") || formData.has("yclients_user_token");
+  const yclientsPlatform = readYclientsPlatform(String(formData.get("yclients_platform") ?? ""));
+  const yclientsCompanyId = readYclientsCompanyId(String(formData.get("yclients_company_id") ?? ""));
+  const yclientsPartnerToken = readYclientsToken(String(formData.get("yclients_partner_token") ?? ""));
+  const yclientsUserToken = readYclientsToken(String(formData.get("yclients_user_token") ?? ""));
+  if (yclientsProvided && !yclientsPlatform) {
+    return { ok: false as const, error: "Платформа записи — YCLIENTS или Altegio." };
+  }
+  if (formData.has("yclients_company_id") && yclientsCompanyId === null) {
+    return { ok: false as const, error: "ID филиала YCLIENTS должен быть числом." };
+  }
+  if (formData.has("yclients_partner_token") && yclientsPartnerToken === null) {
+    return { ok: false as const, error: "Partner Token содержит пробелы или слишком короткий." };
+  }
+  if (formData.has("yclients_user_token") && yclientsUserToken === null) {
+    return { ok: false as const, error: "User Token содержит пробелы или слишком короткий." };
+  }
+
+  const dikidiProvided = formData.has("dikidi_booking_url");
+  const dikidiUrl = readDikidiBookingUrl(String(formData.get("dikidi_booking_url") ?? ""));
+  if (dikidiProvided && dikidiUrl === null) {
+    return { ok: false as const, error: "Ссылка DIKIDI должна быть https-адресом на dikidi.net, dikidi.ru или dikidi.app." };
+  }
+
   return {
     ok: true as const,
     followupEnabled,
@@ -173,6 +198,13 @@ function readAgentFields(formData: FormData) {
     bitrixOpenLineId,
     bitrixResponsibleId,
     bitrixStatusId,
+    yclientsProvided,
+    yclientsPlatform: yclientsPlatform || "yclients",
+    yclientsCompanyId: yclientsCompanyId || "",
+    yclientsPartnerToken: yclientsPartnerToken || "",
+    yclientsUserToken: yclientsUserToken || "",
+    dikidiProvided,
+    dikidiUrl: dikidiUrl || "",
   };
 }
 
@@ -308,6 +340,15 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
             ...(fields.bitrixWebhook ? { bitrix_webhook_url: fields.bitrixWebhook } : {}),
           }
         : {}),
+      ...(fields.yclientsProvided
+        ? {
+            yclients_platform: fields.yclientsPlatform,
+            yclients_company_id: fields.yclientsCompanyId || null,
+            ...(fields.yclientsPartnerToken ? { yclients_partner_token: fields.yclientsPartnerToken } : {}),
+            ...(fields.yclientsUserToken ? { yclients_user_token: fields.yclientsUserToken } : {}),
+          }
+        : {}),
+      ...(fields.dikidiProvided ? { dikidi_booking_url: fields.dikidiUrl || null } : {}),
       active_channels: fields.activeChannels,
       user_id: userId,
       ...(fields.waInstanceId && fields.waApiToken
@@ -332,6 +373,8 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     const amoRequested = Boolean(fields.amoDomain || fields.amoToken || fields.amoPipelineId || fields.amoStatusId);
     const pipedriveRequested = Boolean(fields.pipedriveToken || fields.pipedrivePipelineId || fields.pipedriveStageId);
     const bitrixRequested = Boolean(fields.bitrixWebhook || fields.bitrixOpenLineId || fields.bitrixResponsibleId || fields.bitrixStatusId);
+    const yclientsRequested = Boolean(fields.yclientsCompanyId || fields.yclientsPartnerToken || fields.yclientsUserToken);
+    const dikidiRequested = Boolean(fields.dikidiUrl);
     let agentId = fields.id;
     if (fields.id) {
       const updated = await supabase
@@ -341,7 +384,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         .eq("user_id", userId)
         .select("id")
         .maybeSingle();
-      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested }) : null;
+      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested }) : null;
       const retried = updateFallback
         ? await supabase.from("agents").update(updateFallback).eq("id", fields.id).eq("user_id", userId).select("id").maybeSingle()
         : updated;
@@ -356,7 +399,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     } else {
       await assertCanCreateAgent(userId);
       const inserted = await supabase.from("agents").insert(payload).select("id").single();
-      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested }) : null;
+      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested }) : null;
       const retried = insertFallback ? await supabase.from("agents").insert(insertFallback).select("id").single() : inserted;
       if (retried.error || !retried.data) {
         return failedSave(columnError(retried.error?.message ?? "Не удалось сохранить агента."));
@@ -393,38 +436,66 @@ async function readWhatsAppPhone(instanceId: string, apiToken: string) {
 function dropUnavailableColumns<T extends Record<string, unknown>>(
   payload: T,
   message: string,
-  requested: { emailRequested: boolean; webhookRequested: boolean; amoRequested: boolean; pipedriveRequested: boolean; bitrixRequested: boolean },
+  requested: {
+    emailRequested: boolean;
+    webhookRequested: boolean;
+    amoRequested: boolean;
+    pipedriveRequested: boolean;
+    bitrixRequested: boolean;
+    yclientsRequested: boolean;
+    dikidiRequested: boolean;
+  },
 ) {
+  const known =
+    missingEmailColumn(message) ||
+    missingWebhookColumn(message) ||
+    missingAmoColumn(message) ||
+    missingPipedriveColumn(message) ||
+    missingBitrixColumn(message) ||
+    missingYclientsColumn(message) ||
+    missingDikidiColumn(message);
+  if (!known) return null;
   const next: Record<string, unknown> = { ...payload };
   let changed = false;
-  if (!requested.emailRequested && missingEmailColumn(message)) {
+  if (!requested.emailRequested) {
     delete next.notify_email_enabled;
     delete next.notify_email_address;
     changed = true;
   }
-  if (!requested.webhookRequested && missingWebhookColumn(message)) {
+  if (!requested.webhookRequested) {
     delete next.webhook_url;
     delete next.webhook_secret;
     changed = true;
   }
-  if (!requested.amoRequested && missingAmoColumn(message)) {
+  if (!requested.amoRequested) {
     delete next.amo_domain;
     delete next.amo_access_token;
     delete next.amo_pipeline_id;
     delete next.amo_handoff_status_id;
     changed = true;
   }
-  if (!requested.pipedriveRequested && missingPipedriveColumn(message)) {
+  if (!requested.pipedriveRequested) {
     delete next.pipedrive_api_token;
     delete next.pipedrive_pipeline_id;
     delete next.pipedrive_handoff_stage_id;
     changed = true;
   }
-  if (!requested.bitrixRequested && missingBitrixColumn(message)) {
+  if (!requested.bitrixRequested) {
     delete next.bitrix_webhook_url;
     delete next.bitrix_openline_id;
     delete next.bitrix_responsible_id;
     delete next.bitrix_handoff_status_id;
+    changed = true;
+  }
+  if (!requested.yclientsRequested) {
+    delete next.yclients_platform;
+    delete next.yclients_company_id;
+    delete next.yclients_partner_token;
+    delete next.yclients_user_token;
+    changed = true;
+  }
+  if (!requested.dikidiRequested) {
+    delete next.dikidi_booking_url;
     changed = true;
   }
   return changed ? (next as T) : null;
@@ -450,7 +521,16 @@ function missingBitrixColumn(message: string) {
   return message.includes("bitrix_webhook_url") || message.includes("bitrix_openline_id") || message.includes("bitrix_responsible_id") || message.includes("bitrix_handoff_status_id");
 }
 
+function missingYclientsColumn(message: string) {
+  return message.includes("yclients_platform") || message.includes("yclients_company_id") || message.includes("yclients_partner_token") || message.includes("yclients_user_token");
+}
+
+function missingDikidiColumn(message: string) {
+  return message.includes("dikidi_booking_url");
+}
+
 function columnError(message: string) {
+  if (missingYclientsColumn(message) || missingDikidiColumn(message)) return "Чтобы подключить YCLIENTS или DIKIDI, выполните миграцию 20261121_agent_yclients_dikidi.sql.";
   if (missingBitrixColumn(message)) return "Чтобы подключить Битрикс24, выполните миграцию 20261121_agent_bitrix24.sql.";
   if (missingPipedriveColumn(message)) return "Чтобы подключить Pipedrive, выполните миграцию 20261121_agent_pipedrive.sql.";
   if (missingAmoColumn(message)) return "Чтобы подключить amoCRM, выполните миграцию 20261121_agent_amocrm.sql.";

@@ -96,3 +96,20 @@ export function GoogleCalendarIcon() {
 export function WebhookIcon() {
   return <Webhook className="size-4 text-zinc-100" strokeWidth={2} aria-hidden />;
 }
+
+export function YclientsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+      <path fill="#FFD100" d="M4.5 4.5h4.4l3.1 6.6 3.1-6.6h4.4L13.2 14v5.5h-2.4V14L4.5 4.5Z" />
+    </svg>
+  );
+}
+
+export function DikidiIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+      <path fill="#FF4B2B" d="M7.5 4h5.4a5.1 5.1 0 0 1 0 10.2H10.5V20H7.5V4Zm3 7.2h2.2a2.1 2.1 0 0 0 0-4.2H10.5v4.2Z" />
+      <circle cx="17.2" cy="18.4" r="1.7" fill="#FF4B2B" />
+    </svg>
+  );
+}

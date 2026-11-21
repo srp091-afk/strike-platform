@@ -14,6 +14,7 @@ import { syncAgentTurnToAmo } from "@/lib/amocrm";
 import { syncAgentTurnToBitrix } from "@/lib/bitrix24";
 import { syncAgentTurnToPipedrive } from "@/lib/pipedrive";
 import { dispatchAgentWebhook, loadAgentWebhook, type WebhookAgent } from "@/lib/webhooks";
+import { bookingSystemRule, dikidiSystemRule, loadAgentBooking, runYclientsTool, type AgentBooking } from "@/lib/yclients";
 
 export type NotifyChat = {
   supabase: SupabaseClient;
@@ -105,6 +106,120 @@ const calendarChatTools: OpenAI.Chat.ChatCompletionTool[] = [
   },
 ];
 
+const bookingServicesParameters = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    staff_id: { type: "number", description: "Необязательный ID мастера, чтобы оставить только его услуги." },
+  },
+  required: [],
+};
+
+const bookingStaffParameters = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    service_ids: {
+      type: "array",
+      items: { type: "number" },
+      description: "Необязательные ID услуг, чтобы оставить мастеров, которые их оказывают.",
+    },
+  },
+  required: [],
+};
+
+const bookingSlotsParameters = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    date: { type: "string", description: "Дата в формате YYYY-MM-DD." },
+    staff_id: { type: "number", description: "ID мастера. Не передавай, если клиент ещё не выбрал мастера." },
+    service_ids: { type: "array", items: { type: "number" }, description: "ID выбранных услуг." },
+  },
+  required: ["date"],
+};
+
+const bookingRecordParameters = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
+    fullname: { type: "string", description: "Имя клиента. Сначала уточни его в диалоге." },
+    phone: { type: "string", description: "Телефон клиента. Сначала уточни его в диалоге." },
+    email: { type: "string", description: "Email клиента, если он сам его назвал." },
+    service_ids: { type: "array", items: { type: "number" }, description: "ID услуг из booking_get_services." },
+    staff_id: { type: "number", description: "ID мастера из booking_get_staff или слота." },
+    datetime: { type: "string", description: "Дата и время слота, как datetime в ответе booking_check_slots." },
+    comment: { type: "string", description: "Короткий комментарий к записи, если клиент его оставил." },
+  },
+  required: ["fullname", "phone", "service_ids", "staff_id", "datetime"],
+};
+
+const bookingChatTools: OpenAI.Chat.ChatCompletionTool[] = [
+  {
+    type: "function",
+    function: {
+      name: "booking_get_services",
+      description: "Получить список услуг и цен онлайн-записи. Можно сузить по staff_id.",
+      parameters: bookingServicesParameters,
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "booking_get_staff",
+      description: "Получить список мастеров онлайн-записи. Можно сузить по service_ids.",
+      parameters: bookingStaffParameters,
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "booking_check_slots",
+      description: "Проверить свободные окошки на конкретную дату YYYY-MM-DD. Если мастер не выбран, не передавай staff_id.",
+      parameters: bookingSlotsParameters,
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "booking_create_record",
+      description: "Записать клиента. Перед вызовом уточни имя и телефон и получи подтверждение времени. Не выдумывай свободное окно.",
+      parameters: bookingRecordParameters,
+    },
+  },
+];
+
+const bookingResponseTools: OpenAI.Responses.FunctionTool[] = [
+  {
+    type: "function",
+    name: "booking_get_services",
+    description: "Получить список услуг и цен онлайн-записи. Можно сузить по staff_id.",
+    parameters: bookingServicesParameters,
+    strict: false,
+  },
+  {
+    type: "function",
+    name: "booking_get_staff",
+    description: "Получить список мастеров онлайн-записи. Можно сузить по service_ids.",
+    parameters: bookingStaffParameters,
+    strict: false,
+  },
+  {
+    type: "function",
+    name: "booking_check_slots",
+    description: "Проверить свободные окошки на конкретную дату YYYY-MM-DD. Если мастер не выбран, не передавай staff_id.",
+    parameters: bookingSlotsParameters,
+    strict: false,
+  },
+  {
+    type: "function",
+    name: "booking_create_record",
+    description: "Записать клиента. Перед вызовом уточни имя и телефон и получи подтверждение времени. Не выдумывай свободное окно.",
+    parameters: bookingRecordParameters,
+    strict: false,
+  },
+];
+
 const calendarResponseTools: OpenAI.Responses.FunctionTool[] = [
   {
     type: "function",
@@ -166,9 +281,10 @@ async function completeTurn(input: {
   chat: NotifyChat | null;
   delivery?: AgentTurnDelivery;
 }) {
-  const [timezone, target] = await Promise.all([
+  const [timezone, target, booking] = await Promise.all([
     input.agentId ? calendarTimezone(input.agentId) : Promise.resolve(null),
     input.agentId ? loadAgentWebhook(input.agentId) : Promise.resolve(null),
+    input.agentId ? loadAgentBooking(input.agentId) : Promise.resolve(null),
   ]);
   const inbound = lastUserText(input.messages);
   const turn: TurnSide = {
@@ -183,8 +299,9 @@ async function completeTurn(input: {
   }
   const prepared = {
     ...input,
-    messages: timezone ? withCalendarRule(input.messages, timezone) : input.messages,
+    messages: withSystemRules(input.messages, agentRules(timezone, booking)),
     calendar: Boolean(timezone),
+    booking: Boolean(booking?.creds),
     turn,
   };
   if (input.model.includes("gpt-6")) return completeWithResponses(prepared);
@@ -197,10 +314,11 @@ async function completeWithResponses(input: {
   agentId: string | null;
   chat: NotifyChat | null;
   calendar: boolean;
+  booking: boolean;
   turn: TurnSide;
 }) {
   const client = getOpenAI();
-  const tools = responseTools(input.chat, input.calendar);
+  const tools = responseTools(input.chat, input.calendar, input.booking);
   const first = await client.responses.create({
     model: input.model,
     input: toResponseInput(input.messages),
@@ -272,9 +390,10 @@ async function completeWithChat(input: {
   agentId: string | null;
   chat: NotifyChat | null;
   calendar: boolean;
+  booking: boolean;
   turn: TurnSide;
 }) {
-  const tools = chatTools(input.chat, input.calendar);
+  const tools = chatTools(input.chat, input.calendar, input.booking);
   const first = await getOpenAI().chat.completions.create({
     model: input.model,
     temperature: input.temperature,
@@ -319,21 +438,30 @@ async function completeWithChat(input: {
   return publishReply(input.turn, second.choices[0]?.message?.content ?? "", pausedByTool);
 }
 
-function chatTools(chat: NotifyChat | null, calendar: boolean): OpenAI.Chat.ChatCompletionTool[] {
-  return [...(chat ? [notifyManagerTool] : []), ...(calendar ? calendarChatTools : [])];
+function chatTools(chat: NotifyChat | null, calendar: boolean, booking: boolean): OpenAI.Chat.ChatCompletionTool[] {
+  return [...(chat ? [notifyManagerTool] : []), ...(calendar ? calendarChatTools : []), ...(booking ? bookingChatTools : [])];
 }
 
-function responseTools(chat: NotifyChat | null, calendar: boolean): OpenAI.Responses.FunctionTool[] {
-  return [...(chat ? [notifyManagerResponseTool] : []), ...(calendar ? calendarResponseTools : [])];
+function responseTools(chat: NotifyChat | null, calendar: boolean, booking: boolean): OpenAI.Responses.FunctionTool[] {
+  return [...(chat ? [notifyManagerResponseTool] : []), ...(calendar ? calendarResponseTools : []), ...(booking ? bookingResponseTools : [])];
 }
 
-function withCalendarRule(messages: OpenAI.Chat.ChatCompletionMessageParam[], timezone: string) {
-  const rule = calendarSystemRule(timezone);
+function agentRules(timezone: string | null, booking: AgentBooking | null) {
+  const rules: string[] = [];
+  if (timezone) rules.push(calendarSystemRule(timezone));
+  if (booking?.creds) rules.push(bookingSystemRule(booking.creds.platform, timezone ?? "UTC"));
+  if (booking?.dikidiUrl) rules.push(dikidiSystemRule(booking.dikidiUrl));
+  return rules;
+}
+
+function withSystemRules(messages: OpenAI.Chat.ChatCompletionMessageParam[], rules: string[]) {
+  const extra = rules.filter(Boolean).join("\n\n");
+  if (!extra) return messages;
   const index = messages.findIndex((message) => message.role === "system" && typeof message.content === "string");
-  if (index === -1) return [{ role: "system" as const, content: rule }, ...messages];
+  if (index === -1) return [{ role: "system" as const, content: extra }, ...messages];
   return messages.map((message, item) =>
     item === index && message.role === "system" && typeof message.content === "string"
-      ? { ...message, content: `${message.content}\n\n${rule}` }
+      ? { ...message, content: `${message.content}\n\n${extra}` }
       : message,
   );
 }
@@ -363,6 +491,12 @@ async function runTool(
     if (!input.agentId) return { paused: false, output: JSON.stringify({ ok: false, error: "Календарь не привязан к агенту." }) };
     const output = await runCalendarTool(name, args, input.agentId);
     if (name === "book_slot") emitBooked(input.turn, args, output);
+    return { paused: false, output };
+  }
+  if (name.startsWith("booking_")) {
+    if (!input.agentId) return { paused: false, output: JSON.stringify({ ok: false, error: "Онлайн-запись не привязана к агенту." }) };
+    const output = await runYclientsTool(name, args, input.agentId);
+    if (name === "booking_create_record") emitYclientsBooked(input.turn, output);
     return { paused: false, output };
   }
   return { paused: false, output: JSON.stringify({ ok: false, error: "Неизвестная функция." }) };
@@ -467,6 +601,27 @@ function emitBooked(turn: TurnSide, args: string, output: string) {
     event: "appointment.booked",
     message: { role: "system", text: "Запись создана" },
     metadata: { slot: readJson(args), booked: parsed.booked ?? null },
+  });
+}
+
+function emitYclientsBooked(turn: TurnSide, output: string) {
+  let parsed: { ok?: boolean; recordId?: unknown; datetime?: unknown; phone?: unknown; service?: unknown; staff?: unknown } = {};
+  try {
+    parsed = JSON.parse(output) as typeof parsed;
+  } catch {
+    return;
+  }
+  if (!parsed.ok) return;
+  emitWebhook(turn, {
+    event: "appointment.booked",
+    message: { role: "system", text: "Запись создана" },
+    metadata: {
+      service: parsed.service ?? null,
+      staff: parsed.staff ?? null,
+      datetime: parsed.datetime ?? null,
+      phone: parsed.phone ?? null,
+      record_id: parsed.recordId ?? null,
+    },
   });
 }
 

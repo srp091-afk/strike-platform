@@ -214,6 +214,28 @@ export async function listAgents(): Promise<AgentRecord[]> {
     .from("agents")
     .select("id, bitrix_webhook_url, bitrix_openline_id, bitrix_responsible_id, bitrix_handoff_status_id")
     .eq("user_id", userId);
+  const bookingRows = await supabase
+    .from("agents")
+    .select("id, yclients_platform, yclients_company_id, yclients_partner_token, dikidi_booking_url")
+    .eq("user_id", userId);
+  const booking = new Map<string, { connected: boolean; platform: "yclients" | "altegio"; companyId: string | null; dikidiUrl: string | null }>(
+    bookingRows.error
+      ? []
+      : (bookingRows.data ?? []).map((row) => {
+          const companyId = typeof row.yclients_company_id === "string" && row.yclients_company_id.trim() ? row.yclients_company_id.trim() : "";
+          const partner = typeof row.yclients_partner_token === "string" && row.yclients_partner_token.trim().length > 0;
+          const dikidi = typeof row.dikidi_booking_url === "string" ? row.dikidi_booking_url.trim() : "";
+          return [
+            String(row.id),
+            {
+              connected: Boolean(companyId) && partner,
+              platform: row.yclients_platform === "altegio" ? "altegio" : "yclients",
+              companyId: companyId || null,
+              dikidiUrl: dikidi || null,
+            },
+          ] as const;
+        }),
+  );
   const bitrix = new Map<string, { connected: boolean; openLineId: string | null; responsibleId: string | null; statusId: string | null }>(
     bitrixRows.error
       ? []
@@ -343,6 +365,10 @@ export async function listAgents(): Promise<AgentRecord[]> {
     bitrix_openline_id: bitrix.get(String(row.id))?.openLineId ?? null,
     bitrix_responsible_id: bitrix.get(String(row.id))?.responsibleId ?? null,
     bitrix_handoff_status_id: bitrix.get(String(row.id))?.statusId ?? null,
+    yclientsConnected: booking.get(String(row.id))?.connected ?? false,
+    yclients_platform: booking.get(String(row.id))?.platform ?? "yclients",
+    yclients_company_id: booking.get(String(row.id))?.companyId ?? null,
+    dikidi_booking_url: booking.get(String(row.id))?.dikidiUrl ?? null,
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
 

@@ -40,10 +40,12 @@ import { AgentKnowledge } from "@/components/agent-knowledge";
 import {
   AmoCrmIcon,
   BitrixIcon,
+  DikidiIcon,
   GoogleCalendarIcon,
   IntegrationAccordionCard,
   PipedriveIcon,
   WebhookIcon,
+  YclientsIcon,
 } from "@/components/integration-accordion-card";
 import { TwilioConnectCard } from "@/components/twilio-connect-card";
 import { WhatsAppConnectDialog } from "@/components/whatsapp-connect-dialog";
@@ -89,6 +91,16 @@ type GreenDefaults = {
 
 const fieldClass =
   "w-full rounded-xl border border-zinc-800 bg-black px-4 py-3 text-sm text-white outline-none transition-colors duration-200 placeholder:text-zinc-600 hover:border-zinc-700 focus:border-white";
+const platformTabActive = "rounded-xl border border-white bg-black px-3 py-2 text-xs font-semibold text-white";
+const platformTabIdle = "rounded-xl border border-zinc-800 bg-black px-3 py-2 text-xs font-semibold text-zinc-400";
+
+function ruNoun(count: number, one: string, few: string, many: string) {
+  const n = Math.abs(count);
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  const word = mod10 === 1 && mod100 !== 11 ? one : mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14) ? few : many;
+  return `${n} ${word}`;
+}
 
 const initialState: SaveState = {
   ok: false,
@@ -646,6 +658,233 @@ function GoogleCalendarCard({
           )}
         </div>
       )}
+    </IntegrationAccordionCard>
+  );
+}
+
+function YclientsCard({
+  agentId,
+  connected,
+  platform,
+  companyId,
+  partnerToken,
+  userToken,
+  onChange,
+}: {
+  agentId: string;
+  connected: boolean;
+  platform: "yclients" | "altegio";
+  companyId: string;
+  partnerToken: string;
+  userToken: string;
+  onChange: (patch: {
+    yclients_platform?: "yclients" | "altegio";
+    yclients_company_id?: string;
+    yclients_partner_token?: string;
+    yclients_user_token?: string;
+  }) => void;
+}) {
+  const router = useRouter();
+  const [isConnected, setConnected] = useState(connected);
+  const [tokenOpen, setTokenOpen] = useState(!connected);
+  const [pending, setPending] = useState<"test" | "off" | null>(null);
+  const [result, setResult] = useState("");
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setConnected(connected);
+    setTokenOpen(!connected);
+  }, [connected, agentId]);
+
+  async function accountHeaders() {
+    const headers = new Headers({ "Content-Type": "application/json" });
+    const accountId = activeAccountHeader();
+    if (accountId) headers.set("x-account-id", accountId);
+    return headers;
+  }
+
+  async function checkConnection() {
+    if (!agentId) {
+      toast.error("Сначала сохраните агента.");
+      return;
+    }
+    setPending("test");
+    setError("");
+    setResult("");
+    try {
+      const response = await fetch(`/api/agents/${agentId}/yclients/test`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers: await accountHeaders(),
+        body: JSON.stringify({
+          platform,
+          companyId: companyId.trim(),
+          partnerToken: partnerToken.trim(),
+          userToken: userToken.trim(),
+        }),
+      });
+      const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string; servicesCount?: number; staffCount?: number } | null;
+      if (!response.ok || !data?.ok) {
+        setError(data?.error || "Не удалось подключиться к YCLIENTS.");
+        return;
+      }
+      const message = `Подключено: найдено ${ruNoun(data.servicesCount ?? 0, "услуга", "услуги", "услуг")} и ${ruNoun(data.staffCount ?? 0, "мастер", "мастера", "мастеров")}`;
+      setResult(message);
+      toast.success(message);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function disconnect() {
+    if (!agentId) return;
+    setPending("off");
+    try {
+      const headers = await accountHeaders();
+      headers.delete("Content-Type");
+      const response = await fetch(`/api/agents/${agentId}/yclients`, { method: "DELETE", credentials: "same-origin", headers });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        toast.error(data?.error || "Не удалось отключить YCLIENTS.");
+        return;
+      }
+      setConnected(false);
+      setTokenOpen(true);
+      setResult("");
+      onChange({ yclients_partner_token: "", yclients_user_token: "" });
+      toast.success("YCLIENTS отключён");
+      router.refresh();
+    } finally {
+      setPending(null);
+    }
+  }
+
+  const canTest = Boolean(companyId.trim()) && (Boolean(partnerToken.trim()) || isConnected);
+
+  return (
+    <IntegrationAccordionCard
+      title="YCLIENTS / Altegio"
+      description="Онлайн-запись к мастерам, проверка услуг и свободных окошек в реальном времени."
+      connected={isConnected}
+      icon={<YclientsIcon />}
+    >
+      <div className="grid gap-2">
+        <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Платформа</span>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => onChange({ yclients_platform: "yclients" })}
+            className={platform === "yclients" ? platformTabActive : platformTabIdle}
+          >
+            YCLIENTS
+          </button>
+          <button
+            type="button"
+            onClick={() => onChange({ yclients_platform: "altegio" })}
+            className={platform === "altegio" ? platformTabActive : platformTabIdle}
+          >
+            Altegio
+          </button>
+        </div>
+        <input type="hidden" name="yclients_platform" value={platform} />
+      </div>
+      <label className="grid gap-2 text-sm text-zinc-300">
+        ID филиала (Company ID)
+        <input
+          name="yclients_company_id"
+          value={companyId}
+          onChange={(event) => onChange({ yclients_company_id: event.target.value })}
+          placeholder="123456"
+          inputMode="numeric"
+          autoComplete="off"
+          spellCheck={false}
+          className={fieldClass}
+        />
+      </label>
+      {tokenOpen ? (
+        <>
+          <label className="grid gap-2 text-sm text-zinc-300">
+            Partner Token
+            <input
+              name="yclients_partner_token"
+              type="password"
+              value={partnerToken}
+              onChange={(event) => onChange({ yclients_partner_token: event.target.value })}
+              placeholder={isConnected ? "Новый Partner Token" : "Partner Token"}
+              autoComplete="new-password"
+              spellCheck={false}
+              className={fieldClass}
+            />
+          </label>
+          <label className="grid gap-2 text-sm text-zinc-300">
+            User Token (необязательно)
+            <input
+              name="yclients_user_token"
+              type="password"
+              value={userToken}
+              onChange={(event) => onChange({ yclients_user_token: event.target.value })}
+              placeholder="User Token"
+              autoComplete="new-password"
+              spellCheck={false}
+              className={fieldClass}
+            />
+          </label>
+          <p className="text-xs leading-5 text-zinc-500">Partner Token берётся в маркетплейсе интеграций YCLIENTS или Altegio. User Token нужен только для расширенного доступа.</p>
+        </>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="outline" disabled={!agentId || !canTest || pending !== null} onClick={() => void checkConnection()}>
+          {pending === "test" ? "Проверяем..." : "Проверить подключение"}
+        </Button>
+        {isConnected ? (
+          <>
+            <Button type="button" variant="outline" disabled={pending !== null} onClick={() => setTokenOpen((current) => !current)}>
+              Обновить токен
+            </Button>
+            <Button type="button" variant="outline" disabled={pending === "off"} onClick={() => void disconnect()}>
+              {pending === "off" ? "Отключаем..." : "Отключить"}
+            </Button>
+          </>
+        ) : null}
+      </div>
+      {result ? <p className="text-sm text-emerald-400">{result}</p> : null}
+      {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      {!agentId ? <p className="text-sm leading-6 text-zinc-400">Сначала сохраните агента, чтобы проверить подключение.</p> : null}
+    </IntegrationAccordionCard>
+  );
+}
+
+function DikidiCard({
+  url,
+  onChange,
+}: {
+  url: string;
+  onChange: (patch: { dikidi_booking_url?: string }) => void;
+}) {
+  return (
+    <IntegrationAccordionCard
+      title="DIKIDI"
+      description="Умное направление клиентов на онлайн-запись DIKIDI прямо из диалога."
+      connected={Boolean(url.trim())}
+      icon={<DikidiIcon />}
+    >
+      <label className="grid gap-2 text-sm text-zinc-300">
+        Прямая ссылка на онлайн-запись DIKIDI
+        <input
+          name="dikidi_booking_url"
+          value={url}
+          onChange={(event) => onChange({ dikidi_booking_url: event.target.value })}
+          placeholder="https://dikidi.net/..."
+          autoComplete="off"
+          spellCheck={false}
+          className={fieldClass}
+        />
+      </label>
+      <p className="text-xs leading-5 text-zinc-500">
+        У DIKIDI нет открытого публичного API для внешней записи, поэтому ИИ-администратор проконсультирует клиента по услугам и ценам, а затем отправит прямую ссылку на выбор свободного окна.
+      </p>
     </IntegrationAccordionCard>
   );
 }
@@ -1489,6 +1728,11 @@ function AgentDialog({
     data.set("bitrix_responsible_id", current.bitrix_responsible_id);
     data.set("bitrix_handoff_status_id", current.bitrix_handoff_status_id);
     if (current.bitrix_webhook_url) data.set("bitrix_webhook_url", current.bitrix_webhook_url);
+    data.set("yclients_platform", current.yclients_platform);
+    data.set("yclients_company_id", current.yclients_company_id);
+    if (current.yclients_partner_token) data.set("yclients_partner_token", current.yclients_partner_token);
+    if (current.yclients_user_token) data.set("yclients_user_token", current.yclients_user_token);
+    data.set("dikidi_booking_url", current.dikidi_booking_url);
     return data;
   }
 
@@ -1755,12 +1999,22 @@ function AgentDialog({
                       />
                     </section>
                     <section className="grid gap-3">
-                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Календари</h3>
+                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Календари и запись</h3>
                       <GoogleCalendarCard
                         agentId={persistedId}
                         connected={channelAgent?.gcalConnected ?? false}
                         timezone={channelAgent?.gcalTimezone ?? "UTC"}
                       />
+                      <YclientsCard
+                        agentId={persistedId}
+                        connected={channelAgent?.yclientsConnected ?? false}
+                        platform={draft.yclients_platform}
+                        companyId={draft.yclients_company_id}
+                        partnerToken={draft.yclients_partner_token}
+                        userToken={draft.yclients_user_token}
+                        onChange={patchDraft}
+                      />
+                      <DikidiCard url={draft.dikidi_booking_url} onChange={patchDraft} />
                     </section>
                     <section className="grid gap-3">
                       <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Автоматизация и API</h3>
@@ -1818,6 +2072,11 @@ type AgentDraft = {
   bitrix_openline_id: string;
   bitrix_responsible_id: string;
   bitrix_handoff_status_id: string;
+  yclients_platform: "yclients" | "altegio";
+  yclients_company_id: string;
+  yclients_partner_token: string;
+  yclients_user_token: string;
+  dikidi_booking_url: string;
 };
 
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
@@ -1856,6 +2115,11 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     bitrix_openline_id: agent?.bitrix_openline_id ?? "",
     bitrix_responsible_id: agent?.bitrix_responsible_id ?? "",
     bitrix_handoff_status_id: agent?.bitrix_handoff_status_id ?? "",
+    yclients_platform: agent?.yclients_platform === "altegio" ? "altegio" : "yclients",
+    yclients_company_id: agent?.yclients_company_id ?? "",
+    yclients_partner_token: "",
+    yclients_user_token: "",
+    dikidi_booking_url: agent?.dikidi_booking_url ?? "",
   };
 }
 
@@ -1897,7 +2161,12 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.bitrix_webhook_url === right.bitrix_webhook_url &&
     left.bitrix_openline_id === right.bitrix_openline_id &&
     left.bitrix_responsible_id === right.bitrix_responsible_id &&
-    left.bitrix_handoff_status_id === right.bitrix_handoff_status_id
+    left.bitrix_handoff_status_id === right.bitrix_handoff_status_id &&
+    left.yclients_platform === right.yclients_platform &&
+    left.yclients_company_id.trim() === right.yclients_company_id.trim() &&
+    left.yclients_partner_token === right.yclients_partner_token &&
+    left.yclients_user_token === right.yclients_user_token &&
+    left.dikidi_booking_url.trim() === right.dikidi_booking_url.trim()
   );
 }
 

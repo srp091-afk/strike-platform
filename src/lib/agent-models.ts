@@ -204,6 +204,12 @@ export type AgentRecord = {
   bitrix_openline_id: string | null;
   bitrix_responsible_id: string | null;
   bitrix_handoff_status_id: string | null;
+  /** YCLIENTS / Altegio подключён. Partner Token и User Token в клиент не попадают. */
+  yclientsConnected: boolean;
+  yclients_platform: "yclients" | "altegio";
+  yclients_company_id: string | null;
+  /** Прямая ссылка онлайн-записи DIKIDI. Пустая строка на клиенте значит, что ссылки нет. */
+  dikidi_booking_url: string | null;
   widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;
