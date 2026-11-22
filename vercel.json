@@ -3,10 +3,6 @@
     {
       "path": "/api/cron/smm-publish",
       "schedule": "0 6 * * *"
-    },
-    {
-      "path": "/api/cron/email-poll",
-      "schedule": "*/2 * * * *"
     }
   ]
 }
