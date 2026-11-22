@@ -1,6 +1,6 @@
 "use client";
 
-import { GripVertical, Globe, Loader2, Mail, Maximize, MessageSquareText, Play, Sparkles, Trash } from "lucide-react";
+import { GripVertical, Loader2, Maximize, Play, Sparkles, Trash } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -651,7 +651,7 @@ function GoogleCalendarCard({
       {!agentId ? (
         <p className="text-sm leading-6 text-zinc-400">Сначала сохраните агента.</p>
       ) : (
-        <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+        <div className="flex items-center justify-between gap-3 py-1">
           <span className="text-sm font-medium text-zinc-200">
             {isConnected ? "Календарь подключён" : "Подключить Google Calendar"}
           </span>
@@ -1000,7 +1000,7 @@ function Ga4Card({
       icon={<GoogleAnalyticsIcon />}
     >
       <input type="hidden" name="ga4_enabled" value={enabled ? "true" : "false"} />
-      <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+      <label className="flex items-center justify-between gap-3 py-1">
         <span className="text-sm font-medium text-zinc-200">Отправлять события в GA4 / GTM</span>
         <Switch checked={enabled} onCheckedChange={(ga4_enabled) => onChange({ ga4_enabled })} aria-label="Отправлять события в GA4 / GTM" />
       </label>
@@ -2607,8 +2607,8 @@ function AgentDialog({
 
                 <TabsContent value="integrations" forceMount className="data-[state=inactive]:hidden">
                   <div className="grid content-start gap-6">
-                    <section className="grid gap-3">
-                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">CRM-системы</h3>
+                    <section className="grid gap-0">
+                      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">CRM-системы</h3>
                       <AmoCrmCard
                         agentId={persistedId}
                         connected={channelAgent?.amoConnected ?? false}
@@ -2636,8 +2636,8 @@ function AgentDialog({
                         onChange={patchDraft}
                       />
                     </section>
-                    <section className="grid gap-3">
-                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Календари и запись</h3>
+                    <section className="grid gap-0">
+                      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Календари и запись</h3>
                       <GoogleCalendarCard
                         agentId={persistedId}
                         connected={channelAgent?.gcalConnected ?? false}
@@ -2654,8 +2654,8 @@ function AgentDialog({
                       />
                       <DikidiCard url={draft.dikidi_booking_url} onChange={patchDraft} />
                     </section>
-                    <section className="grid gap-3">
-                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Платёжные шлюзы (e-commerce)</h3>
+                    <section className="grid gap-0">
+                      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Платёжные шлюзы (e-commerce)</h3>
                       <StripeCard
                         agentId={persistedId}
                         connected={channelAgent?.stripeConnected ?? false}
@@ -2710,13 +2710,13 @@ function AgentDialog({
                         </label>
                       </IntegrationAccordionCard>
                     </section>
-                    <section className="grid gap-3">
-                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Аналитика и реклама</h3>
+                    <section className="grid gap-0">
+                      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Аналитика и реклама</h3>
                       <YandexMetrikaCard counterId={draft.ym_counter_id} onChange={patchDraft} />
                       <Ga4Card enabled={draft.ga4_enabled} measurementId={draft.ga4_measurement_id} onChange={patchDraft} />
                     </section>
-                    <section className="grid gap-3">
-                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Автоматизация и API</h3>
+                    <section className="grid gap-0">
+                      <h3 className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Автоматизация и API</h3>
                       <OutboundWebhookCard
                         agentId={persistedId}
                         url={draft.webhook_url}
@@ -3308,7 +3308,7 @@ function ChannelSettings({
   const emailConnected = emailCredentialsReady(emailAddress, emailPassword, emailImapHost, emailSmtpHost, emailSavedConnected);
 
   return (
-    <section className="grid content-start gap-3">
+    <section className="grid content-start gap-0">
       <input
         type="hidden"
         name="active_channels"
@@ -3328,7 +3328,7 @@ function ChannelSettings({
         title="WhatsApp"
         description="Подключение рабочего номера по QR-коду за 30 секунд или через Twilio API"
         connected={whatsappConnected}
-        icon={<ChannelIcon provider="whatsapp" className="size-4" />}
+        icon={<ChannelMark provider="whatsapp" tone="bg-[#25D366]/10" />}
         enabled={whatsappConnected && channels.whatsapp}
         switchDisabled={!whatsappConnected}
         switchTitle={whatsappConnected ? undefined : "Сначала подключите номер WhatsApp"}
@@ -3365,7 +3365,7 @@ function ChannelSettings({
         title="Telegram"
         description="Telegram-бот через BotFather или личный аккаунт"
         connected={telegramConnected}
-        icon={<ChannelIcon provider="telegram" className="size-4" />}
+        icon={<ChannelMark provider="telegram" tone="bg-[#229ED9]/10" />}
         enabled={telegramConnected && channels.telegram}
         switchDisabled={!telegramConnected}
         switchTitle={telegramConnected ? undefined : "Сначала подключите Telegram"}
@@ -3381,7 +3381,7 @@ function ChannelSettings({
         title="Instagram"
         description="Прямые сообщения Direct и ответы через официальный API Meta"
         connected={instagramConnected}
-        icon={<ChannelIcon provider="instagram" className="size-4" />}
+        icon={<ChannelMark provider="instagram" tone="bg-[#E1306C]/10" />}
         enabled={instagramConnected && channels.instagram}
         switchDisabled={!instagramConnected}
         switchTitle={instagramConnected ? undefined : "Сначала подключите Instagram"}
@@ -3399,7 +3399,7 @@ function ChannelSettings({
         title="Web Widget"
         description="Чат-виджет для вашего сайта с поддержкой Метрики и GA4"
         connected={channels.widget}
-        icon={<Globe className="size-4" strokeWidth={2} />}
+        icon={<ChannelMark provider="widget" tone="bg-[#2563EB]/10" />}
         enabled={channels.widget}
         defaultOpen={initialOpenChannel === "widget"}
         onEnabledChange={(checked) => onChannelsChange({ ...channels, widget: checked })}
@@ -3424,7 +3424,7 @@ function ChannelSettings({
         title="SMS (Twilio)"
         description="Автоответы на входящие SMS и пропущенные звонки через Twilio"
         connected={smsConnected}
-        icon={<MessageSquareText className="size-4" strokeWidth={2} />}
+        icon={<ChannelMark provider="sms" tone="bg-[#F22F46]/10" />}
         enabled={smsConnected && smsEnabled}
         switchDisabled={!smsConnected}
         switchTitle={smsConnected ? undefined : "Сначала укажите Account SID, Auth Token и номер"}
@@ -3446,7 +3446,7 @@ function ChannelSettings({
         title="Viber"
         description="Автоответы клиентам в официальном Viber-боте"
         connected={viberConnected}
-        icon={<ChannelIcon provider="viber" className="size-4" />}
+        icon={<ChannelMark provider="viber" tone="bg-[#7360F2]/10" />}
         enabled={viberConnected && viberEnabled}
         switchDisabled={!viberConnected}
         switchTitle={viberConnected ? undefined : "Сначала укажите Auth Token"}
@@ -3467,7 +3467,7 @@ function ChannelSettings({
         title="Email (IMAP / SMTP)"
         description="Автоматическое чтение входящих писем и ответы клиентам прямо в почтовой ветке"
         connected={emailConnected}
-        icon={<Mail className="size-4" strokeWidth={2} />}
+        icon={<ChannelMark provider="email" tone="bg-[#EA4335]/10" />}
         enabled={emailConnected && emailEnabled}
         switchDisabled={!emailConnected}
         switchTitle={emailConnected ? undefined : "Сначала укажите почту, пароль и хосты"}
@@ -3491,7 +3491,7 @@ function ChannelSettings({
         title="Facebook Messenger"
         description="Автоответы на сообщения вашей бизнес-страницы Facebook через официальный API Meta"
         connected={messengerConnected}
-        icon={<ChannelIcon provider="messenger" className="size-4" />}
+        icon={<ChannelMark provider="messenger" tone="bg-[#0084FF]/10" />}
         enabled={messengerConnected && messengerEnabled}
         switchDisabled={!messengerConnected}
         switchTitle={messengerConnected ? undefined : "Сначала подключите страницу Facebook"}
@@ -3995,7 +3995,7 @@ function MessengerChannelFields({
       <input type="hidden" name="fb_messenger_enabled" value={connected && enabled ? "true" : "false"} />
       {notice ? <p className={`text-xs ${notice.ok ? "text-emerald-400" : "text-red-400"}`}>{notice.text}</p> : null}
       {connected ? (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black px-3 py-2.5">
+        <div className="flex flex-wrap items-center justify-between gap-3 py-1">
           <div className="min-w-0">
             <p className="truncate text-sm font-medium text-white">{pageName || "Facebook-страница"}</p>
             <p className="truncate text-xs text-zinc-400">{pageId}</p>
@@ -4016,9 +4016,9 @@ function MessengerChannelFields({
       )}
       {query.select && !connected ? (
         pages.length > 0 ? (
-          <ul className="grid gap-2">
+          <ul>
             {pages.map((page) => (
-              <li key={page.id} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black px-3 py-2">
+              <li key={page.id} className="flex items-center justify-between gap-3 border-b border-zinc-800 py-2 last:border-b-0">
                 <span className="min-w-0 truncate text-sm text-white">{page.name}</span>
                 <Button type="button" variant="outline" disabled={pending === "page"} onClick={() => void choose(page.id)}>
                   Выбрать
@@ -4048,6 +4048,14 @@ function MessengerChannelFields({
         <li>Включите тумблер канала и сохраните агента — при ответе менеджера из Meta Business Suite бот автоматически встанет на паузу.</li>
       </PaymentSetupHint>
     </div>
+  );
+}
+
+function ChannelMark({ provider, tone }: { provider: IntegrationProvider; tone: string }) {
+  return (
+    <span className={`grid size-9 place-items-center rounded-lg ${tone}`}>
+      <ChannelIcon provider={provider} className="size-5" />
+    </span>
   );
 }
 
@@ -4297,7 +4305,7 @@ function WhatsAppChannel({
     return <WhatsAppPhoneField agentId={agentId} onSaved={onPhoneSaved} />;
   }
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black px-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 py-1">
       <p className="truncate text-sm font-medium text-white">{savedPhone}</p>
       <DisconnectButton
         agentId={agentId}
@@ -4394,7 +4402,7 @@ function TelegramChannel({
   }
   const isUserbot = agent.telegram_type === "userbot";
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black px-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 py-1">
       <div className="min-w-0">
         <p className="truncate text-sm font-medium text-white">{label}</p>
         <p className="text-xs text-zinc-400">{isUserbot ? "Личный аккаунт" : "Telegram Bot"}</p>
@@ -4423,7 +4431,7 @@ function InstagramChannel({ agent, connecting, onConnect }: { agent: AgentRecord
   }
   const username = agent.igUsername ? `@${agent.igUsername.replace(/^@/, "")}` : "Instagram";
   return (
-    <div className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black px-3 py-2.5">
+    <div className="flex items-center justify-between gap-3 py-1">
       <div className="flex min-w-0 items-center gap-3">
         {agent.igAvatarUrl ? (
           // eslint-disable-next-line @next/next/no-img-element

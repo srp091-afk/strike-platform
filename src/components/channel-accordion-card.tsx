@@ -31,15 +31,15 @@ export function ChannelAccordionCard({
   const [open, setOpen] = useState(defaultOpen);
 
   return (
-    <section className="overflow-hidden rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm">
-      <div className="flex items-center gap-3 px-4 py-3">
+    <section className="border-b border-zinc-800 last:border-b-0">
+      <div className="flex items-center gap-3 px-1 py-3 transition-colors duration-150 hover:bg-zinc-900">
         <button
           type="button"
           aria-expanded={open}
           onClick={() => setOpen((current) => !current)}
           className="flex min-w-0 flex-1 cursor-pointer items-center gap-3 text-left"
         >
-          <span className="grid size-9 shrink-0 place-items-center rounded-xl border border-zinc-700 bg-zinc-900 text-white">
+          <span className="grid size-9 shrink-0 place-items-center">
             {icon}
           </span>
           <span className="min-w-0 flex-1">
@@ -79,7 +79,7 @@ export function ChannelAccordionCard({
           <ChevronDown className={`size-4 transition-transform duration-200 ${open ? "rotate-180" : ""}`} />
         </button>
       </div>
-      <div hidden={!open} className={open ? "grid gap-4 border-t border-zinc-800 p-4 sm:p-6" : undefined}>
+      <div hidden={!open} className={open ? "grid gap-5 px-1 pt-1 pb-6" : undefined}>
         {children}
       </div>
     </section>
