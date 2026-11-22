@@ -105,6 +105,17 @@ create table if not exists public.agents (
   twilio_account_sid text,
   twilio_auth_token text,
   twilio_sms_number text,
+  viber_enabled boolean not null default false,
+  viber_auth_token text,
+  viber_bot_name text,
+  email_enabled boolean not null default false,
+  email_address text,
+  email_imap_host text,
+  email_imap_port integer default 993,
+  email_smtp_host text,
+  email_smtp_port integer default 465,
+  email_password text,
+  email_last_uid bigint,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint agents_temperature_range check (temperature >= 0 and temperature <= 2),
@@ -158,7 +169,7 @@ create table if not exists public.integrations (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint integrations_provider_check
-    check (provider in ('whatsapp', 'instagram', 'telegram', 'widget', 'sms')),
+    check (provider in ('whatsapp', 'instagram', 'telegram', 'widget', 'sms', 'viber', 'email')),
   constraint integrations_status_check
     check (status in ('connected', 'disconnected', 'error'))
 );

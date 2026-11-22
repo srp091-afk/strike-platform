@@ -232,6 +232,18 @@ export type AgentRecord = {
   twilioSmsConnected: boolean;
   twilio_account_sid: string | null;
   twilio_sms_number: string | null;
+  /** Viber-бот включён. Auth Token в клиент не попадает. */
+  viber_enabled: boolean;
+  viberConnected: boolean;
+  viber_bot_name: string | null;
+  /** Почтовый ящик IMAP/SMTP включён. Пароль в клиент не попадает. */
+  email_enabled: boolean;
+  emailConnected: boolean;
+  email_address: string | null;
+  email_imap_host: string | null;
+  email_imap_port: number;
+  email_smtp_host: string | null;
+  email_smtp_port: number;
   widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;

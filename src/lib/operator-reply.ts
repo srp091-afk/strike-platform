@@ -3,11 +3,13 @@ import "server-only";
 import { readHandoffDuration } from "@/lib/agent-models";
 import { pauseBotForHandoff } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
+import { sendEmailReply, type EmailConfig } from "@/lib/email-channel";
 import { markAgentReplied } from "@/lib/followup";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { sendGreenMessage } from "@/lib/green-api";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { sendTwilioSms } from "@/lib/twilio-sms";
+import { sendViberMessage } from "@/lib/viber";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
@@ -37,10 +39,10 @@ export async function sendOperatorReply(conversationId: string, text: string) {
     return { ok: false as const, error: "Ответ из кабинета для этого канала недоступен." };
   }
 
-  const agent = await loadAgent(String(conversation.agent_id), userId, provider === "sms");
+  const agent = await loadAgent(String(conversation.agent_id), userId, provider);
   if (!agent.ok) return agent;
 
-  const sent = await deliver(provider, chatId, body, agent.agent);
+  const sent = await deliver(supabase, conversationId, provider, chatId, body, agent.agent);
   if (!sent.ok) return sent;
 
   const { data: stored, error: storedError } = await supabase
@@ -68,12 +70,46 @@ export async function sendOperatorReply(conversationId: string, text: string) {
 }
 
 async function deliver(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  conversationId: string,
   provider: string,
   chatId: string,
   body: string,
   agent: OperatorAgent,
 ): Promise<{ ok: true; externalId: string | null } | { ok: false; error: string }> {
   try {
+    if (provider === "viber") {
+      if (!agent.viber_auth_token) return { ok: false, error: "Подключите Viber у этого агента." };
+      const sent = await sendViberMessage({
+        authToken: agent.viber_auth_token,
+        receiver: chatId,
+        text: body,
+        senderName: agent.viber_bot_name || "Ассистент",
+      });
+      return sent.ok ? { ok: true, externalId: null } : { ok: false, error: sent.error };
+    }
+    if (provider === "email") {
+      const config = mailConfig(agent);
+      if (!config) return { ok: false, error: "Подключите почту у этого агента." };
+      const thread = await supabase
+        .from("messages")
+        .select("external_message_id")
+        .eq("conversation_id", conversationId)
+        .eq("role", "user")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const messageId = messageIdOrNull(thread.data?.external_message_id);
+      const sent = await sendEmailReply({
+        config,
+        to: chatId,
+        subject: "ваше письмо",
+        text: body,
+        inReplyTo: messageId,
+        references: messageId,
+      });
+      return sent.ok ? { ok: true, externalId: sent.messageId } : { ok: false, error: sent.error };
+    }
     if (provider === "sms") {
       if (!agent.twilio_account_sid || !agent.twilio_auth_token || !agent.twilio_sms_number) {
         return { ok: false, error: "Подключите SMS (Twilio) у этого агента." };
@@ -138,9 +174,15 @@ type OperatorAgent = {
   twilio_account_sid: string | null;
   twilio_auth_token: string | null;
   twilio_sms_number: string | null;
+  viber_auth_token: string | null;
+  viber_bot_name: string | null;
+  email_address: string | null;
+  email_password: string | null;
+  email_smtp_host: string | null;
+  email_smtp_port: number | null;
 };
 
-async function loadAgent(agentId: string, userId: string, needsSms: boolean) {
+async function loadAgent(agentId: string, userId: string, provider: string) {
   const supabase = createSupabaseAdminClient();
   const { data, error } = await supabase
     .from("agents")
@@ -161,8 +203,41 @@ async function loadAgent(agentId: string, userId: string, needsSms: boolean) {
     twilio_account_sid: null,
     twilio_auth_token: null,
     twilio_sms_number: null,
+    viber_auth_token: null,
+    viber_bot_name: null,
+    email_address: null,
+    email_password: null,
+    email_smtp_host: null,
+    email_smtp_port: null,
   };
-  if (!needsSms) return { ok: true as const, agent };
+  if (provider === "viber") {
+    const viber = await supabase.from("agents").select("viber_auth_token, viber_bot_name").eq("id", agentId).eq("user_id", userId).maybeSingle();
+    if (viber.error) {
+      const message = /viber_|schema cache/i.test(viber.error.message) ? "Примените миграцию 20261122_agent_viber_email.sql." : viber.error.message;
+      return { ok: false as const, error: message };
+    }
+    agent.viber_auth_token = textOrNull(viber.data?.viber_auth_token);
+    agent.viber_bot_name = textOrNull(viber.data?.viber_bot_name);
+    return { ok: true as const, agent };
+  }
+  if (provider === "email") {
+    const mail = await supabase
+      .from("agents")
+      .select("email_address, email_password, email_smtp_host, email_smtp_port")
+      .eq("id", agentId)
+      .eq("user_id", userId)
+      .maybeSingle();
+    if (mail.error) {
+      const message = /email_|schema cache/i.test(mail.error.message) ? "Примените миграцию 20261122_agent_viber_email.sql." : mail.error.message;
+      return { ok: false as const, error: message };
+    }
+    agent.email_address = textOrNull(mail.data?.email_address);
+    agent.email_password = typeof mail.data?.email_password === "string" ? mail.data.email_password : null;
+    agent.email_smtp_host = textOrNull(mail.data?.email_smtp_host);
+    agent.email_smtp_port = Number(mail.data?.email_smtp_port) || 465;
+    return { ok: true as const, agent };
+  }
+  if (provider !== "sms") return { ok: true as const, agent };
 
   const sms = await supabase
     .from("agents")
@@ -180,6 +255,19 @@ async function loadAgent(agentId: string, userId: string, needsSms: boolean) {
   agent.twilio_auth_token = textOrNull(sms.data?.twilio_auth_token);
   agent.twilio_sms_number = textOrNull(sms.data?.twilio_sms_number);
   return { ok: true as const, agent };
+}
+
+function mailConfig(agent: OperatorAgent): EmailConfig | null {
+  const email = agent.email_address?.trim().toLowerCase() ?? "";
+  const password = agent.email_password ?? "";
+  const smtpHost = agent.email_smtp_host?.trim() ?? "";
+  if (!email || !password.trim() || !smtpHost) return null;
+  return { email, password, imapHost: "localhost", imapPort: 993, smtpHost, smtpPort: agent.email_smtp_port || 465 };
+}
+
+function messageIdOrNull(value: unknown) {
+  const id = typeof value === "string" ? value.trim() : "";
+  return id.includes("@") ? id : null;
 }
 
 function readProvider(value: unknown) {

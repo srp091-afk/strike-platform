@@ -1,6 +1,6 @@
 "use client";
 
-import { GripVertical, Globe, Loader2, Maximize, MessageSquareText, Play, Sparkles, Trash } from "lucide-react";
+import { GripVertical, Globe, Loader2, Mail, Maximize, MessageSquareText, Play, Sparkles, Trash } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -148,7 +148,7 @@ function sameChannelState(a: AgentRecord, b: AgentRecord) {
   );
 }
 
-const CARD_CHANNELS: Array<{ provider: Exclude<IntegrationProvider, "sms">; label: string; activeClass: string }> = [
+const CARD_CHANNELS: Array<{ provider: Exclude<IntegrationProvider, "sms" | "viber" | "email">; label: string; activeClass: string }> = [
   { provider: "whatsapp", label: "WhatsApp", activeClass: "text-[#25D366]" },
   { provider: "telegram", label: "Telegram", activeClass: "text-[#229ED9]" },
   { provider: "instagram", label: "Instagram", activeClass: "text-[#E1306C]" },
@@ -2312,6 +2312,16 @@ function AgentDialog({
     data.set("twilio_account_sid", current.twilio_account_sid);
     data.set("twilio_sms_number", current.twilio_sms_number);
     if (current.twilio_auth_token) data.set("twilio_auth_token", current.twilio_auth_token);
+    data.set("viber_enabled", current.viber_enabled ? "true" : "false");
+    data.set("viber_bot_name", current.viber_bot_name);
+    if (current.viber_auth_token) data.set("viber_auth_token", current.viber_auth_token);
+    data.set("email_enabled", current.email_enabled ? "true" : "false");
+    data.set("email_address", current.email_address);
+    data.set("email_imap_host", current.email_imap_host);
+    data.set("email_imap_port", current.email_imap_port);
+    data.set("email_smtp_host", current.email_smtp_host);
+    data.set("email_smtp_port", current.email_smtp_port);
+    if (current.email_password) data.set("email_password", current.email_password);
     return data;
   }
 
@@ -2526,6 +2536,21 @@ function AgentDialog({
                       setDraft((current) => ({ ...current, ...cleared }));
                       setBaseline((current) => ({ ...current, ...cleared }));
                     }}
+                    agentName={draft.name}
+                    viberEnabled={draft.viber_enabled}
+                    viberAuthToken={draft.viber_auth_token}
+                    viberBotName={draft.viber_bot_name}
+                    viberSavedConnected={channelAgent?.viberConnected ?? false}
+                    emailEnabled={draft.email_enabled}
+                    emailAddress={draft.email_address}
+                    emailPassword={draft.email_password}
+                    emailImapHost={draft.email_imap_host}
+                    emailImapPort={draft.email_imap_port}
+                    emailSmtpHost={draft.email_smtp_host}
+                    emailSmtpPort={draft.email_smtp_port}
+                    emailSavedConnected={channelAgent?.emailConnected ?? false}
+                    onViberChange={patchDraft}
+                    onEmailChange={patchDraft}
                   />
                 </TabsContent>
 
@@ -2750,6 +2775,16 @@ type AgentDraft = {
   twilio_account_sid: string;
   twilio_auth_token: string;
   twilio_sms_number: string;
+  viber_enabled: boolean;
+  viber_auth_token: string;
+  viber_bot_name: string;
+  email_enabled: boolean;
+  email_address: string;
+  email_password: string;
+  email_imap_host: string;
+  email_imap_port: string;
+  email_smtp_host: string;
+  email_smtp_port: string;
 };
 
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
@@ -2809,6 +2844,16 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     twilio_account_sid: agent?.twilio_account_sid ?? "",
     twilio_auth_token: "",
     twilio_sms_number: agent?.twilio_sms_number ?? "",
+    viber_enabled: agent?.viber_enabled ?? false,
+    viber_auth_token: "",
+    viber_bot_name: agent?.viber_bot_name ?? "",
+    email_enabled: agent?.email_enabled ?? false,
+    email_address: agent?.email_address ?? "",
+    email_password: "",
+    email_imap_host: agent?.email_imap_host ?? "",
+    email_imap_port: String(agent?.email_imap_port ?? 993),
+    email_smtp_host: agent?.email_smtp_host ?? "",
+    email_smtp_port: String(agent?.email_smtp_port ?? 465),
   };
 }
 
@@ -2871,7 +2916,17 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.twilio_sms_enabled === right.twilio_sms_enabled &&
     left.twilio_account_sid.trim() === right.twilio_account_sid.trim() &&
     left.twilio_auth_token === right.twilio_auth_token &&
-    left.twilio_sms_number.trim() === right.twilio_sms_number.trim()
+    left.twilio_sms_number.trim() === right.twilio_sms_number.trim() &&
+    left.viber_enabled === right.viber_enabled &&
+    left.viber_auth_token === right.viber_auth_token &&
+    left.viber_bot_name.trim() === right.viber_bot_name.trim() &&
+    left.email_enabled === right.email_enabled &&
+    left.email_address.trim().toLowerCase() === right.email_address.trim().toLowerCase() &&
+    left.email_password === right.email_password &&
+    left.email_imap_host.trim().toLowerCase() === right.email_imap_host.trim().toLowerCase() &&
+    left.email_smtp_host.trim().toLowerCase() === right.email_smtp_host.trim().toLowerCase() &&
+    sameNumber(left.email_imap_port, right.email_imap_port) &&
+    sameNumber(left.email_smtp_port, right.email_smtp_port)
   );
 }
 
@@ -3107,6 +3162,21 @@ function ChannelSettings({
   onSmsChange,
   onEnsureSaved,
   onSmsCleared,
+  agentName,
+  viberEnabled,
+  viberAuthToken,
+  viberBotName,
+  viberSavedConnected,
+  emailEnabled,
+  emailAddress,
+  emailPassword,
+  emailImapHost,
+  emailImapPort,
+  emailSmtpHost,
+  emailSmtpPort,
+  emailSavedConnected,
+  onViberChange,
+  onEmailChange,
 }: {
   agent: AgentRecord | null;
   agentId: string;
@@ -3138,6 +3208,29 @@ function ChannelSettings({
   }) => void;
   onEnsureSaved: () => Promise<string | null>;
   onSmsCleared: () => void;
+  agentName: string;
+  viberEnabled: boolean;
+  viberAuthToken: string;
+  viberBotName: string;
+  viberSavedConnected: boolean;
+  emailEnabled: boolean;
+  emailAddress: string;
+  emailPassword: string;
+  emailImapHost: string;
+  emailImapPort: string;
+  emailSmtpHost: string;
+  emailSmtpPort: string;
+  emailSavedConnected: boolean;
+  onViberChange: (patch: { viber_enabled?: boolean; viber_auth_token?: string; viber_bot_name?: string }) => void;
+  onEmailChange: (patch: {
+    email_enabled?: boolean;
+    email_address?: string;
+    email_password?: string;
+    email_imap_host?: string;
+    email_imap_port?: string;
+    email_smtp_host?: string;
+    email_smtp_port?: string;
+  }) => void;
 }) {
   const [whatsappOpen, setWhatsappOpen] = useState(initialOpenChannel === "whatsapp");
   const [telegramOpen, setTelegramOpen] = useState(initialOpenChannel === "telegram");
@@ -3179,6 +3272,8 @@ function ChannelSettings({
   }
 
   const smsConnected = smsCredentialsReady(smsAccountSid, smsAuthToken, smsPhone, smsSavedConnected);
+  const viberConnected = viberCredentialsReady(viberAuthToken, viberSavedConnected);
+  const emailConnected = emailCredentialsReady(emailAddress, emailPassword, emailImapHost, emailSmtpHost, emailSavedConnected);
 
   return (
     <section className="grid content-start gap-3">
@@ -3315,6 +3410,51 @@ function ChannelSettings({
           onEnsureSaved={onEnsureSaved}
         />
       </ChannelAccordionCard>
+      <ChannelAccordionCard
+        title="Viber"
+        description="Автоответы клиентам в официальном Viber-боте"
+        connected={viberConnected}
+        icon={<ChannelIcon provider="viber" className="size-4" />}
+        enabled={viberConnected && viberEnabled}
+        switchDisabled={!viberConnected}
+        switchTitle={viberConnected ? undefined : "Сначала укажите Auth Token"}
+        onEnabledChange={(checked) => onViberChange({ viber_enabled: checked })}
+      >
+        <ViberChannelFields
+          agentId={agentId}
+          agentName={agentName}
+          enabled={viberEnabled}
+          authToken={viberAuthToken}
+          botName={viberBotName}
+          savedConnected={viberSavedConnected}
+          onChange={onViberChange}
+          onEnsureSaved={onEnsureSaved}
+        />
+      </ChannelAccordionCard>
+      <ChannelAccordionCard
+        title="Email (IMAP / SMTP)"
+        description="Автоматическое чтение входящих писем и ответы клиентам прямо в почтовой ветке"
+        connected={emailConnected}
+        icon={<Mail className="size-4" strokeWidth={2} />}
+        enabled={emailConnected && emailEnabled}
+        switchDisabled={!emailConnected}
+        switchTitle={emailConnected ? undefined : "Сначала укажите почту, пароль и хосты"}
+        onEnabledChange={(checked) => onEmailChange({ email_enabled: checked })}
+      >
+        <EmailChannelFields
+          agentId={agentId}
+          enabled={emailEnabled}
+          address={emailAddress}
+          password={emailPassword}
+          imapHost={emailImapHost}
+          imapPort={emailImapPort}
+          smtpHost={emailSmtpHost}
+          smtpPort={emailSmtpPort}
+          savedConnected={emailSavedConnected}
+          onChange={onEmailChange}
+          onEnsureSaved={onEnsureSaved}
+        />
+      </ChannelAccordionCard>
       {whatsappOpen ? (
         <WhatsAppConnectDialog
           agentId={agentId || agent?.id || ""}
@@ -3347,6 +3487,329 @@ function ChannelSettings({
         />
       ) : null}
     </section>
+  );
+}
+
+function viberCredentialsReady(authToken: string, savedConnected: boolean) {
+  const token = authToken.trim();
+  return savedConnected || (token.length >= 20 && !/\s/.test(authToken));
+}
+
+function emailCredentialsReady(address: string, password: string, imapHost: string, smtpHost: string, savedConnected: boolean) {
+  const emailOk = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(address.trim());
+  const hostsOk = Boolean(imapHost.trim() && smtpHost.trim());
+  const passwordOk = password.trim().length > 0 || savedConnected;
+  return emailOk && hostsOk && passwordOk;
+}
+
+const MAIL_PRESETS = {
+  gmail: { imap: "imap.gmail.com", smtp: "smtp.gmail.com" },
+  yandex: { imap: "imap.yandex.com", smtp: "smtp.yandex.com" },
+  mailru: { imap: "imap.mail.ru", smtp: "smtp.mail.ru" },
+} as const;
+
+function ViberChannelFields({
+  agentId,
+  agentName,
+  enabled,
+  authToken,
+  botName,
+  savedConnected,
+  onChange,
+  onEnsureSaved,
+}: {
+  agentId: string;
+  agentName: string;
+  enabled: boolean;
+  authToken: string;
+  botName: string;
+  savedConnected: boolean;
+  onChange: (patch: { viber_enabled?: boolean; viber_auth_token?: string; viber_bot_name?: string }) => void;
+  onEnsureSaved: () => Promise<string | null>;
+}) {
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState("");
+  const [error, setError] = useState("");
+  const webhookUrl = agentId ? `https://www.strikeplatform.io/api/webhooks/viber/${agentId}` : "";
+  const ready = viberCredentialsReady(authToken, savedConnected);
+
+  function patch(next: { viber_auth_token?: string; viber_bot_name?: string }) {
+    const token = next.viber_auth_token ?? authToken;
+    const stillReady = viberCredentialsReady(token, savedConnected);
+    onChange(stillReady ? next : { ...next, viber_enabled: false });
+  }
+
+  async function copyWebhook() {
+    if (!webhookUrl) {
+      toast.error("Сначала сохраните агента.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      toast.success("Webhook URL скопирован");
+    } catch {
+      toast.error("Не удалось скопировать адрес.");
+    }
+  }
+
+  async function connect() {
+    setPending(true);
+    setResult("");
+    setError("");
+    try {
+      const id = agentId || (await onEnsureSaved());
+      if (!id) return;
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const accountHeader = activeAccountHeader();
+      if (accountHeader) headers.set("x-account-id", accountHeader);
+      const response = await fetch(`/api/agents/${id}/viber/connect`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify({ authToken, botName }),
+      });
+      const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!response.ok || !data?.ok) {
+        setError(data?.error || "Viber не принял вебхук.");
+        return;
+      }
+      setResult("Вебхук зарегистрирован в Viber.");
+      toast.success("Viber подключён");
+      void swrMutate("/api/agents");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-4">
+      <input type="hidden" name="viber_enabled" value={ready && enabled ? "true" : "false"} />
+      <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+        Auth Token
+        <input
+          name="viber_auth_token"
+          type="password"
+          value={authToken}
+          autoComplete="new-password"
+          spellCheck={false}
+          placeholder={savedConnected ? "Токен сохранён. Введите новый, чтобы заменить." : ""}
+          className={fieldClass}
+          onChange={(event) => patch({ viber_auth_token: event.target.value })}
+        />
+      </label>
+      <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+        Имя бота в чате
+        <input
+          name="viber_bot_name"
+          value={botName}
+          autoComplete="off"
+          placeholder={agentName.trim() || "Имя агента"}
+          className={fieldClass}
+          onChange={(event) => patch({ viber_bot_name: event.target.value })}
+        />
+      </label>
+      <Button type="button" variant="outline" disabled={pending} onClick={() => void connect()}>
+        {pending ? "Подключаем..." : "Подключить и проверить"}
+      </Button>
+      <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+        Webhook URL
+        <span className="flex gap-2">
+          <input readOnly value={webhookUrl} placeholder="Появится после сохранения агента" className={fieldClass} />
+          <Button type="button" variant="outline" onClick={() => void copyWebhook()}>
+            Скопировать
+          </Button>
+        </span>
+      </label>
+      {result ? <p className="text-xs text-emerald-400">{result}</p> : null}
+      {error ? <p className="text-xs text-red-400">{error}</p> : null}
+      <PaymentSetupHint>
+        <li>
+          Создайте бота в <strong>Viber Admin Panel</strong> (<code>partners.viber.com</code>) и скопируйте <strong>Auth Token</strong>.
+        </li>
+        <li>
+          Вставьте токен в поле выше и нажмите <strong>«Подключить и проверить»</strong> — STRIKE сам настроит вебхук.
+        </li>
+        <li>Включите тумблер канала и сохраните агента.</li>
+      </PaymentSetupHint>
+    </div>
+  );
+}
+
+function EmailChannelFields({
+  agentId,
+  enabled,
+  address,
+  password,
+  imapHost,
+  imapPort,
+  smtpHost,
+  smtpPort,
+  savedConnected,
+  onChange,
+  onEnsureSaved,
+}: {
+  agentId: string;
+  enabled: boolean;
+  address: string;
+  password: string;
+  imapHost: string;
+  imapPort: string;
+  smtpHost: string;
+  smtpPort: string;
+  savedConnected: boolean;
+  onChange: (patch: {
+    email_enabled?: boolean;
+    email_address?: string;
+    email_password?: string;
+    email_imap_host?: string;
+    email_imap_port?: string;
+    email_smtp_host?: string;
+    email_smtp_port?: string;
+  }) => void;
+  onEnsureSaved: () => Promise<string | null>;
+}) {
+  const [pending, setPending] = useState(false);
+  const [result, setResult] = useState("");
+  const [error, setError] = useState("");
+  const ready = emailCredentialsReady(address, password, imapHost, smtpHost, savedConnected);
+
+  function patch(next: {
+    email_address?: string;
+    email_password?: string;
+    email_imap_host?: string;
+    email_imap_port?: string;
+    email_smtp_host?: string;
+    email_smtp_port?: string;
+  }) {
+    const stillReady = emailCredentialsReady(
+      next.email_address ?? address,
+      next.email_password ?? password,
+      next.email_imap_host ?? imapHost,
+      next.email_smtp_host ?? smtpHost,
+      savedConnected,
+    );
+    onChange(stillReady ? next : { ...next, email_enabled: false });
+  }
+
+  function applyPreset(preset: keyof typeof MAIL_PRESETS | "custom") {
+    if (preset === "custom") {
+      patch({ email_imap_host: "", email_imap_port: "993", email_smtp_host: "", email_smtp_port: "465" });
+      return;
+    }
+    const hosts = MAIL_PRESETS[preset];
+    patch({ email_imap_host: hosts.imap, email_imap_port: "993", email_smtp_host: hosts.smtp, email_smtp_port: "465" });
+  }
+
+  async function check() {
+    setPending(true);
+    setResult("");
+    setError("");
+    try {
+      const id = agentId || (await onEnsureSaved());
+      if (!id) return;
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const accountHeader = activeAccountHeader();
+      if (accountHeader) headers.set("x-account-id", accountHeader);
+      const response = await fetch(`/api/agents/${id}/email/test`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify({ email: address, password, imapHost, imapPort, smtpHost, smtpPort }),
+      });
+      const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!response.ok || !data?.ok) {
+        setError(data?.error || "Не удалось подключиться к почте.");
+        return;
+      }
+      setResult("IMAP и SMTP отвечают.");
+      toast.success("Почта подключена");
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="grid gap-4">
+      <input type="hidden" name="email_enabled" value={ready && enabled ? "true" : "false"} />
+      <div className="flex flex-wrap gap-2">
+        <button type="button" className={platformTabIdle} onClick={() => applyPreset("gmail")}>
+          Gmail
+        </button>
+        <button type="button" className={platformTabIdle} onClick={() => applyPreset("yandex")}>
+          Yandex
+        </button>
+        <button type="button" className={platformTabIdle} onClick={() => applyPreset("mailru")}>
+          Mail.ru
+        </button>
+        <button type="button" className={platformTabIdle} onClick={() => applyPreset("custom")}>
+          Свой сервер
+        </button>
+      </div>
+      <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+        Email адрес
+        <input
+          name="email_address"
+          type="email"
+          value={address}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="agent@company.com"
+          className={fieldClass}
+          onChange={(event) => patch({ email_address: event.target.value })}
+        />
+      </label>
+      <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+        Пароль приложения
+        <input
+          name="email_password"
+          type="password"
+          value={password}
+          autoComplete="new-password"
+          spellCheck={false}
+          placeholder={savedConnected ? "Пароль сохранён. Введите новый, чтобы заменить." : ""}
+          className={fieldClass}
+          onChange={(event) => patch({ email_password: event.target.value })}
+        />
+      </label>
+      <div className="grid gap-3 sm:grid-cols-[1fr_7rem]">
+        <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+          IMAP хост
+          <input name="email_imap_host" value={imapHost} autoComplete="off" spellCheck={false} className={fieldClass} onChange={(event) => patch({ email_imap_host: event.target.value })} />
+        </label>
+        <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+          Порт
+          <input name="email_imap_port" inputMode="numeric" value={imapPort} autoComplete="off" className={fieldClass} onChange={(event) => patch({ email_imap_port: event.target.value })} />
+        </label>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-[1fr_7rem]">
+        <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+          SMTP хост
+          <input name="email_smtp_host" value={smtpHost} autoComplete="off" spellCheck={false} className={fieldClass} onChange={(event) => patch({ email_smtp_host: event.target.value })} />
+        </label>
+        <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+          Порт
+          <input name="email_smtp_port" inputMode="numeric" value={smtpPort} autoComplete="off" className={fieldClass} onChange={(event) => patch({ email_smtp_port: event.target.value })} />
+        </label>
+      </div>
+      <Button type="button" variant="outline" disabled={pending} onClick={() => void check()}>
+        {pending ? "Проверяем..." : "Проверить подключение"}
+      </Button>
+      {result ? <p className="text-xs text-emerald-400">{result}</p> : null}
+      {error ? <p className="text-xs text-red-400">{error}</p> : null}
+      <PaymentSetupHint>
+        <li>
+          Для Gmail, Яндекс и Mail.ru используйте не основной пароль, а <strong>Пароль приложения</strong> (создаётся в настройках безопасности почты) и включите доступ по <strong>IMAP</strong>.
+        </li>
+        <li>Выберите пресет почтового сервиса выше или введите IMAP/SMTP хосты вручную.</li>
+        <li>
+          Нажмите <strong>«Проверить подключение»</strong>, включите тумблер и сохраните агента (бот будет отвечать только на новые письма, старую переписку не тронет).
+        </li>
+      </PaymentSetupHint>
+    </div>
   );
 }
 

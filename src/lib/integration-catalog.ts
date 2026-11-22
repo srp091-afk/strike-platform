@@ -1,4 +1,4 @@
-export const integrationProviders = ["telegram", "whatsapp", "instagram", "widget", "sms"] as const;
+export const integrationProviders = ["telegram", "whatsapp", "instagram", "widget", "sms", "viber", "email"] as const;
 
 export type IntegrationProvider = (typeof integrationProviders)[number];
 
@@ -49,6 +49,18 @@ export const integrationCatalog: readonly IntegrationDefinition[] = [
     description: "Входящие SMS через Twilio",
     fields: [],
   },
+  {
+    provider: "viber",
+    title: "Viber",
+    description: "Автоответы клиентам в официальном Viber-боте",
+    fields: [],
+  },
+  {
+    provider: "email",
+    title: "Email",
+    description: "Входящие письма через IMAP и ответы через SMTP",
+    fields: [],
+  },
 ];
 
 /** Подписи каналов для списков и шапок. Новый канал — новая строка здесь. */
@@ -58,6 +70,8 @@ export const channelLabels = {
   instagram: "Instagram",
   widget: "Web Widget",
   sms: "SMS",
+  viber: "Viber",
+  email: "Email",
   unknown: "Канал",
 } as const satisfies Record<IntegrationProvider | "unknown", string>;
 

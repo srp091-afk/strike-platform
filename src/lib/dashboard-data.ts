@@ -33,7 +33,7 @@ export type LoadChartData = {
 
 export type FeedItem = {
   id: string;
-  provider: "whatsapp" | "telegram" | "instagram" | "widget" | "sms";
+  provider: "whatsapp" | "telegram" | "instagram" | "widget" | "sms" | "viber" | "email";
   name: string;
   status: { label: string; tone: "brand" | "green" | "amber" | "gray" };
   preview: string;

@@ -223,6 +223,11 @@ export async function listAgents(): Promise<AgentRecord[]> {
     .from("agents")
     .select("id, twilio_sms_enabled, twilio_account_sid, twilio_auth_token, twilio_sms_number")
     .eq("user_id", userId);
+  const viberRows = await supabase.from("agents").select("id, viber_enabled, viber_auth_token, viber_bot_name").eq("user_id", userId);
+  const mailRows = await supabase
+    .from("agents")
+    .select("id, email_enabled, email_address, email_password, email_imap_host, email_imap_port, email_smtp_host, email_smtp_port")
+    .eq("user_id", userId);
   const sms = new Map<string, { enabled: boolean; connected: boolean; accountSid: string | null; phoneNumber: string | null }>(
     smsRows.error
       ? []
@@ -231,6 +236,40 @@ export async function listAgents(): Promise<AgentRecord[]> {
           const phoneNumber = typeof row.twilio_sms_number === "string" && row.twilio_sms_number.trim() ? row.twilio_sms_number.trim() : null;
           const connected = Boolean(accountSid && phoneNumber && typeof row.twilio_auth_token === "string" && row.twilio_auth_token.trim());
           return [String(row.id), { enabled: row.twilio_sms_enabled === true, connected, accountSid, phoneNumber }] as const;
+        }),
+  );
+  const viber = new Map<string, { enabled: boolean; connected: boolean; botName: string | null }>(
+    viberRows.error
+      ? []
+      : (viberRows.data ?? []).map((row) => {
+          const connected = typeof row.viber_auth_token === "string" && row.viber_auth_token.trim().length >= 20;
+          const botName = typeof row.viber_bot_name === "string" && row.viber_bot_name.trim() ? row.viber_bot_name.trim() : null;
+          return [String(row.id), { enabled: row.viber_enabled === true, connected, botName }] as const;
+        }),
+  );
+  const mail = new Map<
+    string,
+    { enabled: boolean; connected: boolean; address: string | null; imapHost: string | null; imapPort: number; smtpHost: string | null; smtpPort: number }
+  >(
+    mailRows.error
+      ? []
+      : (mailRows.data ?? []).map((row) => {
+          const address = typeof row.email_address === "string" && row.email_address.trim() ? row.email_address.trim() : null;
+          const imapHost = typeof row.email_imap_host === "string" && row.email_imap_host.trim() ? row.email_imap_host.trim() : null;
+          const smtpHost = typeof row.email_smtp_host === "string" && row.email_smtp_host.trim() ? row.email_smtp_host.trim() : null;
+          const connected = Boolean(address && imapHost && smtpHost && typeof row.email_password === "string" && row.email_password.trim());
+          return [
+            String(row.id),
+            {
+              enabled: row.email_enabled === true,
+              connected,
+              address,
+              imapHost,
+              imapPort: Number(row.email_imap_port) || 993,
+              smtpHost,
+              smtpPort: Number(row.email_smtp_port) || 465,
+            },
+          ] as const;
         }),
   );
   const analytics = new Map<string, { ymCounterId: string | null; ga4MeasurementId: string | null; ga4Enabled: boolean }>(
@@ -437,6 +476,16 @@ export async function listAgents(): Promise<AgentRecord[]> {
     twilioSmsConnected: sms.get(String(row.id))?.connected ?? false,
     twilio_account_sid: sms.get(String(row.id))?.accountSid ?? null,
     twilio_sms_number: sms.get(String(row.id))?.phoneNumber ?? null,
+    viber_enabled: viber.get(String(row.id))?.enabled ?? false,
+    viberConnected: viber.get(String(row.id))?.connected ?? false,
+    viber_bot_name: viber.get(String(row.id))?.botName ?? null,
+    email_enabled: mail.get(String(row.id))?.enabled ?? false,
+    emailConnected: mail.get(String(row.id))?.connected ?? false,
+    email_address: mail.get(String(row.id))?.address ?? null,
+    email_imap_host: mail.get(String(row.id))?.imapHost ?? null,
+    email_imap_port: mail.get(String(row.id))?.imapPort ?? 993,
+    email_smtp_host: mail.get(String(row.id))?.smtpHost ?? null,
+    email_smtp_port: mail.get(String(row.id))?.smtpPort ?? 465,
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
 

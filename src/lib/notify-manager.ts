@@ -992,6 +992,8 @@ function channelLabel(channel: NotifyChat["channel"]) {
   if (channel === "instagram") return "Instagram";
   if (channel === "web") return "Веб-виджет";
   if (channel === "sms") return "SMS";
+  if (channel === "viber") return "Viber";
+  if (channel === "email") return "Email";
   return "Канал";
 }
 

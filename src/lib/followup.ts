@@ -4,10 +4,12 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { readBotFlags } from "@/lib/bot-state";
 import { readFollowupInterval, readFollowupMaxCount } from "@/lib/agent-models";
+import { sendEmailReply, type EmailConfig } from "@/lib/email-channel";
 import { sendGreenMessage } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
 import { sleep, stripMarkdown } from "@/lib/reply";
 import { sendTwilioSms } from "@/lib/twilio-sms";
+import { sendViberMessage } from "@/lib/viber";
 
 /** Случайная пауза перед отправкой пуша: 3–12 с, чтобы пачка уведомлений не уходила в одну миллисекунду. */
 const SEND_JITTER_MIN_MS = 3000;
@@ -76,6 +78,14 @@ type FollowupAgent = {
   twilio_account_sid?: string | null;
   twilio_auth_token?: string | null;
   twilio_sms_number?: string | null;
+  viber_enabled?: boolean | null;
+  viber_auth_token?: string | null;
+  viber_bot_name?: string | null;
+  email_enabled?: boolean | null;
+  email_address?: string | null;
+  email_password?: string | null;
+  email_smtp_host?: string | null;
+  email_smtp_port?: number | null;
 };
 
 type FollowupConversation = {
@@ -101,10 +111,18 @@ export async function runFollowups(supabase: AdminClient): Promise<FollowupSumma
 
   const baseColumns =
     "id, is_active, followup_interval_hours, followup_max_count, followup_template, system_prompt, wa_instance_id, wa_api_token, wa_is_active, tg_bot_token, tg_is_active, active_channels";
-  const withSms = await supabase
+  const smsColumns = "twilio_sms_enabled, twilio_account_sid, twilio_auth_token, twilio_sms_number";
+  const mailColumns =
+    "viber_enabled, viber_auth_token, viber_bot_name, email_enabled, email_address, email_password, email_smtp_host, email_smtp_port";
+  const withChannels = await supabase
     .from("agents")
-    .select(`${baseColumns}, twilio_sms_enabled, twilio_account_sid, twilio_auth_token, twilio_sms_number`)
+    .select(`${baseColumns}, ${smsColumns}, ${mailColumns}`)
     .eq("followup_enabled", true);
+  const channelMissing =
+    withChannels.error && /viber_|email_enabled|email_address|email_password|email_smtp|schema cache/i.test(withChannels.error.message);
+  const withSms = channelMissing
+    ? await supabase.from("agents").select(`${baseColumns}, ${smsColumns}`).eq("followup_enabled", true)
+    : withChannels;
   const agentsResult =
     withSms.error && /twilio_sms_|twilio_account_sid|twilio_auth_token|schema cache/i.test(withSms.error.message)
       ? await supabase.from("agents").select(baseColumns).eq("followup_enabled", true)
@@ -197,7 +215,7 @@ async function processConversation(
       SEND_JITTER_MIN_MS + Math.floor(Math.random() * (SEND_JITTER_MAX_MS - SEND_JITTER_MIN_MS + 1));
     await sleep(Math.max(0, Math.min(jitter, deadline - Date.now())));
 
-    const delivered = await deliver(agent, provider, conversation.external_chat_id, decision.message);
+    const delivered = await deliver(supabase, agent, provider, conversation, decision.message);
     const pushCount = (conversation.push_count ?? 0) + 1;
     const now = new Date().toISOString();
 
@@ -315,6 +333,26 @@ export function parseDecision(raw: string | null | undefined): Decision {
   return { action: "stop", message: null };
 }
 
+function mailConfig(agent: FollowupAgent): EmailConfig | null {
+  const email = agent.email_address?.trim().toLowerCase() ?? "";
+  const password = agent.email_password ?? "";
+  const smtpHost = agent.email_smtp_host?.trim() ?? "";
+  if (!email || !password.trim() || !smtpHost) return null;
+  return {
+    email,
+    password,
+    imapHost: "localhost",
+    imapPort: 993,
+    smtpHost,
+    smtpPort: Number(agent.email_smtp_port) || 465,
+  };
+}
+
+function messageIdOrNull(value: unknown) {
+  const id = typeof value === "string" ? value.trim() : "";
+  return id.includes("@") ? id : null;
+}
+
 function readProvider(integration: FollowupConversation["integration"]) {
   const row = Array.isArray(integration) ? integration[0] : integration;
   return row?.provider ?? "";
@@ -338,11 +376,55 @@ function canSend(agent: FollowupAgent, provider: string) {
       Boolean(agent.twilio_account_sid && agent.twilio_auth_token && agent.twilio_sms_number)
     );
   }
+  if (provider === "viber") return agent.viber_enabled === true && Boolean(agent.viber_auth_token);
+  if (provider === "email") {
+    return agent.email_enabled === true && Boolean(agent.email_address && agent.email_password && agent.email_smtp_host);
+  }
   return false;
 }
 
-async function deliver(agent: FollowupAgent, provider: string, chatId: string, text: string) {
+async function deliver(
+  supabase: AdminClient,
+  agent: FollowupAgent,
+  provider: string,
+  conversation: FollowupConversation,
+  text: string,
+) {
+  const chatId = conversation.external_chat_id;
   try {
+    if (provider === "viber") {
+      const sent = await sendViberMessage({
+        authToken: String(agent.viber_auth_token),
+        receiver: chatId,
+        text,
+        senderName: agent.viber_bot_name?.trim() || "Ассистент",
+      });
+      if (!sent.ok) throw new Error(sent.error);
+      return { ok: true as const, externalId: null };
+    }
+    if (provider === "email") {
+      const config = mailConfig(agent);
+      if (!config) throw new Error("Почта агента не настроена.");
+      const thread = await supabase
+        .from("messages")
+        .select("external_message_id")
+        .eq("conversation_id", conversation.id)
+        .eq("role", "user")
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const messageId = messageIdOrNull(thread.data?.external_message_id);
+      const sent = await sendEmailReply({
+        config,
+        to: chatId,
+        subject: "ваше письмо",
+        text,
+        inReplyTo: messageId,
+        references: messageId,
+      });
+      if (!sent.ok) throw new Error(sent.error);
+      return { ok: true as const, externalId: sent.messageId };
+    }
     if (provider === "sms") {
       const sent = await sendTwilioSms({
         accountSid: String(agent.twilio_account_sid),

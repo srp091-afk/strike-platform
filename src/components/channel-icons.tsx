@@ -1,4 +1,4 @@
-import { Globe, MessageSquareText } from "lucide-react";
+import { Globe, Mail, MessageSquareText } from "lucide-react";
 import type { SVGProps } from "react";
 
 import type { IntegrationProvider } from "@/lib/integration-catalog";
@@ -9,6 +9,8 @@ const CHANNEL_ICONS: Record<IntegrationProvider, (props: SVGProps<SVGSVGElement>
   instagram: InstagramIcon,
   widget: WidgetIcon,
   sms: SmsIcon,
+  viber: ViberIcon,
+  email: EmailIcon,
 };
 
 export function ChannelIcon({
@@ -25,6 +27,21 @@ function WidgetIcon(props: SVGProps<SVGSVGElement>) {
 
 function SmsIcon(props: SVGProps<SVGSVGElement>) {
   return <MessageSquareText strokeWidth={1.75} aria-hidden {...props} />;
+}
+
+function EmailIcon(props: SVGProps<SVGSVGElement>) {
+  return <Mail strokeWidth={1.75} aria-hidden {...props} />;
+}
+
+function ViberIcon(props: SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
+      <path
+        fill="#7360F2"
+        d="M12.2 2C7.1 2 3.2 5.7 3.2 10.5c0 1.5.4 2.9 1.1 4.1L3 20.2l4.2-1.2c1.2.7 2.6 1.1 4.1 1.1 5.1 0 9-3.7 9-8.5S17.3 2 12.2 2Zm3.7 11.4c-.2.6-1.1 1.1-1.6 1.2-.4.1-1 .1-1.5-.1-.3-.1-.8-.3-1.4-.6-2.4-1.1-3.9-3.5-4-3.7-.1-.2-1-1.3-1-2.5 0-1.2.6-1.8.8-2 .2-.2.5-.3.6-.3h.5c.1 0 .3 0 .5.4.2.5.7 1.7.7 1.8.1.1.1.3 0 .4-.1.2-.1.3-.2.4l-.4.4c-.1.1-.2.2-.1.5.1.2.6 1 1.3 1.6.8.8 1.6 1 1.8 1.1.2.1.3.1.5-.1.1-.1.5-.6.7-.9.1-.2.3-.2.5-.1.2.1 1.2.6 1.5.7.2.1.4.2.4.3.1.1.1.5-.1.9Z"
+      />
+    </svg>
+  );
 }
 
 function TelegramIcon(props: SVGProps<SVGSVGElement>) {

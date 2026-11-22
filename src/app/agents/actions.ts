@@ -16,7 +16,9 @@ import { readAmoDomain } from "@/lib/amocrm";
 import { readBitrixWebhook } from "@/lib/bitrix24";
 import { readDikidiBookingUrl, readYclientsCompanyId, readYclientsPlatform, readYclientsToken } from "@/lib/yclients";
 import { readPaymentReturnUrl, readPaymentSecret, readProdamusShopUrl, readStripeCurrency } from "@/lib/payments";
+import { readMailAddress, readMailHost, readMailPassword, readMailPort } from "@/lib/email-channel";
 import { readTwilioAccountSid, readTwilioAuthToken, readTwilioSmsNumber } from "@/lib/twilio-sms";
+import { readViberBotName, readViberToken } from "@/lib/viber";
 import { readGa4MeasurementId, readYmCounterId } from "@/lib/widget-analytics";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { assertCanCreateAgent } from "@/lib/access";
@@ -223,6 +225,42 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "Номер Twilio должен быть в формате + и от 10 до 15 цифр, например +14155550199." };
   }
 
+  const viberProvided = formData.has("viber_enabled") || formData.has("viber_auth_token") || formData.has("viber_bot_name");
+  const viberToken = readViberToken(String(formData.get("viber_auth_token") ?? ""));
+  const viberBotName = readViberBotName(String(formData.get("viber_bot_name") ?? ""));
+  const viberEnabled = formData.get("viber_enabled") === "true";
+  if (formData.has("viber_auth_token") && viberToken === null) {
+    return { ok: false as const, error: "Auth Token Viber содержит пробелы или слишком короткий." };
+  }
+
+  const mailProvided =
+    formData.has("email_enabled") ||
+    formData.has("email_address") ||
+    formData.has("email_password") ||
+    formData.has("email_imap_host") ||
+    formData.has("email_smtp_host") ||
+    formData.has("email_imap_port") ||
+    formData.has("email_smtp_port");
+  const mailAddress = readMailAddress(String(formData.get("email_address") ?? ""));
+  const mailPassword = readMailPassword(String(formData.get("email_password") ?? ""));
+  const mailImapHost = readMailHost(String(formData.get("email_imap_host") ?? ""));
+  const mailSmtpHost = readMailHost(String(formData.get("email_smtp_host") ?? ""));
+  const mailImapPort = readMailPort(String(formData.get("email_imap_port") ?? ""), 993);
+  const mailSmtpPort = readMailPort(String(formData.get("email_smtp_port") ?? ""), 465);
+  const mailEnabled = formData.get("email_enabled") === "true";
+  if (formData.has("email_address") && mailAddress === null) {
+    return { ok: false as const, error: "Укажите корректный email для канала почты." };
+  }
+  if (formData.has("email_password") && mailPassword === null) {
+    return { ok: false as const, error: "Пароль приложения слишком длинный." };
+  }
+  if ((formData.has("email_imap_host") && mailImapHost === null) || (formData.has("email_smtp_host") && mailSmtpHost === null)) {
+    return { ok: false as const, error: "Хост IMAP или SMTP содержит недопустимые символы." };
+  }
+  if ((formData.has("email_imap_port") && mailImapPort === null) || (formData.has("email_smtp_port") && mailSmtpPort === null)) {
+    return { ok: false as const, error: "Порт почты должен быть числом от 1 до 65535." };
+  }
+
   return {
     ok: true as const,
     followupEnabled,
@@ -293,6 +331,18 @@ function readAgentFields(formData: FormData) {
     smsSid: smsSid || "",
     smsToken: smsToken || "",
     smsNumber: smsNumber || "",
+    viberProvided,
+    viberEnabled,
+    viberToken: viberToken || "",
+    viberBotName,
+    mailProvided,
+    mailEnabled,
+    mailAddress: mailAddress || "",
+    mailPassword: mailPassword || "",
+    mailImapHost: mailImapHost || "",
+    mailImapPort: mailImapPort ?? 993,
+    mailSmtpHost: mailSmtpHost || "",
+    mailSmtpPort: mailSmtpPort ?? 465,
   };
 }
 
@@ -473,6 +523,24 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
             ...(fields.smsToken ? { twilio_auth_token: fields.smsToken } : {}),
           }
         : {}),
+      ...(fields.viberProvided
+        ? {
+            viber_enabled: fields.viberEnabled,
+            viber_bot_name: fields.viberBotName || null,
+            ...(fields.viberToken ? { viber_auth_token: fields.viberToken } : {}),
+          }
+        : {}),
+      ...(fields.mailProvided
+        ? {
+            email_enabled: fields.mailEnabled,
+            email_address: fields.mailAddress || null,
+            email_imap_host: fields.mailImapHost || null,
+            email_imap_port: fields.mailImapPort,
+            email_smtp_host: fields.mailSmtpHost || null,
+            email_smtp_port: fields.mailSmtpPort,
+            ...(fields.mailPassword ? { email_password: fields.mailPassword } : {}),
+          }
+        : {}),
       active_channels: fields.activeChannels,
       user_id: userId,
       ...(fields.waInstanceId && fields.waApiToken
@@ -505,6 +573,8 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     const paymentCopyRequested = Boolean(fields.paymentSuccessMessage || fields.paymentReturnUrl);
     const analyticsRequested = Boolean(fields.ymCounterId || fields.ga4MeasurementId || fields.ga4Enabled);
     const smsRequested = Boolean(fields.smsEnabled || fields.smsSid || fields.smsToken || fields.smsNumber);
+    const viberRequested = Boolean(fields.viberEnabled || fields.viberToken || fields.viberBotName);
+    const mailChannelRequested = Boolean(fields.mailEnabled || fields.mailAddress || fields.mailPassword || fields.mailImapHost || fields.mailSmtpHost);
     let agentId = fields.id;
     if (fields.id) {
       const updated = await supabase
@@ -514,7 +584,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         .eq("user_id", userId)
         .select("id")
         .maybeSingle();
-      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested, smsRequested }) : null;
+      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested, smsRequested, viberRequested, mailChannelRequested }) : null;
       const retried = updateFallback
         ? await supabase.from("agents").update(updateFallback).eq("id", fields.id).eq("user_id", userId).select("id").maybeSingle()
         : updated;
@@ -529,7 +599,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     } else {
       await assertCanCreateAgent(userId);
       const inserted = await supabase.from("agents").insert(payload).select("id").single();
-      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested, smsRequested }) : null;
+      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested, smsRequested, viberRequested, mailChannelRequested }) : null;
       const retried = insertFallback ? await supabase.from("agents").insert(insertFallback).select("id").single() : inserted;
       if (retried.error || !retried.data) {
         return failedSave(columnError(retried.error?.message ?? "Не удалось сохранить агента."));
@@ -580,6 +650,8 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     paymentCopyRequested: boolean;
     analyticsRequested: boolean;
     smsRequested: boolean;
+    viberRequested: boolean;
+    mailChannelRequested: boolean;
   },
 ) {
   const known =
@@ -592,7 +664,9 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     missingDikidiColumn(message) ||
     missingPaymentColumn(message) ||
     missingAnalyticsColumn(message) ||
-    missingSmsColumn(message);
+    missingSmsColumn(message) ||
+    missingViberColumn(message) ||
+    missingMailChannelColumn(message);
   if (!known) return null;
   const next: Record<string, unknown> = { ...payload };
   let changed = false;
@@ -671,6 +745,22 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     delete next.twilio_sms_number;
     changed = true;
   }
+  if (!requested.viberRequested) {
+    delete next.viber_enabled;
+    delete next.viber_auth_token;
+    delete next.viber_bot_name;
+    changed = true;
+  }
+  if (!requested.mailChannelRequested) {
+    delete next.email_enabled;
+    delete next.email_address;
+    delete next.email_imap_host;
+    delete next.email_imap_port;
+    delete next.email_smtp_host;
+    delete next.email_smtp_port;
+    delete next.email_password;
+    changed = true;
+  }
   return changed ? (next as T) : null;
 }
 
@@ -684,6 +774,22 @@ function missingWebhookColumn(message: string) {
 
 function missingSmsColumn(message: string) {
   return message.includes("twilio_sms_enabled") || message.includes("twilio_account_sid") || message.includes("twilio_auth_token") || message.includes("twilio_sms_number");
+}
+
+function missingViberColumn(message: string) {
+  return message.includes("viber_enabled") || message.includes("viber_auth_token") || message.includes("viber_bot_name");
+}
+
+function missingMailChannelColumn(message: string) {
+  return (
+    message.includes("email_enabled") ||
+    message.includes("email_address") ||
+    message.includes("email_imap_host") ||
+    message.includes("email_imap_port") ||
+    message.includes("email_smtp_host") ||
+    message.includes("email_smtp_port") ||
+    message.includes("email_password")
+  );
 }
 
 function missingAnalyticsColumn(message: string) {
@@ -715,6 +821,9 @@ function missingDikidiColumn(message: string) {
 }
 
 function columnError(message: string) {
+  if (missingViberColumn(message) || missingMailChannelColumn(message)) {
+    return "Чтобы подключить Viber или почту, выполните миграцию 20261122_agent_viber_email.sql.";
+  }
   if (missingSmsColumn(message)) return "Чтобы подключить SMS (Twilio), выполните миграцию 20261122_agent_twilio_sms.sql.";
   if (missingAnalyticsColumn(message)) return "Чтобы передавать цели виджета в Метрику и GA4, выполните миграцию 20261122_agent_analytics.sql.";
   if (missingPaymentColumn(message)) return "Чтобы принимать оплаты, выполните миграцию 20261121_agent_payments.sql.";
