@@ -219,6 +219,20 @@ export async function listAgents(): Promise<AgentRecord[]> {
     .from("agents")
     .select("id, ym_counter_id, ga4_measurement_id, ga4_enabled")
     .eq("user_id", userId);
+  const smsRows = await supabase
+    .from("agents")
+    .select("id, twilio_sms_enabled, twilio_account_sid, twilio_auth_token, twilio_sms_number")
+    .eq("user_id", userId);
+  const sms = new Map<string, { enabled: boolean; connected: boolean; accountSid: string | null; phoneNumber: string | null }>(
+    smsRows.error
+      ? []
+      : (smsRows.data ?? []).map((row) => {
+          const accountSid = typeof row.twilio_account_sid === "string" && row.twilio_account_sid.trim() ? row.twilio_account_sid.trim() : null;
+          const phoneNumber = typeof row.twilio_sms_number === "string" && row.twilio_sms_number.trim() ? row.twilio_sms_number.trim() : null;
+          const connected = Boolean(accountSid && phoneNumber && typeof row.twilio_auth_token === "string" && row.twilio_auth_token.trim());
+          return [String(row.id), { enabled: row.twilio_sms_enabled === true, connected, accountSid, phoneNumber }] as const;
+        }),
+  );
   const analytics = new Map<string, { ymCounterId: string | null; ga4MeasurementId: string | null; ga4Enabled: boolean }>(
     analyticsRows.error
       ? []
@@ -419,6 +433,10 @@ export async function listAgents(): Promise<AgentRecord[]> {
     ym_counter_id: analytics.get(String(row.id))?.ymCounterId ?? null,
     ga4_measurement_id: analytics.get(String(row.id))?.ga4MeasurementId ?? null,
     ga4_enabled: analytics.get(String(row.id))?.ga4Enabled ?? false,
+    twilio_sms_enabled: sms.get(String(row.id))?.enabled ?? false,
+    twilioSmsConnected: sms.get(String(row.id))?.connected ?? false,
+    twilio_account_sid: sms.get(String(row.id))?.accountSid ?? null,
+    twilio_sms_number: sms.get(String(row.id))?.phoneNumber ?? null,
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
 

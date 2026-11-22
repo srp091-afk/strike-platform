@@ -7,6 +7,7 @@ import { readFollowupInterval, readFollowupMaxCount } from "@/lib/agent-models";
 import { sendGreenMessage } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
 import { sleep, stripMarkdown } from "@/lib/reply";
+import { sendTwilioSms } from "@/lib/twilio-sms";
 
 /** Случайная пауза перед отправкой пуша: 3–12 с, чтобы пачка уведомлений не уходила в одну миллисекунду. */
 const SEND_JITTER_MIN_MS = 3000;
@@ -71,6 +72,10 @@ type FollowupAgent = {
   tg_bot_token: string | null;
   tg_is_active: boolean | null;
   active_channels: unknown;
+  twilio_sms_enabled?: boolean | null;
+  twilio_account_sid?: string | null;
+  twilio_auth_token?: string | null;
+  twilio_sms_number?: string | null;
 };
 
 type FollowupConversation = {
@@ -94,13 +99,18 @@ export type FollowupSummary = {
 export async function runFollowups(supabase: AdminClient): Promise<FollowupSummary> {
   const summary: FollowupSummary = { scanned: 0, pushed: 0, stopped: 0, skipped: 0, failed: 0 };
 
-  const { data: agents, error } = await supabase
+  const baseColumns =
+    "id, is_active, followup_interval_hours, followup_max_count, followup_template, system_prompt, wa_instance_id, wa_api_token, wa_is_active, tg_bot_token, tg_is_active, active_channels";
+  const withSms = await supabase
     .from("agents")
-    .select(
-      "id, is_active, followup_interval_hours, followup_max_count, followup_template, system_prompt, wa_instance_id, wa_api_token, wa_is_active, tg_bot_token, tg_is_active, active_channels",
-    )
+    .select(`${baseColumns}, twilio_sms_enabled, twilio_account_sid, twilio_auth_token, twilio_sms_number`)
     .eq("followup_enabled", true);
-  if (error) throw new Error(error.message);
+  const agentsResult =
+    withSms.error && /twilio_sms_|twilio_account_sid|twilio_auth_token|schema cache/i.test(withSms.error.message)
+      ? await supabase.from("agents").select(baseColumns).eq("followup_enabled", true)
+      : withSms;
+  if (agentsResult.error) throw new Error(agentsResult.error.message);
+  const agents = agentsResult.data;
 
   const deadline = Date.now() + RUN_BUDGET_MS;
   let budget = MAX_CONVERSATIONS_PER_RUN;
@@ -322,11 +332,28 @@ function canSend(agent: FollowupAgent, provider: string) {
   if (provider === "telegram") {
     return agent.tg_is_active === true && Boolean(agent.tg_bot_token) && channelOn(agent.active_channels, "telegram");
   }
+  if (provider === "sms") {
+    return (
+      agent.twilio_sms_enabled === true &&
+      Boolean(agent.twilio_account_sid && agent.twilio_auth_token && agent.twilio_sms_number)
+    );
+  }
   return false;
 }
 
 async function deliver(agent: FollowupAgent, provider: string, chatId: string, text: string) {
   try {
+    if (provider === "sms") {
+      const sent = await sendTwilioSms({
+        accountSid: String(agent.twilio_account_sid),
+        authToken: String(agent.twilio_auth_token),
+        from: String(agent.twilio_sms_number),
+        to: chatId,
+        body: text,
+      });
+      if (!sent.ok) throw new Error(sent.error);
+      return { ok: true as const, externalId: sent.sid };
+    }
     if (provider === "whatsapp") {
       const externalId = await sendGreenMessage(chatId, text, {
         idInstance: String(agent.wa_instance_id),

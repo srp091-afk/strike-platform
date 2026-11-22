@@ -1,4 +1,4 @@
-import { Globe } from "lucide-react";
+import { Globe, MessageSquareText } from "lucide-react";
 import type { SVGProps } from "react";
 
 import type { IntegrationProvider } from "@/lib/integration-catalog";
@@ -8,6 +8,7 @@ const CHANNEL_ICONS: Record<IntegrationProvider, (props: SVGProps<SVGSVGElement>
   whatsapp: WhatsAppIcon,
   instagram: InstagramIcon,
   widget: WidgetIcon,
+  sms: SmsIcon,
 };
 
 export function ChannelIcon({
@@ -20,6 +21,10 @@ export function ChannelIcon({
 
 function WidgetIcon(props: SVGProps<SVGSVGElement>) {
   return <Globe strokeWidth={1.75} aria-hidden {...props} />;
+}
+
+function SmsIcon(props: SVGProps<SVGSVGElement>) {
+  return <MessageSquareText strokeWidth={1.75} aria-hidden {...props} />;
 }
 
 function TelegramIcon(props: SVGProps<SVGSVGElement>) {

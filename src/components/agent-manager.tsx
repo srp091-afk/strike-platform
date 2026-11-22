@@ -1,6 +1,6 @@
 "use client";
 
-import { GripVertical, Globe, Loader2, Maximize, Play, Sparkles, Trash } from "lucide-react";
+import { GripVertical, Globe, Loader2, Maximize, MessageSquareText, Play, Sparkles, Trash } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -29,6 +29,7 @@ import { deleteAgent, reorderAgents, saveAgent, saveAgentDirect, type SaveState 
 import { disconnectInstagram, disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
 import { TelegramConnectModal } from "@/components/TelegramConnectModal";
 import { WidgetConnectModal } from "@/components/WidgetConnectModal";
+import { ChannelAccordionCard } from "@/components/channel-accordion-card";
 import { ChannelIcon } from "@/components/channel-icons";
 import { Button } from "@/components/ui/button";
 import { DialogContent } from "@/components/ui/dialog";
@@ -147,7 +148,7 @@ function sameChannelState(a: AgentRecord, b: AgentRecord) {
   );
 }
 
-const CARD_CHANNELS: Array<{ provider: IntegrationProvider; label: string; activeClass: string }> = [
+const CARD_CHANNELS: Array<{ provider: Exclude<IntegrationProvider, "sms">; label: string; activeClass: string }> = [
   { provider: "whatsapp", label: "WhatsApp", activeClass: "text-[#25D366]" },
   { provider: "telegram", label: "Telegram", activeClass: "text-[#229ED9]" },
   { provider: "instagram", label: "Instagram", activeClass: "text-[#E1306C]" },
@@ -2307,6 +2308,10 @@ function AgentDialog({
     data.set("ym_counter_id", current.ym_counter_id);
     data.set("ga4_measurement_id", current.ga4_measurement_id);
     data.set("ga4_enabled", current.ga4_enabled ? "true" : "false");
+    data.set("twilio_sms_enabled", current.twilio_sms_enabled ? "true" : "false");
+    data.set("twilio_account_sid", current.twilio_account_sid);
+    data.set("twilio_sms_number", current.twilio_sms_number);
+    if (current.twilio_auth_token) data.set("twilio_auth_token", current.twilio_auth_token);
     return data;
   }
 
@@ -2501,6 +2506,23 @@ function AgentDialog({
                     }}
                     onWhatsAppCleared={() => {
                       const cleared = { wa_instance_id: "", wa_api_token: "", wa_phone_number: "" };
+                      setDraft((current) => ({ ...current, ...cleared }));
+                      setBaseline((current) => ({ ...current, ...cleared }));
+                    }}
+                    smsEnabled={draft.twilio_sms_enabled}
+                    smsAccountSid={draft.twilio_account_sid}
+                    smsAuthToken={draft.twilio_auth_token}
+                    smsPhone={draft.twilio_sms_number}
+                    smsSavedConnected={channelAgent?.twilioSmsConnected ?? false}
+                    onSmsChange={patchDraft}
+                    onEnsureSaved={ensureAgentSaved}
+                    onSmsCleared={() => {
+                      const cleared = {
+                        twilio_sms_enabled: false,
+                        twilio_account_sid: "",
+                        twilio_auth_token: "",
+                        twilio_sms_number: "",
+                      };
                       setDraft((current) => ({ ...current, ...cleared }));
                       setBaseline((current) => ({ ...current, ...cleared }));
                     }}
@@ -2724,6 +2746,10 @@ type AgentDraft = {
   ym_counter_id: string;
   ga4_measurement_id: string;
   ga4_enabled: boolean;
+  twilio_sms_enabled: boolean;
+  twilio_account_sid: string;
+  twilio_auth_token: string;
+  twilio_sms_number: string;
 };
 
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
@@ -2779,6 +2805,10 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     ym_counter_id: agent?.ym_counter_id ?? "",
     ga4_measurement_id: agent?.ga4_measurement_id ?? "",
     ga4_enabled: agent?.ga4_enabled ?? false,
+    twilio_sms_enabled: agent?.twilio_sms_enabled ?? false,
+    twilio_account_sid: agent?.twilio_account_sid ?? "",
+    twilio_auth_token: "",
+    twilio_sms_number: agent?.twilio_sms_number ?? "",
   };
 }
 
@@ -2837,7 +2867,11 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.payment_return_url.trim() === right.payment_return_url.trim() &&
     left.ym_counter_id.trim() === right.ym_counter_id.trim() &&
     left.ga4_measurement_id.trim().toUpperCase() === right.ga4_measurement_id.trim().toUpperCase() &&
-    left.ga4_enabled === right.ga4_enabled
+    left.ga4_enabled === right.ga4_enabled &&
+    left.twilio_sms_enabled === right.twilio_sms_enabled &&
+    left.twilio_account_sid.trim() === right.twilio_account_sid.trim() &&
+    left.twilio_auth_token === right.twilio_auth_token &&
+    left.twilio_sms_number.trim() === right.twilio_sms_number.trim()
   );
 }
 
@@ -3048,13 +3082,6 @@ function insertPromptToken(
   });
 }
 
-const channelTone: Record<IntegrationProvider, string> = {
-  telegram: "border border-zinc-700 bg-zinc-900 text-white",
-  whatsapp: "border border-zinc-700 bg-zinc-900 text-white",
-  instagram: "border border-zinc-700 bg-zinc-900 text-white",
-  widget: "border border-zinc-700 bg-zinc-900 text-white",
-};
-
 function ChannelSettings({
   agent,
   agentId,
@@ -3072,6 +3099,14 @@ function ChannelSettings({
   onWhatsAppCredentials,
   onWhatsAppPhone,
   onWhatsAppCleared,
+  smsEnabled,
+  smsAccountSid,
+  smsAuthToken,
+  smsPhone,
+  smsSavedConnected,
+  onSmsChange,
+  onEnsureSaved,
+  onSmsCleared,
 }: {
   agent: AgentRecord | null;
   agentId: string;
@@ -3090,6 +3125,19 @@ function ChannelSettings({
   onWhatsAppCredentials: (credentials: GreenDefaults) => void;
   onWhatsAppPhone: (phone: string) => void;
   onWhatsAppCleared: () => void;
+  smsEnabled: boolean;
+  smsAccountSid: string;
+  smsAuthToken: string;
+  smsPhone: string;
+  smsSavedConnected: boolean;
+  onSmsChange: (patch: {
+    twilio_sms_enabled?: boolean;
+    twilio_account_sid?: string;
+    twilio_auth_token?: string;
+    twilio_sms_number?: string;
+  }) => void;
+  onEnsureSaved: () => Promise<string | null>;
+  onSmsCleared: () => void;
 }) {
   const [whatsappOpen, setWhatsappOpen] = useState(initialOpenChannel === "whatsapp");
   const [telegramOpen, setTelegramOpen] = useState(initialOpenChannel === "telegram");
@@ -3102,6 +3150,7 @@ function ChannelSettings({
   const telegramConnected = agent ? isTelegramConnected(agent) : false;
   const instagramConnected = Boolean(agent?.igAccountId);
   const [instagramConnecting, setInstagramConnecting] = useState(false);
+  const [whatsappTab, setWhatsappTab] = useState<"qr" | "twilio">("qr");
 
   async function handleInstagramConnect() {
     if (instagramConnecting) return;
@@ -3129,14 +3178,10 @@ function ChannelSettings({
     }
   }
 
+  const smsConnected = smsCredentialsReady(smsAccountSid, smsAuthToken, smsPhone, smsSavedConnected);
+
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <div>
-        <h3 className="font-sans text-lg font-bold text-white">Активные каналы</h3>
-        <p className="mt-1 text-sm leading-6 text-zinc-400">
-          У агента один номер WhatsApp и один Telegram-канал (бот или личный аккаунт). Выключенный канал не вызывает модель.
-        </p>
-      </div>
+    <section className="grid content-start gap-3">
       <input
         type="hidden"
         name="active_channels"
@@ -3152,27 +3197,29 @@ function ChannelSettings({
       <input type="hidden" name="wa_api_token" value={credentials.apiToken} />
       <input type="hidden" name="wa_phone_number" value={phone} />
       {connectError ? <p className="text-sm text-red-400">{connectError}</p> : null}
-      <div className="grid gap-3">
-        <TwilioConnectCard />
-        <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
-          <label className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
-              <span className={`grid size-9 place-items-center rounded-xl ${channelTone.whatsapp}`}>
-                <ChannelIcon provider="whatsapp" className="size-4" />
-              </span>
-              WhatsApp
-            </span>
-            <Switch
-              checked={whatsappConnected && channels.whatsapp}
-              disabled={!whatsappConnected}
-              onCheckedChange={(checked) => onChannelsChange({ ...channels, whatsapp: checked })}
-              aria-label="WhatsApp"
-              title={whatsappConnected ? undefined : "Сначала подключите номер WhatsApp"}
-            />
-          </label>
-          {whatsappConnected && channels.whatsapp ? (
-            <ChannelDelay value={delays.whatsapp} onChange={(whatsapp) => onDelaysChange({ ...delays, whatsapp })} />
-          ) : null}
+      <ChannelAccordionCard
+        title="WhatsApp"
+        description="Подключение рабочего номера по QR-коду за 30 секунд или через Twilio API"
+        connected={whatsappConnected}
+        icon={<ChannelIcon provider="whatsapp" className="size-4" />}
+        enabled={whatsappConnected && channels.whatsapp}
+        switchDisabled={!whatsappConnected}
+        switchTitle={whatsappConnected ? undefined : "Сначала подключите номер WhatsApp"}
+        defaultOpen={initialOpenChannel === "whatsapp"}
+        onEnabledChange={(checked) => onChannelsChange({ ...channels, whatsapp: checked })}
+      >
+        {whatsappConnected && channels.whatsapp ? (
+          <ChannelDelay value={delays.whatsapp} onChange={(whatsapp) => onDelaysChange({ ...delays, whatsapp })} />
+        ) : null}
+        <div className="grid grid-cols-2 gap-2">
+          <button type="button" className={`${whatsappTab === "qr" ? platformTabActive : platformTabIdle} text-center leading-tight`} onClick={() => setWhatsappTab("qr")}>
+            По QR-коду (Рекомендуем)
+          </button>
+          <button type="button" className={`${whatsappTab === "twilio" ? platformTabActive : platformTabIdle} text-center leading-tight`} onClick={() => setWhatsappTab("twilio")}>
+            Официальный API (Twilio)
+          </button>
+        </div>
+        <div hidden={whatsappTab !== "qr"}>
           <WhatsAppChannel
             agentId={agentId}
             instanceId={credentials.instanceId}
@@ -3183,82 +3230,91 @@ function ChannelSettings({
             onCleared={onWhatsAppCleared}
           />
         </div>
-        <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
-          <label className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
-              <span className={`grid size-9 place-items-center rounded-xl ${channelTone.telegram}`}>
-                <ChannelIcon provider="telegram" className="size-4" />
-              </span>
-              Telegram
-            </span>
-            <Switch
-              checked={telegramConnected && channels.telegram}
-              disabled={!telegramConnected}
-              onCheckedChange={(checked) => onChannelsChange({ ...channels, telegram: checked })}
-              aria-label="Telegram"
-              title={telegramConnected ? undefined : "Сначала подключите Telegram"}
-            />
-          </label>
-          {telegramConnected && channels.telegram ? (
-            <ChannelDelay value={delays.telegram} onChange={(telegram) => onDelaysChange({ ...delays, telegram })} />
-          ) : null}
-          <TelegramChannel agent={agent} connecting={connectingChannel === "telegram"} onConnect={() => void handleConnect("telegram")} />
+        <div hidden={whatsappTab !== "twilio"}>
+          <TwilioConnectCard embedded />
         </div>
-        <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
-          <label className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
-              <span className={`grid size-9 place-items-center rounded-xl ${channelTone.instagram}`}>
-                <ChannelIcon provider="instagram" className="size-4" />
-              </span>
-              Instagram
-            </span>
-            <Switch
-              checked={instagramConnected && channels.instagram}
-              disabled={!instagramConnected}
-              onCheckedChange={(checked) => onChannelsChange({ ...channels, instagram: checked })}
-              aria-label="Instagram"
-              title={instagramConnected ? undefined : "Сначала подключите Instagram"}
-            />
-          </label>
-          {instagramConnected && channels.instagram ? (
-            <ChannelDelay value={delays.instagram} onChange={(instagram) => onDelaysChange({ ...delays, instagram })} />
-          ) : null}
-          <InstagramChannel agent={agent} connecting={instagramConnecting} onConnect={() => void handleInstagramConnect()} />
-          <Suspense fallback={null}>
-            <InstagramNotice connected={instagramConnected} />
-          </Suspense>
-        </div>
-        <div className="grid gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
-          <label className="flex items-center justify-between gap-3">
-            <span className="flex items-center gap-3 text-sm font-medium text-zinc-200">
-              <span className="grid size-9 place-items-center rounded-xl border border-zinc-700 bg-zinc-900 text-white">
-                <Globe className="size-4" strokeWidth={2} />
-              </span>
-              Web Widget
-            </span>
-            <Switch
-              checked={channels.widget}
-              onCheckedChange={(checked) => onChannelsChange({ ...channels, widget: checked })}
-              aria-label="Web Widget"
-            />
-          </label>
-          {channels.widget ? (
-            <ChannelDelay
-              value={delays.web_widget}
-              max={WIDGET_DELAY_CAP_SECONDS}
-              onChange={(web_widget) => onDelaysChange({ ...delays, web_widget })}
-            />
-          ) : null}
-          <button
-            type="button"
-            className="w-full rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
-            disabled={connectingChannel === "widget"}
-            onClick={() => void handleConnect("widget")}
-          >
-            {connectingChannel === "widget" ? "Сохранение агента" : channels.widget ? "Настроить виджет" : "Подключить"}
-          </button>
-        </div>
-      </div>
+      </ChannelAccordionCard>
+      <ChannelAccordionCard
+        title="Telegram"
+        description="Telegram-бот через BotFather или личный аккаунт"
+        connected={telegramConnected}
+        icon={<ChannelIcon provider="telegram" className="size-4" />}
+        enabled={telegramConnected && channels.telegram}
+        switchDisabled={!telegramConnected}
+        switchTitle={telegramConnected ? undefined : "Сначала подключите Telegram"}
+        defaultOpen={initialOpenChannel === "telegram"}
+        onEnabledChange={(checked) => onChannelsChange({ ...channels, telegram: checked })}
+      >
+        {telegramConnected && channels.telegram ? (
+          <ChannelDelay value={delays.telegram} onChange={(telegram) => onDelaysChange({ ...delays, telegram })} />
+        ) : null}
+        <TelegramChannel agent={agent} connecting={connectingChannel === "telegram"} onConnect={() => void handleConnect("telegram")} />
+      </ChannelAccordionCard>
+      <ChannelAccordionCard
+        title="Instagram"
+        description="Прямые сообщения Direct и ответы через официальный API Meta"
+        connected={instagramConnected}
+        icon={<ChannelIcon provider="instagram" className="size-4" />}
+        enabled={instagramConnected && channels.instagram}
+        switchDisabled={!instagramConnected}
+        switchTitle={instagramConnected ? undefined : "Сначала подключите Instagram"}
+        onEnabledChange={(checked) => onChannelsChange({ ...channels, instagram: checked })}
+      >
+        {instagramConnected && channels.instagram ? (
+          <ChannelDelay value={delays.instagram} onChange={(instagram) => onDelaysChange({ ...delays, instagram })} />
+        ) : null}
+        <InstagramChannel agent={agent} connecting={instagramConnecting} onConnect={() => void handleInstagramConnect()} />
+        <Suspense fallback={null}>
+          <InstagramNotice connected={instagramConnected} />
+        </Suspense>
+      </ChannelAccordionCard>
+      <ChannelAccordionCard
+        title="Web Widget"
+        description="Чат-виджет для вашего сайта с поддержкой Метрики и GA4"
+        connected={channels.widget}
+        icon={<Globe className="size-4" strokeWidth={2} />}
+        enabled={channels.widget}
+        defaultOpen={initialOpenChannel === "widget"}
+        onEnabledChange={(checked) => onChannelsChange({ ...channels, widget: checked })}
+      >
+        {channels.widget ? (
+          <ChannelDelay
+            value={delays.web_widget}
+            max={WIDGET_DELAY_CAP_SECONDS}
+            onChange={(web_widget) => onDelaysChange({ ...delays, web_widget })}
+          />
+        ) : null}
+        <button
+          type="button"
+          className="w-full rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
+          disabled={connectingChannel === "widget"}
+          onClick={() => void handleConnect("widget")}
+        >
+          {connectingChannel === "widget" ? "Сохранение агента" : channels.widget ? "Настроить виджет" : "Подключить"}
+        </button>
+      </ChannelAccordionCard>
+      <ChannelAccordionCard
+        title="SMS (Twilio)"
+        description="Автоответы на входящие SMS и пропущенные звонки через Twilio"
+        connected={smsConnected}
+        icon={<MessageSquareText className="size-4" strokeWidth={2} />}
+        enabled={smsConnected && smsEnabled}
+        switchDisabled={!smsConnected}
+        switchTitle={smsConnected ? undefined : "Сначала укажите Account SID, Auth Token и номер"}
+        onEnabledChange={(checked) => onSmsChange({ twilio_sms_enabled: checked })}
+      >
+        <SmsChannelFields
+          agentId={agentId}
+          enabled={smsEnabled}
+          accountSid={smsAccountSid}
+          authToken={smsAuthToken}
+          phone={smsPhone}
+          savedConnected={smsSavedConnected}
+          onChange={onSmsChange}
+          onCleared={onSmsCleared}
+          onEnsureSaved={onEnsureSaved}
+        />
+      </ChannelAccordionCard>
       {whatsappOpen ? (
         <WhatsAppConnectDialog
           agentId={agentId || agent?.id || ""}
@@ -3291,6 +3347,211 @@ function ChannelSettings({
         />
       ) : null}
     </section>
+  );
+}
+
+function smsCredentialsReady(accountSid: string, authToken: string, phone: string, savedConnected: boolean) {
+  const sidOk = /^AC[0-9a-fA-F]{32}$/.test(accountSid.trim());
+  const phoneOk = /^\+\d{10,15}$/.test(phone.trim().replace(/[\s()-]/g, ""));
+  const tokenOk = authToken.trim().length >= 16 || savedConnected;
+  return sidOk && phoneOk && tokenOk;
+}
+
+function SmsChannelFields({
+  agentId,
+  enabled,
+  accountSid,
+  authToken,
+  phone,
+  savedConnected,
+  onChange,
+  onCleared,
+  onEnsureSaved,
+}: {
+  agentId: string;
+  enabled: boolean;
+  accountSid: string;
+  authToken: string;
+  phone: string;
+  savedConnected: boolean;
+  onChange: (patch: {
+    twilio_sms_enabled?: boolean;
+    twilio_account_sid?: string;
+    twilio_auth_token?: string;
+    twilio_sms_number?: string;
+  }) => void;
+  onCleared: () => void;
+  onEnsureSaved: () => Promise<string | null>;
+}) {
+  const router = useRouter();
+  const [pending, setPending] = useState<"test" | "off" | null>(null);
+  const [result, setResult] = useState("");
+  const [error, setError] = useState("");
+  const webhookUrl = agentId ? `https://www.strikeplatform.io/api/webhooks/twilio/sms/${agentId}` : "";
+  const ready = smsCredentialsReady(accountSid, authToken, phone, savedConnected);
+
+  function patch(next: { twilio_account_sid?: string; twilio_auth_token?: string; twilio_sms_number?: string }) {
+    const sid = next.twilio_account_sid ?? accountSid;
+    const token = next.twilio_auth_token ?? authToken;
+    const number = next.twilio_sms_number ?? phone;
+    const stillReady = smsCredentialsReady(sid, token, number, savedConnected);
+    onChange(stillReady ? next : { ...next, twilio_sms_enabled: false });
+  }
+
+  async function copyWebhook() {
+    if (!webhookUrl) {
+      toast.error("Сначала сохраните агента.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      toast.success("Webhook URL скопирован");
+    } catch {
+      toast.error("Не удалось скопировать адрес.");
+    }
+  }
+
+  async function check() {
+    setPending("test");
+    setResult("");
+    setError("");
+    try {
+      const id = agentId || (await onEnsureSaved());
+      if (!id) return;
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const accountHeader = activeAccountHeader();
+      if (accountHeader) headers.set("x-account-id", accountHeader);
+      const response = await fetch(`/api/agents/${id}/twilio-sms/test`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify({ accountSid, authToken, phoneNumber: phone }),
+      });
+      const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string; friendlyName?: string } | null;
+      if (!response.ok || !data?.ok) {
+        setError(data?.error || "Не удалось подключиться к Twilio.");
+        return;
+      }
+      const message = data.friendlyName ? `Подключено: ${data.friendlyName}` : "Twilio отвечает.";
+      setResult(message);
+      toast.success(message);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function disconnect() {
+    if (!agentId) {
+      onCleared();
+      return;
+    }
+    setPending("off");
+    setError("");
+    try {
+      const headers = new Headers();
+      const accountHeader = activeAccountHeader();
+      if (accountHeader) headers.set("x-account-id", accountHeader);
+      const response = await fetch(`/api/agents/${agentId}/twilio-sms`, {
+        method: "DELETE",
+        credentials: "same-origin",
+        headers,
+      });
+      const data = (await response.json().catch(() => null)) as { error?: string } | null;
+      if (!response.ok) {
+        setError(data?.error || "Не удалось отключить SMS.");
+        return;
+      }
+      onCleared();
+      toast.success("SMS отключён");
+      void swrMutate("/api/agents");
+      router.refresh();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  return (
+    <div className="grid gap-4">
+      <input type="hidden" name="twilio_sms_enabled" value={ready && enabled ? "true" : "false"} />
+      <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+        Account SID
+        <input
+          name="twilio_account_sid"
+          value={accountSid}
+          autoComplete="off"
+          spellCheck={false}
+          placeholder="AC..."
+          className={fieldClass}
+          onChange={(event) => patch({ twilio_account_sid: event.target.value })}
+        />
+      </label>
+      <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+        Auth Token
+        <input
+          name="twilio_auth_token"
+          type="password"
+          value={authToken}
+          autoComplete="new-password"
+          spellCheck={false}
+          placeholder={savedConnected ? "Токен сохранён. Введите новый, чтобы заменить." : ""}
+          className={fieldClass}
+          onChange={(event) => patch({ twilio_auth_token: event.target.value })}
+        />
+      </label>
+      <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+        Номер Twilio
+        <input
+          name="twilio_sms_number"
+          inputMode="tel"
+          value={phone}
+          autoComplete="off"
+          placeholder="+14155550199"
+          className={fieldClass}
+          onChange={(event) => patch({ twilio_sms_number: event.target.value })}
+        />
+      </label>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button type="button" variant="outline" disabled={pending !== null} onClick={() => void check()}>
+          {pending === "test" ? "Проверяем..." : "Проверить подключение"}
+        </Button>
+        {savedConnected ? (
+          <Button type="button" variant="outline" disabled={pending === "off"} onClick={() => void disconnect()}>
+            {pending === "off" ? "Отключаем..." : "Отключить"}
+          </Button>
+        ) : null}
+      </div>
+      {error ? <p className="text-sm text-red-400">{error}</p> : null}
+      {result ? <p className="text-sm text-zinc-300">{result}</p> : null}
+      <div className="grid gap-1.5">
+        <p className="text-xs font-medium text-zinc-400">Webhook URL</p>
+        <div className="flex items-center gap-2">
+          <input
+            readOnly
+            value={webhookUrl || "Сохраните агента, чтобы получить Webhook URL"}
+            className={fieldClass}
+            aria-label="Webhook URL"
+          />
+          <button type="button" className="shrink-0 rounded-xl border border-zinc-700 px-3 py-3 text-sm font-medium text-white" onClick={() => void copyWebhook()}>
+            Скопировать
+          </button>
+        </div>
+      </div>
+      <PaymentSetupHint title="Как подключить за 2 минуты">
+        <li>
+          В консоли Twilio скопируйте <strong>Account SID</strong> и <strong>Auth Token</strong> с главной страницы.
+        </li>
+        <li>
+          Перейдите в <strong>Phone Numbers → Manage → Active numbers</strong> и откройте ваш SMS-номер.
+        </li>
+        <li>
+          В блоке <strong>Messaging Configuration → A message comes in</strong> выберите <strong>Webhook</strong>, вставьте <strong>Webhook URL</strong> выше (метод <code>HTTP POST</code>) и нажмите <strong>Save</strong>.
+        </li>
+      </PaymentSetupHint>
+    </div>
   );
 }
 

@@ -16,6 +16,7 @@ import { readAmoDomain } from "@/lib/amocrm";
 import { readBitrixWebhook } from "@/lib/bitrix24";
 import { readDikidiBookingUrl, readYclientsCompanyId, readYclientsPlatform, readYclientsToken } from "@/lib/yclients";
 import { readPaymentReturnUrl, readPaymentSecret, readProdamusShopUrl, readStripeCurrency } from "@/lib/payments";
+import { readTwilioAccountSid, readTwilioAuthToken, readTwilioSmsNumber } from "@/lib/twilio-sms";
 import { readGa4MeasurementId, readYmCounterId } from "@/lib/widget-analytics";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { assertCanCreateAgent } from "@/lib/access";
@@ -203,6 +204,25 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "Measurement ID должен быть вида G-XXXXXXXXXX." };
   }
 
+  const smsProvided =
+    formData.has("twilio_sms_enabled") ||
+    formData.has("twilio_account_sid") ||
+    formData.has("twilio_auth_token") ||
+    formData.has("twilio_sms_number");
+  const smsSid = readTwilioAccountSid(String(formData.get("twilio_account_sid") ?? ""));
+  const smsToken = readTwilioAuthToken(String(formData.get("twilio_auth_token") ?? ""));
+  const smsNumber = readTwilioSmsNumber(String(formData.get("twilio_sms_number") ?? ""));
+  const smsEnabled = formData.get("twilio_sms_enabled") === "true";
+  if (formData.has("twilio_account_sid") && smsSid === null) {
+    return { ok: false as const, error: "Account SID Twilio должен начинаться с AC и содержать 34 символа." };
+  }
+  if (formData.has("twilio_auth_token") && smsToken === null) {
+    return { ok: false as const, error: "Auth Token Twilio содержит пробелы или слишком короткий." };
+  }
+  if (formData.has("twilio_sms_number") && smsNumber === null) {
+    return { ok: false as const, error: "Номер Twilio должен быть в формате + и от 10 до 15 цифр, например +14155550199." };
+  }
+
   return {
     ok: true as const,
     followupEnabled,
@@ -268,6 +288,11 @@ function readAgentFields(formData: FormData) {
     ymCounterId: ymCounterId || "",
     ga4MeasurementId: ga4MeasurementId || "",
     ga4Enabled,
+    smsProvided,
+    smsEnabled,
+    smsSid: smsSid || "",
+    smsToken: smsToken || "",
+    smsNumber: smsNumber || "",
   };
 }
 
@@ -440,6 +465,14 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
             ga4_enabled: fields.ga4Enabled,
           }
         : {}),
+      ...(fields.smsProvided
+        ? {
+            twilio_sms_enabled: fields.smsEnabled,
+            twilio_account_sid: fields.smsSid || null,
+            twilio_sms_number: fields.smsNumber || null,
+            ...(fields.smsToken ? { twilio_auth_token: fields.smsToken } : {}),
+          }
+        : {}),
       active_channels: fields.activeChannels,
       user_id: userId,
       ...(fields.waInstanceId && fields.waApiToken
@@ -471,6 +504,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     const prodamusRequested = Boolean(fields.prodamusShopUrl || fields.prodamusSecret);
     const paymentCopyRequested = Boolean(fields.paymentSuccessMessage || fields.paymentReturnUrl);
     const analyticsRequested = Boolean(fields.ymCounterId || fields.ga4MeasurementId || fields.ga4Enabled);
+    const smsRequested = Boolean(fields.smsEnabled || fields.smsSid || fields.smsToken || fields.smsNumber);
     let agentId = fields.id;
     if (fields.id) {
       const updated = await supabase
@@ -480,7 +514,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         .eq("user_id", userId)
         .select("id")
         .maybeSingle();
-      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested }) : null;
+      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested, smsRequested }) : null;
       const retried = updateFallback
         ? await supabase.from("agents").update(updateFallback).eq("id", fields.id).eq("user_id", userId).select("id").maybeSingle()
         : updated;
@@ -495,7 +529,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     } else {
       await assertCanCreateAgent(userId);
       const inserted = await supabase.from("agents").insert(payload).select("id").single();
-      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested }) : null;
+      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested, smsRequested }) : null;
       const retried = insertFallback ? await supabase.from("agents").insert(insertFallback).select("id").single() : inserted;
       if (retried.error || !retried.data) {
         return failedSave(columnError(retried.error?.message ?? "Не удалось сохранить агента."));
@@ -545,6 +579,7 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     prodamusRequested: boolean;
     paymentCopyRequested: boolean;
     analyticsRequested: boolean;
+    smsRequested: boolean;
   },
 ) {
   const known =
@@ -556,7 +591,8 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     missingYclientsColumn(message) ||
     missingDikidiColumn(message) ||
     missingPaymentColumn(message) ||
-    missingAnalyticsColumn(message);
+    missingAnalyticsColumn(message) ||
+    missingSmsColumn(message);
   if (!known) return null;
   const next: Record<string, unknown> = { ...payload };
   let changed = false;
@@ -628,6 +664,13 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     delete next.ga4_enabled;
     changed = true;
   }
+  if (!requested.smsRequested) {
+    delete next.twilio_sms_enabled;
+    delete next.twilio_account_sid;
+    delete next.twilio_auth_token;
+    delete next.twilio_sms_number;
+    changed = true;
+  }
   return changed ? (next as T) : null;
 }
 
@@ -637,6 +680,10 @@ function missingEmailColumn(message: string) {
 
 function missingWebhookColumn(message: string) {
   return /(?<!bitrix_)webhook_url/.test(message) || /(?<!stripe_)webhook_secret/.test(message);
+}
+
+function missingSmsColumn(message: string) {
+  return message.includes("twilio_sms_enabled") || message.includes("twilio_account_sid") || message.includes("twilio_auth_token") || message.includes("twilio_sms_number");
 }
 
 function missingAnalyticsColumn(message: string) {
@@ -668,6 +715,7 @@ function missingDikidiColumn(message: string) {
 }
 
 function columnError(message: string) {
+  if (missingSmsColumn(message)) return "Чтобы подключить SMS (Twilio), выполните миграцию 20261122_agent_twilio_sms.sql.";
   if (missingAnalyticsColumn(message)) return "Чтобы передавать цели виджета в Метрику и GA4, выполните миграцию 20261122_agent_analytics.sql.";
   if (missingPaymentColumn(message)) return "Чтобы принимать оплаты, выполните миграцию 20261121_agent_payments.sql.";
   if (missingYclientsColumn(message) || missingDikidiColumn(message)) return "Чтобы подключить YCLIENTS или DIKIDI, выполните миграцию 20261121_agent_yclients_dikidi.sql.";

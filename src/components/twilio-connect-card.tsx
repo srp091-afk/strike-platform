@@ -9,7 +9,7 @@ const WEBHOOK_URL = "https://www.strikeplatform.io/api/webhooks/twilio/inbound";
 const fieldClass =
   "w-full rounded-xl border border-zinc-800 bg-black px-4 py-3 text-sm text-white outline-none transition-colors placeholder:text-zinc-600 focus:border-white";
 
-export function TwilioConnectCard() {
+export function TwilioConnectCard({ embedded = false }: { embedded?: boolean }) {
   const [accountSid, setAccountSid] = useState("");
   const [authToken, setAuthToken] = useState("");
   const [whatsappNumber, setWhatsappNumber] = useState("");
@@ -74,7 +74,7 @@ export function TwilioConnectCard() {
 
   return (
     <div
-      className="grid gap-4 rounded-xl border border-zinc-800 bg-black/40 px-4 py-4"
+      className={embedded ? "grid gap-4" : "grid gap-4 rounded-xl border border-zinc-800 bg-black/40 px-4 py-4"}
       onKeyDown={(event) => {
         if (event.key !== "Enter") return;
         event.preventDefault();
@@ -82,10 +82,12 @@ export function TwilioConnectCard() {
         if (!pending) save();
       }}
     >
-      <div>
-        <p className="text-sm font-medium text-zinc-200">WhatsApp Business (Twilio)</p>
-        <p className="mt-1 text-sm text-zinc-400">Один аккаунт на весь кабинет. С него уходят шаблоны и ответы агента.</p>
-      </div>
+      {embedded ? null : (
+        <div>
+          <p className="text-sm font-medium text-zinc-200">WhatsApp Business (Twilio)</p>
+          <p className="mt-1 text-sm text-zinc-400">Один аккаунт на весь кабинет. С него уходят шаблоны и ответы агента.</p>
+        </div>
+      )}
       <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
         Account SID
         <input className={fieldClass} value={accountSid} autoComplete="off" spellCheck={false} onChange={(event) => setAccountSid(event.target.value)} />

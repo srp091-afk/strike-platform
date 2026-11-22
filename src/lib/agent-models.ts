@@ -227,6 +227,11 @@ export type AgentRecord = {
   ga4_measurement_id: string | null;
   /** Отправлять события виджета в уже установленный gtag / dataLayer. */
   ga4_enabled: boolean;
+  /** SMS (Twilio) включён. Auth Token в клиент не попадает. */
+  twilio_sms_enabled: boolean;
+  twilioSmsConnected: boolean;
+  twilio_account_sid: string | null;
+  twilio_sms_number: string | null;
   widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;

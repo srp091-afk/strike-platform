@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type FormEvent, type ReactNode } from "react";
 import { ChevronDown, Download, MessagesSquare, Trash } from "lucide-react";
 
-import { deleteChat, setChatBotActive } from "@/app/chats/actions";
+import { deleteChat, replyToChat, setChatBotActive } from "@/app/chats/actions";
 import { ChannelIcon } from "@/components/channel-icons";
 import { generateChatHtml } from "@/lib/export-chat";
 import {
@@ -48,6 +48,8 @@ export function ChatInbox({
   const [deleting, setDeleting] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const [reply, setReply] = useState("");
+  const [sending, setSending] = useState(false);
   const removedRef = useRef(new Set<string>());
   /** Optimistic botActive overrides that polls must not clobber until the server catches up. */
   const botOverrideRef = useRef<Map<string, boolean>>(new Map());
@@ -152,6 +154,7 @@ export function ChatInbox({
 
   async function openThread(id: string) {
     setSelectedId(id);
+    setReply("");
     writeChatUrl(agentId, id);
 
     try {
@@ -200,6 +203,38 @@ export function ChatInbox({
       setError(failure instanceof Error ? failure.message : "Не удалось переключить агента.");
     } finally {
       if (seq === toggleSeqRef.current) setBotSaving(false);
+    }
+  }
+
+  async function sendReply(event: FormEvent) {
+    event.preventDefault();
+    if (!selected || sending || deleting) return;
+    const text = reply.trim();
+    if (!text) return;
+    const conversationId = selected.id;
+    setSending(true);
+    setError(null);
+    try {
+      const result = await replyToChat(conversationId, text);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      setReply("");
+      setMessages((current) => [
+        ...current,
+        { id: result.messageId, role: "assistant", content: text, createdAt: new Date().toISOString() },
+      ]);
+      botOverrideRef.current.set(conversationId, false);
+      setThreads((current) =>
+        current.map((thread) =>
+          thread.id === conversationId ? { ...thread, botActive: false, preview: text } : thread,
+        ),
+      );
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Не удалось отправить ответ.");
+    } finally {
+      setSending(false);
     }
   }
 
@@ -387,6 +422,20 @@ export function ChatInbox({
                   })
                 )}
               </div>
+              {selected.provider !== "widget" && selected.provider !== "unknown" ? (
+                <form onSubmit={(event) => void sendReply(event)} className="flex items-center gap-2 border-t border-zinc-800 px-5 py-3">
+                  <Input
+                    value={reply}
+                    onChange={(event) => setReply(event.target.value)}
+                    placeholder="Ответ клиенту"
+                    disabled={sending || deleting}
+                    aria-label="Ответ клиенту"
+                  />
+                  <Button type="submit" disabled={sending || deleting || !reply.trim()}>
+                    {sending ? "Отправка" : "Отправить"}
+                  </Button>
+                </form>
+              ) : null}
             </>
           ) : (
             <div className="grid flex-1 place-items-center px-6 text-center">
