@@ -16,6 +16,7 @@ import {
   type AgentRecord,
 } from "@/lib/agent-models";
 import { getEffectiveUserId } from "@/lib/account-context";
+import { readPublicAnalytics } from "@/lib/widget-analytics";
 import type { ChatAgentOption } from "@/lib/chat-types";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -214,6 +215,18 @@ export async function listAgents(): Promise<AgentRecord[]> {
     .from("agents")
     .select("id, bitrix_webhook_url, bitrix_openline_id, bitrix_responsible_id, bitrix_handoff_status_id")
     .eq("user_id", userId);
+  const analyticsRows = await supabase
+    .from("agents")
+    .select("id, ym_counter_id, ga4_measurement_id, ga4_enabled")
+    .eq("user_id", userId);
+  const analytics = new Map<string, { ymCounterId: string | null; ga4MeasurementId: string | null; ga4Enabled: boolean }>(
+    analyticsRows.error
+      ? []
+      : (analyticsRows.data ?? []).map((row) => {
+          const publicIds = readPublicAnalytics(row as Record<string, unknown>);
+          return [String(row.id), { ymCounterId: publicIds.ym_counter_id, ga4MeasurementId: publicIds.ga4_measurement_id, ga4Enabled: publicIds.ga4_enabled }] as const;
+        }),
+  );
   const paymentRows = await supabase
     .from("agents")
     .select("id, stripe_secret_key, stripe_currency, yookassa_shop_id, yookassa_secret_key, prodamus_shop_url, prodamus_secret_key, payment_success_message, payment_return_url")
@@ -403,6 +416,9 @@ export async function listAgents(): Promise<AgentRecord[]> {
     prodamus_shop_url: payments.get(String(row.id))?.shopUrl ?? null,
     payment_success_message: payments.get(String(row.id))?.successMessage ?? null,
     payment_return_url: payments.get(String(row.id))?.returnUrl ?? null,
+    ym_counter_id: analytics.get(String(row.id))?.ymCounterId ?? null,
+    ga4_measurement_id: analytics.get(String(row.id))?.ga4MeasurementId ?? null,
+    ga4_enabled: analytics.get(String(row.id))?.ga4Enabled ?? false,
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
 

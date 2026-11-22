@@ -141,6 +141,25 @@ export function ProdamusIcon() {
   );
 }
 
+export function YandexMetrikaIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+      <circle cx="12" cy="12" r="9" fill="#FC3F1D" />
+      <path fill="#FFCC00" d="M12 6.2 16.9 16.4h-2.15l-.95-2.15h-3.6L9.25 16.4H7.1L12 6.2Zm0 4.15-1.15 2.6h2.3L12 10.35Z" />
+    </svg>
+  );
+}
+
+export function GoogleAnalyticsIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="size-5" aria-hidden>
+      <rect x="4" y="13" width="3.4" height="6.2" rx="1.2" fill="#F9AB00" />
+      <rect x="10.3" y="8.2" width="3.4" height="11" rx="1.2" fill="#E37400" />
+      <rect x="16.6" y="4.2" width="3.4" height="15" rx="1.2" fill="#E37400" />
+    </svg>
+  );
+}
+
 export function DikidiIcon() {
   return (
     <svg viewBox="0 0 24 24" className="size-5" aria-hidden>

@@ -292,15 +292,16 @@ export async function completeWithNotifyManager(input: {
   return completeTurn({ ...input, agentId: input.chat.agentId, chat: input.chat });
 }
 
-/** Ответ песочницы, виджета и звонков Twilio: календарь есть, уведомление менеджера нет. */
+/** Ответ песочницы, виджета и звонков Twilio. Виджет может передать диалог, чтобы модель вызвала notify_manager. */
 export async function completeWithCalendar(input: {
   model: string;
   temperature: number;
   messages: OpenAI.Chat.ChatCompletionMessageParam[];
   agentId: string;
   delivery?: AgentTurnDelivery;
+  chat?: NotifyChat | null;
 }) {
-  return completeTurn({ ...input, chat: null });
+  return completeTurn({ ...input, chat: input.chat ?? null });
 }
 
 type TurnSide = {
@@ -309,6 +310,8 @@ type TurnSide = {
   target: WebhookAgent | null;
   inbound: string;
   handoffReason: string | null;
+  /** Цели, которые виджет отправит в Метрику и GA4 после ответа. */
+  analyticsEvents: string[];
 };
 
 async function completeTurn(input: {
@@ -332,6 +335,7 @@ async function completeTurn(input: {
     target,
     inbound,
     handoffReason: null,
+    analyticsEvents: [],
   };
   if (inbound) {
     emitWebhook(turn, { event: "message.received", message: { role: "user", text: inbound }, metadata: {} });
@@ -519,6 +523,7 @@ async function runTool(
     const result = await runNotifyManager(args, input.chat);
     const reason = readEventReason(args);
     if (input.turn.handoffReason === null) input.turn.handoffReason = reason;
+    if (result.ok) noteWidgetEvent(input.turn, "strike_handoff");
     emitWebhook(
       input.turn,
       {
@@ -558,7 +563,7 @@ function publishReply(turn: TurnSide, text: string, pausedByTool: boolean) {
   scheduleAmoSync(turn, reply);
   schedulePipedriveSync(turn, reply);
   scheduleBitrixSync(turn, reply);
-  return { text: reply, pausedByTool };
+  return { text: reply, pausedByTool, triggeredEvents: turn.analyticsEvents };
 }
 
 function scheduleAmoSync(turn: TurnSide, reply: string) {
@@ -645,6 +650,7 @@ function emitBooked(turn: TurnSide, args: string, output: string) {
     return;
   }
   if (!parsed.ok) return;
+  noteWidgetEvent(turn, "strike_appointment_booked");
   emitWebhook(turn, {
     event: "appointment.booked",
     message: { role: "system", text: "Запись создана" },
@@ -660,6 +666,7 @@ function emitYclientsBooked(turn: TurnSide, output: string) {
     return;
   }
   if (!parsed.ok) return;
+  noteWidgetEvent(turn, "strike_appointment_booked");
   emitWebhook(turn, {
     event: "appointment.booked",
     message: { role: "system", text: "Запись создана" },
@@ -975,10 +982,15 @@ function contactLink(chat: NotifyChat) {
   return { label: handle || "неизвестен", url: null as string | null };
 }
 
+function noteWidgetEvent(turn: TurnSide, name: string) {
+  if (!turn.analyticsEvents.includes(name)) turn.analyticsEvents.push(name);
+}
+
 function channelLabel(channel: NotifyChat["channel"]) {
   if (channel === "whatsapp") return "WhatsApp";
   if (channel === "telegram") return "Telegram";
   if (channel === "instagram") return "Instagram";
+  if (channel === "web") return "Веб-виджет";
   return "Канал";
 }
 

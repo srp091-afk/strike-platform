@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { WidgetMarkdown } from "@/components/widget-markdown";
 import type { WidgetPosition } from "@/lib/agent-models";
 import type { WidgetConfig } from "@/lib/widget";
+import { isWidgetAnalyticsEvent, messageHasPhone, trackWidgetEvent as emitWidgetEvent } from "@/lib/widget-analytics";
 
 type WidgetMessage = {
   id: string;
@@ -52,12 +53,33 @@ export function WidgetChat({ config }: { config: WidgetConfig }) {
   const closeTimerRef = useRef<number | null>(null);
   const touchedRef = useRef(false);
 
+  /**
+   * Цель виджета: из iframe уходит родителю, на прямой странице бьёт в счётчики сама.
+   * Голосовая кнопка, когда появится: trackWidgetEvent("strike_voice_clicked").
+   */
+  const trackWidgetEvent = useCallback(
+    (eventName: string, params: Record<string, unknown> = {}) => {
+      emitWidgetEvent(
+        {
+          agentId: config.agentId,
+          ymCounterId: config.ym_counter_id,
+          ga4MeasurementId: config.ga4_measurement_id,
+          ga4Enabled: config.ga4_enabled,
+        },
+        eventName,
+        params,
+      );
+    },
+    [config.agentId, config.ga4_enabled, config.ga4_measurement_id, config.ym_counter_id],
+  );
+
   const open = useCallback(() => {
     if (closeTimerRef.current !== null) window.clearTimeout(closeTimerRef.current);
     closeTimerRef.current = null;
     notifyHost("open", position);
     setIsOpen(true);
-  }, [position]);
+    trackWidgetEvent("strike_widget_open");
+  }, [position, trackWidgetEvent]);
 
   const close = useCallback(() => {
     touchedRef.current = true;
@@ -110,6 +132,8 @@ export function WidgetChat({ config }: { config: WidgetConfig }) {
     setMessages((current) => [...current, userMessage]);
     setDraft("");
     setPending(true);
+    trackWidgetEvent("strike_chat_started");
+    if (messageHasPhone(text)) trackWidgetEvent("strike_phone_submitted");
 
     try {
       const response = await fetch("/api/widget-chat", {
@@ -122,8 +146,14 @@ export function WidgetChat({ config }: { config: WidgetConfig }) {
         replies?: string[];
         error?: string;
         visitor_id?: string;
+        triggered_events?: string[];
       } | null;
       if (payload?.visitor_id) rememberVisitorId(config.agentId, payload.visitor_id);
+      if (response.ok && Array.isArray(payload?.triggered_events)) {
+        for (const name of payload.triggered_events) {
+          if (typeof name === "string" && isWidgetAnalyticsEvent(name)) trackWidgetEvent(name);
+        }
+      }
 
       const parts =
         Array.isArray(payload?.replies) && payload.replies.length > 0

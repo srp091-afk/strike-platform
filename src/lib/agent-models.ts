@@ -221,6 +221,12 @@ export type AgentRecord = {
   prodamus_shop_url: string | null;
   payment_success_message: string | null;
   payment_return_url: string | null;
+  /** Номер счётчика Яндекс.Метрики. Публичный идентификатор. */
+  ym_counter_id: string | null;
+  /** Measurement ID GA4. Публичный идентификатор. */
+  ga4_measurement_id: string | null;
+  /** Отправлять события виджета в уже установленный gtag / dataLayer. */
+  ga4_enabled: boolean;
   widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;

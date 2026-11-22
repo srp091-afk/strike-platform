@@ -7,6 +7,7 @@ import { interpolatePrompt } from "@/lib/utils/prompt-parser";
 import { replyChunks, sleep, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { appendWidgetReply, openWidgetThread, readVisitorId, type WidgetThread } from "@/lib/widget-inbox";
+import type { NotifyChat } from "@/lib/notify-manager";
 
 export const maxDuration = 60;
 
@@ -98,6 +99,7 @@ export async function POST(request: NextRequest) {
       temperature: model.includes("gpt-6") ? 1 : clampTemperature(agent.temperature),
       agentId,
       delivery: { channel: "web", chatId: thread?.conversationId || visitorId },
+      chat: thread ? widgetNotifyChat(supabase, thread.conversationId, agentId, visitorId) : null,
       messages: [
         {
           role: "system",
@@ -135,13 +137,34 @@ export async function POST(request: NextRequest) {
       }
     }
     // `reply` — целиком (для старых встроек), `replies` — части: паузу «на печать» между ними держит виджет.
-    return Response.json({ reply: replies.join("\n\n"), replies, visitor_id: visitorId });
+    return Response.json({
+      reply: replies.join("\n\n"),
+      replies,
+      visitor_id: visitorId,
+      ...(completion.triggeredEvents.length ? { triggered_events: completion.triggeredEvents } : {}),
+    });
   } catch (failure) {
     return Response.json(
       { error: failure instanceof Error ? failure.message : "Не удалось получить ответ." },
       { status: 502 },
     );
   }
+}
+
+function widgetNotifyChat(
+  supabase: ReturnType<typeof createSupabaseAdminClient>,
+  conversationId: string,
+  agentId: string,
+  visitorId: string,
+): NotifyChat {
+  return {
+    supabase,
+    conversationId,
+    agentId,
+    channel: "web",
+    clientHandle: visitorId,
+    clientName: null,
+  };
 }
 
 function sanitizeHistory(value: unknown): HistoryMessage[] {

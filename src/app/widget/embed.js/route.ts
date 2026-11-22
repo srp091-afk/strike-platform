@@ -7,6 +7,8 @@
  * подложки над сайтом), открытый — 432×652, на узких экранах — весь экран.
  * Угол берётся из события виджета, поэтому смена widget_position в кабинете
  * применяется без переустановки кода.
+ * События аналитики (source strike-widget, type analytics_event) уходят
+ * в Яндекс.Метрику и GA4 / dataLayer уже стоящих на сайте счётчиков.
  */
 const EMBED_SCRIPT = `(function () {
   var script = document.currentScript;
@@ -57,10 +59,48 @@ const EMBED_SCRIPT = `(function () {
     } else style.right = gap;
   }
 
+  function forwardAnalytics(data) {
+    try {
+      var eventName = typeof data.event === "string" ? data.event : "";
+      if (!eventName) return;
+      var params = data.params && typeof data.params === "object" ? data.params : {};
+      var ymCounterId = data.ymCounterId;
+      var ga4MeasurementId = data.ga4MeasurementId;
+      var ga4Enabled = data.ga4Enabled === true;
+      if (ymCounterId && typeof window.ym === "function") {
+        window.ym(Number(ymCounterId), "reachGoal", eventName, params);
+      }
+      if (ga4Enabled || ga4MeasurementId) {
+        if (typeof window.gtag === "function") {
+          var gaParams = params;
+          if (ga4MeasurementId) {
+            gaParams = {};
+            for (var key in params) {
+              if (Object.prototype.hasOwnProperty.call(params, key)) gaParams[key] = params[key];
+            }
+            gaParams.send_to = ga4MeasurementId;
+          }
+          window.gtag("event", eventName, gaParams);
+        }
+        if (Array.isArray(window.dataLayer)) {
+          var layer = { event: eventName };
+          for (var layerKey in params) {
+            if (Object.prototype.hasOwnProperty.call(params, layerKey)) layer[layerKey] = params[layerKey];
+          }
+          window.dataLayer.push(layer);
+        }
+      }
+    } catch (analyticsError) {}
+  }
+
   window.addEventListener("message", function (event) {
     if (event.source !== frame.contentWindow || event.origin !== origin) return;
     var data = event.data;
     if (!data || data.source !== "strike-widget") return;
+    if (data.type === "analytics_event") {
+      forwardAnalytics(data);
+      return;
+    }
     if (positions.indexOf(data.position) !== -1) position = data.position;
     if (data.type === "open") open = true;
     if (data.type === "close") open = false;

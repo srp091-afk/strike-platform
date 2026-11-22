@@ -2,6 +2,7 @@ import "server-only";
 
 import { readActiveChannels, readWidgetSettings, type WidgetSettings } from "@/lib/agent-models";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
+import { readPublicAnalytics } from "@/lib/widget-analytics";
 
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -10,6 +11,12 @@ export type WidgetConfig = WidgetSettings & {
   agentId: string;
   /** Имя агента из карточки (запасной вариант подписи, если widget_agent_name пуст). */
   agentName: string;
+  /** Номер счётчика Метрики. Публичный, в конфиг виджета отдаётся. */
+  ym_counter_id: string | null;
+  /** Measurement ID GA4. Публичный, в конфиг виджета отдаётся. */
+  ga4_measurement_id: string | null;
+  /** Слать события в уже установленный на сайте gtag / dataLayer. */
+  ga4_enabled: boolean;
 };
 
 /**
@@ -55,9 +62,16 @@ export async function getWidgetConfig(agentId: string): Promise<WidgetConfig | n
   const channels = await supabase.from("agents").select("active_channels").eq("id", agentId).maybeSingle();
   if (!channels.error && !readActiveChannels(channels.data?.active_channels).widget) return null;
 
+  const analytics = await supabase
+    .from("agents")
+    .select("ym_counter_id, ga4_measurement_id, ga4_enabled")
+    .eq("id", agentId)
+    .maybeSingle();
+
   return {
     agentId: String(row.id),
     agentName: typeof row.name === "string" && row.name.trim() ? row.name.trim() : "STRIKE",
     ...readWidgetSettings(row as Record<string, unknown>),
+    ...readPublicAnalytics(analytics.error ? null : (analytics.data as Record<string, unknown> | null)),
   };
 }

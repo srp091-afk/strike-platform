@@ -16,6 +16,7 @@ import { readAmoDomain } from "@/lib/amocrm";
 import { readBitrixWebhook } from "@/lib/bitrix24";
 import { readDikidiBookingUrl, readYclientsCompanyId, readYclientsPlatform, readYclientsToken } from "@/lib/yclients";
 import { readPaymentReturnUrl, readPaymentSecret, readProdamusShopUrl, readStripeCurrency } from "@/lib/payments";
+import { readGa4MeasurementId, readYmCounterId } from "@/lib/widget-analytics";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { assertCanCreateAgent } from "@/lib/access";
 import { ensureGreenIncomingWebhook, getGreenPhone } from "@/lib/green-api";
@@ -191,6 +192,17 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "URL возврата после оплаты должен начинаться с https://." };
   }
 
+  const analyticsProvided = formData.has("ym_counter_id") || formData.has("ga4_measurement_id") || formData.has("ga4_enabled");
+  const ymCounterId = readYmCounterId(String(formData.get("ym_counter_id") ?? ""));
+  const ga4MeasurementId = readGa4MeasurementId(String(formData.get("ga4_measurement_id") ?? ""));
+  const ga4Enabled = formData.get("ga4_enabled") === "true";
+  if (formData.has("ym_counter_id") && ymCounterId === null) {
+    return { ok: false as const, error: "ID счётчика Яндекс.Метрики должен состоять только из цифр." };
+  }
+  if (formData.has("ga4_measurement_id") && ga4MeasurementId === null) {
+    return { ok: false as const, error: "Measurement ID должен быть вида G-XXXXXXXXXX." };
+  }
+
   return {
     ok: true as const,
     followupEnabled,
@@ -252,6 +264,10 @@ function readAgentFields(formData: FormData) {
     paymentSuccessMessage,
     paymentReturnProvided,
     paymentReturnUrl: paymentReturnUrl || "",
+    analyticsProvided,
+    ymCounterId: ymCounterId || "",
+    ga4MeasurementId: ga4MeasurementId || "",
+    ga4Enabled,
   };
 }
 
@@ -417,6 +433,13 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         : {}),
       ...(fields.paymentMessageProvided ? { payment_success_message: fields.paymentSuccessMessage || null } : {}),
       ...(fields.paymentReturnProvided ? { payment_return_url: fields.paymentReturnUrl || null } : {}),
+      ...(fields.analyticsProvided
+        ? {
+            ym_counter_id: fields.ymCounterId || null,
+            ga4_measurement_id: fields.ga4MeasurementId || null,
+            ga4_enabled: fields.ga4Enabled,
+          }
+        : {}),
       active_channels: fields.activeChannels,
       user_id: userId,
       ...(fields.waInstanceId && fields.waApiToken
@@ -447,6 +470,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     const yookassaRequested = Boolean(fields.yookassaShopId || fields.yookassaSecret);
     const prodamusRequested = Boolean(fields.prodamusShopUrl || fields.prodamusSecret);
     const paymentCopyRequested = Boolean(fields.paymentSuccessMessage || fields.paymentReturnUrl);
+    const analyticsRequested = Boolean(fields.ymCounterId || fields.ga4MeasurementId || fields.ga4Enabled);
     let agentId = fields.id;
     if (fields.id) {
       const updated = await supabase
@@ -456,7 +480,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         .eq("user_id", userId)
         .select("id")
         .maybeSingle();
-      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested }) : null;
+      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested }) : null;
       const retried = updateFallback
         ? await supabase.from("agents").update(updateFallback).eq("id", fields.id).eq("user_id", userId).select("id").maybeSingle()
         : updated;
@@ -471,7 +495,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     } else {
       await assertCanCreateAgent(userId);
       const inserted = await supabase.from("agents").insert(payload).select("id").single();
-      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested }) : null;
+      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested }) : null;
       const retried = insertFallback ? await supabase.from("agents").insert(insertFallback).select("id").single() : inserted;
       if (retried.error || !retried.data) {
         return failedSave(columnError(retried.error?.message ?? "Не удалось сохранить агента."));
@@ -520,6 +544,7 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     yookassaRequested: boolean;
     prodamusRequested: boolean;
     paymentCopyRequested: boolean;
+    analyticsRequested: boolean;
   },
 ) {
   const known =
@@ -530,7 +555,8 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     missingBitrixColumn(message) ||
     missingYclientsColumn(message) ||
     missingDikidiColumn(message) ||
-    missingPaymentColumn(message);
+    missingPaymentColumn(message) ||
+    missingAnalyticsColumn(message);
   if (!known) return null;
   const next: Record<string, unknown> = { ...payload };
   let changed = false;
@@ -596,6 +622,12 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     delete next.payment_return_url;
     changed = true;
   }
+  if (!requested.analyticsRequested) {
+    delete next.ym_counter_id;
+    delete next.ga4_measurement_id;
+    delete next.ga4_enabled;
+    changed = true;
+  }
   return changed ? (next as T) : null;
 }
 
@@ -605,6 +637,10 @@ function missingEmailColumn(message: string) {
 
 function missingWebhookColumn(message: string) {
   return /(?<!bitrix_)webhook_url/.test(message) || /(?<!stripe_)webhook_secret/.test(message);
+}
+
+function missingAnalyticsColumn(message: string) {
+  return message.includes("ym_counter_id") || message.includes("ga4_measurement_id") || message.includes("ga4_enabled");
 }
 
 function missingPaymentColumn(message: string) {
@@ -632,6 +668,7 @@ function missingDikidiColumn(message: string) {
 }
 
 function columnError(message: string) {
+  if (missingAnalyticsColumn(message)) return "Чтобы передавать цели виджета в Метрику и GA4, выполните миграцию 20261122_agent_analytics.sql.";
   if (missingPaymentColumn(message)) return "Чтобы принимать оплаты, выполните миграцию 20261121_agent_payments.sql.";
   if (missingYclientsColumn(message) || missingDikidiColumn(message)) return "Чтобы подключить YCLIENTS или DIKIDI, выполните миграцию 20261121_agent_yclients_dikidi.sql.";
   if (missingBitrixColumn(message)) return "Чтобы подключить Битрикс24, выполните миграцию 20261121_agent_bitrix24.sql.";

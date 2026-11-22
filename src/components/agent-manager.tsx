@@ -36,11 +36,13 @@ import { SelectField } from "@/components/ui/select-field";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/components/ui/toaster";
+import { WIDGET_ANALYTICS_GOALS } from "@/lib/widget-analytics";
 import { AgentKnowledge } from "@/components/agent-knowledge";
 import {
   AmoCrmIcon,
   BitrixIcon,
   DikidiIcon,
+  GoogleAnalyticsIcon,
   GoogleCalendarIcon,
   IntegrationAccordionCard,
   PaymentNoticeIcon,
@@ -48,6 +50,7 @@ import {
   ProdamusIcon,
   StripeIcon,
   WebhookIcon,
+  YandexMetrikaIcon,
   YclientsIcon,
   YookassaIcon,
 } from "@/components/integration-accordion-card";
@@ -895,14 +898,135 @@ function DikidiCard({
 
 const STRIPE_CURRENCIES = ["usd", "eur", "gbp", "gel"] as const;
 
-function PaymentSetupHint({ children }: { children: ReactNode }) {
+function PaymentSetupHint({ title = "Как подключить за 2 минуты", children }: { title?: string; children: ReactNode }) {
   return (
     <div className="rounded-xl bg-slate-50 px-3.5 py-3">
-      <p className="text-xs font-semibold text-zinc-200">Как подключить за 2 минуты</p>
+      <p className="text-xs font-semibold text-zinc-200">{title}</p>
       <ol className="mt-2 list-decimal space-y-1.5 pl-4 text-xs leading-5 text-zinc-400 marker:text-zinc-500 [&_code]:font-mono [&_code]:text-[11px] [&_strong]:font-semibold [&_strong]:text-zinc-200">
         {children}
       </ol>
     </div>
+  );
+}
+
+function AnalyticsGoalList() {
+  async function copy(name: string) {
+    try {
+      await navigator.clipboard.writeText(name);
+      toast.success("Цель скопирована");
+    } catch {
+      toast.error("Не удалось скопировать цель.");
+    }
+  }
+
+  return (
+    <ul className="grid gap-2">
+      {WIDGET_ANALYTICS_GOALS.map((goal) => (
+        <li key={goal.name} className="flex items-center justify-between gap-3">
+          <span className="min-w-0">
+            <code className="block truncate font-mono text-[11px] text-zinc-200">{goal.name}</code>
+            <span className="block truncate text-xs leading-5 text-zinc-400">{goal.hint}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => void copy(goal.name)}
+            className="shrink-0 rounded-xl border border-zinc-800 bg-black px-2.5 py-1.5 text-[11px] text-white transition-colors hover:border-zinc-700"
+          >
+            Скопировать
+          </button>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+function YandexMetrikaCard({
+  counterId,
+  onChange,
+}: {
+  counterId: string;
+  onChange: (patch: { ym_counter_id: string }) => void;
+}) {
+  return (
+    <IntegrationAccordionCard
+      title="Яндекс.Метрика"
+      description="Автоматическая передача целей из веб-виджета в Метрику для обучения Яндекс.Директа."
+      connected={/^\d{1,20}$/.test(counterId.trim())}
+      icon={<YandexMetrikaIcon />}
+    >
+      <label className="grid gap-2 text-sm text-zinc-300">
+        ID счётчика Яндекс.Метрики
+        <input
+          name="ym_counter_id"
+          value={counterId}
+          onChange={(event) => onChange({ ym_counter_id: event.target.value })}
+          placeholder="98765432"
+          inputMode="numeric"
+          autoComplete="off"
+          spellCheck={false}
+          className={fieldClass}
+        />
+      </label>
+      <AnalyticsGoalList />
+      <PaymentSetupHint title="Как настроить цель за 2 минуты">
+        <li>Скопируйте номер счётчика в шапке Яндекс.Метрики и вставьте в поле выше.</li>
+        <li>
+          В Метрике откройте <strong>Цели → Добавить цель → JavaScript-событие</strong>.
+        </li>
+        <li>
+          В поле «Идентификатор цели» вставьте нужное событие из списка (например, <code>strike_phone_submitted</code>) и сохраните.
+        </li>
+      </PaymentSetupHint>
+    </IntegrationAccordionCard>
+  );
+}
+
+function Ga4Card({
+  enabled,
+  measurementId,
+  onChange,
+}: {
+  enabled: boolean;
+  measurementId: string;
+  onChange: (patch: { ga4_enabled?: boolean; ga4_measurement_id?: string }) => void;
+}) {
+  const connected = enabled || /^G-[A-Z0-9]{6,12}$/i.test(measurementId.trim());
+  return (
+    <IntegrationAccordionCard
+      title="Google Analytics 4 (GA4)"
+      description="Отправка событий виджета в GA4 и Google Tag Manager для оптимизации Google Ads."
+      connected={connected}
+      icon={<GoogleAnalyticsIcon />}
+    >
+      <input type="hidden" name="ga4_enabled" value={enabled ? "true" : "false"} />
+      <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+        <span className="text-sm font-medium text-zinc-200">Отправлять события в GA4 / GTM</span>
+        <Switch checked={enabled} onCheckedChange={(ga4_enabled) => onChange({ ga4_enabled })} aria-label="Отправлять события в GA4 / GTM" />
+      </label>
+      <label className="grid gap-2 text-sm text-zinc-300">
+        Measurement ID (опционально)
+        <input
+          name="ga4_measurement_id"
+          value={measurementId}
+          onChange={(event) => onChange({ ga4_measurement_id: event.target.value })}
+          placeholder="G-XXXXXXXXXX"
+          autoComplete="off"
+          spellCheck={false}
+          className={fieldClass}
+        />
+        <span className="text-xs leading-5 text-zinc-400">Если на сайте один счётчик, можно оставить пустым.</span>
+      </label>
+      <AnalyticsGoalList />
+      <PaymentSetupHint title="Как настроить за 2 минуты">
+        <li>
+          Убедитесь, что на сайте установлен стандартный код GA4 (<code>gtag.js</code>) или Google Tag Manager.
+        </li>
+        <li>Включите отправку выше и сохраните агента.</li>
+        <li>
+          В GA4 откройте <strong>Администратор → События</strong> и отметьте нужные события (например, <code>strike_phone_submitted</code>) как <strong>Ключевые события (Key Events)</strong> для передачи в Google Ads.
+        </li>
+      </PaymentSetupHint>
+    </IntegrationAccordionCard>
   );
 }
 
@@ -2180,6 +2304,9 @@ function AgentDialog({
     if (current.prodamus_secret_key) data.set("prodamus_secret_key", current.prodamus_secret_key);
     data.set("payment_success_message", current.payment_success_message);
     data.set("payment_return_url", current.payment_return_url);
+    data.set("ym_counter_id", current.ym_counter_id);
+    data.set("ga4_measurement_id", current.ga4_measurement_id);
+    data.set("ga4_enabled", current.ga4_enabled ? "true" : "false");
     return data;
   }
 
@@ -2520,6 +2647,11 @@ function AgentDialog({
                       </IntegrationAccordionCard>
                     </section>
                     <section className="grid gap-3">
+                      <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Аналитика и реклама</h3>
+                      <YandexMetrikaCard counterId={draft.ym_counter_id} onChange={patchDraft} />
+                      <Ga4Card enabled={draft.ga4_enabled} measurementId={draft.ga4_measurement_id} onChange={patchDraft} />
+                    </section>
+                    <section className="grid gap-3">
                       <h3 className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Автоматизация и API</h3>
                       <OutboundWebhookCard
                         agentId={persistedId}
@@ -2589,6 +2721,9 @@ type AgentDraft = {
   prodamus_secret_key: string;
   payment_success_message: string;
   payment_return_url: string;
+  ym_counter_id: string;
+  ga4_measurement_id: string;
+  ga4_enabled: boolean;
 };
 
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
@@ -2641,6 +2776,9 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     prodamus_secret_key: "",
     payment_success_message: agent?.payment_success_message ?? "",
     payment_return_url: agent?.payment_return_url ?? "",
+    ym_counter_id: agent?.ym_counter_id ?? "",
+    ga4_measurement_id: agent?.ga4_measurement_id ?? "",
+    ga4_enabled: agent?.ga4_enabled ?? false,
   };
 }
 
@@ -2696,7 +2834,10 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.prodamus_shop_url.trim() === right.prodamus_shop_url.trim() &&
     left.prodamus_secret_key === right.prodamus_secret_key &&
     left.payment_success_message.trim() === right.payment_success_message.trim() &&
-    left.payment_return_url.trim() === right.payment_return_url.trim()
+    left.payment_return_url.trim() === right.payment_return_url.trim() &&
+    left.ym_counter_id.trim() === right.ym_counter_id.trim() &&
+    left.ga4_measurement_id.trim().toUpperCase() === right.ga4_measurement_id.trim().toUpperCase() &&
+    left.ga4_enabled === right.ga4_enabled
   );
 }
 
