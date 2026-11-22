@@ -244,6 +244,11 @@ export type AgentRecord = {
   email_imap_port: number;
   email_smtp_host: string | null;
   email_smtp_port: number;
+  /** Facebook Messenger включён. Токен страницы в клиент не попадает. */
+  fb_messenger_enabled: boolean;
+  fbMessengerConnected: boolean;
+  fb_page_id: string | null;
+  fb_page_name: string | null;
   widget_position: WidgetPosition;
   widget_agent_name: string;
   widget_operator_name: string;

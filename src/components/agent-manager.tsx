@@ -148,7 +148,7 @@ function sameChannelState(a: AgentRecord, b: AgentRecord) {
   );
 }
 
-const CARD_CHANNELS: Array<{ provider: Exclude<IntegrationProvider, "sms" | "viber" | "email">; label: string; activeClass: string }> = [
+const CARD_CHANNELS: Array<{ provider: Exclude<IntegrationProvider, "sms" | "viber" | "email" | "messenger">; label: string; activeClass: string }> = [
   { provider: "whatsapp", label: "WhatsApp", activeClass: "text-[#25D366]" },
   { provider: "telegram", label: "Telegram", activeClass: "text-[#229ED9]" },
   { provider: "instagram", label: "Instagram", activeClass: "text-[#E1306C]" },
@@ -2180,6 +2180,12 @@ function withCurrent(items: { id: string; name: string }[], id: string, label: s
   return [...items, { id, name: label }];
 }
 
+function messengerReturnPending() {
+  if (typeof window === "undefined") return false;
+  const params = new URLSearchParams(window.location.search);
+  return params.has("messenger_select") || params.has("messenger_connected") || params.has("messenger_error");
+}
+
 function AgentDialog({
   editing,
   agents,
@@ -2202,6 +2208,7 @@ function AgentDialog({
   onClose: () => void;
 }) {
   const router = useRouter();
+  const [openChannelsTab] = useState(messengerReturnPending);
   const [initialDraft] = useState(() => draftFromAgent(editing));
   const [draft, setDraft] = useState(initialDraft);
   const [baseline, setBaseline] = useState(initialDraft);
@@ -2322,6 +2329,7 @@ function AgentDialog({
     data.set("email_smtp_host", current.email_smtp_host);
     data.set("email_smtp_port", current.email_smtp_port);
     if (current.email_password) data.set("email_password", current.email_password);
+    data.set("fb_messenger_enabled", current.fb_messenger_enabled ? "true" : "false");
     return data;
   }
 
@@ -2427,7 +2435,7 @@ function AgentDialog({
             <div className="mx-auto max-w-4xl p-4 sm:p-6">
               {persistedId ? <input type="hidden" name="id" value={persistedId} /> : null}
               {/* Неактивные вкладки остаются в DOM (forceMount + hidden): иначе их поля не попали бы в FormData при сохранении. */}
-              <Tabs defaultValue="main" className="gap-0">
+              <Tabs defaultValue={openChannelsTab ? "channels" : "main"} className="gap-0">
                 <TabsList className="mb-6 h-auto w-full flex-nowrap justify-start gap-1 overflow-x-auto rounded-2xl border border-zinc-800 bg-zinc-900 p-1.5 shadow-sm [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                   {AGENT_TABS.map((tab) => (
                     <TabsTrigger
@@ -2551,6 +2559,15 @@ function AgentDialog({
                     emailSavedConnected={channelAgent?.emailConnected ?? false}
                     onViberChange={patchDraft}
                     onEmailChange={patchDraft}
+                    messengerEnabled={draft.fb_messenger_enabled}
+                    messengerConnected={channelAgent?.fbMessengerConnected ?? false}
+                    messengerPageName={channelAgent?.fb_page_name ?? ""}
+                    messengerPageId={channelAgent?.fb_page_id ?? ""}
+                    onMessengerChange={patchDraft}
+                    onMessengerCleared={() => {
+                      setDraft((current) => ({ ...current, fb_messenger_enabled: false }));
+                      setBaseline((current) => ({ ...current, fb_messenger_enabled: false }));
+                    }}
                   />
                 </TabsContent>
 
@@ -2785,6 +2802,7 @@ type AgentDraft = {
   email_imap_port: string;
   email_smtp_host: string;
   email_smtp_port: string;
+  fb_messenger_enabled: boolean;
 };
 
 function draftFromAgent(agent: AgentRecord | null): AgentDraft {
@@ -2854,6 +2872,7 @@ function draftFromAgent(agent: AgentRecord | null): AgentDraft {
     email_imap_port: String(agent?.email_imap_port ?? 993),
     email_smtp_host: agent?.email_smtp_host ?? "",
     email_smtp_port: String(agent?.email_smtp_port ?? 465),
+    fb_messenger_enabled: agent?.fb_messenger_enabled ?? false,
   };
 }
 
@@ -2926,7 +2945,8 @@ function sameDraft(left: AgentDraft, right: AgentDraft) {
     left.email_imap_host.trim().toLowerCase() === right.email_imap_host.trim().toLowerCase() &&
     left.email_smtp_host.trim().toLowerCase() === right.email_smtp_host.trim().toLowerCase() &&
     sameNumber(left.email_imap_port, right.email_imap_port) &&
-    sameNumber(left.email_smtp_port, right.email_smtp_port)
+    sameNumber(left.email_smtp_port, right.email_smtp_port) &&
+    left.fb_messenger_enabled === right.fb_messenger_enabled
   );
 }
 
@@ -3177,6 +3197,12 @@ function ChannelSettings({
   emailSavedConnected,
   onViberChange,
   onEmailChange,
+  messengerEnabled,
+  messengerConnected,
+  messengerPageName,
+  messengerPageId,
+  onMessengerChange,
+  onMessengerCleared,
 }: {
   agent: AgentRecord | null;
   agentId: string;
@@ -3231,6 +3257,12 @@ function ChannelSettings({
     email_smtp_host?: string;
     email_smtp_port?: string;
   }) => void;
+  messengerEnabled: boolean;
+  messengerConnected: boolean;
+  messengerPageName: string;
+  messengerPageId: string;
+  onMessengerChange: (patch: { fb_messenger_enabled?: boolean }) => void;
+  onMessengerCleared: () => void;
 }) {
   const [whatsappOpen, setWhatsappOpen] = useState(initialOpenChannel === "whatsapp");
   const [telegramOpen, setTelegramOpen] = useState(initialOpenChannel === "telegram");
@@ -3452,6 +3484,28 @@ function ChannelSettings({
           smtpPort={emailSmtpPort}
           savedConnected={emailSavedConnected}
           onChange={onEmailChange}
+          onEnsureSaved={onEnsureSaved}
+        />
+      </ChannelAccordionCard>
+      <ChannelAccordionCard
+        title="Facebook Messenger"
+        description="Автоответы на сообщения вашей бизнес-страницы Facebook через официальный API Meta"
+        connected={messengerConnected}
+        icon={<ChannelIcon provider="messenger" className="size-4" />}
+        enabled={messengerConnected && messengerEnabled}
+        switchDisabled={!messengerConnected}
+        switchTitle={messengerConnected ? undefined : "Сначала подключите страницу Facebook"}
+        defaultOpen={messengerReturnPending()}
+        onEnabledChange={(checked) => onMessengerChange({ fb_messenger_enabled: checked })}
+      >
+        <MessengerChannelFields
+          agentId={agentId}
+          enabled={messengerEnabled}
+          connected={messengerConnected}
+          pageName={messengerPageName}
+          pageId={messengerPageId}
+          onChange={onMessengerChange}
+          onCleared={onMessengerCleared}
           onEnsureSaved={onEnsureSaved}
         />
       </ChannelAccordionCard>
@@ -3811,6 +3865,197 @@ function EmailChannelFields({
       </PaymentSetupHint>
     </div>
   );
+}
+
+function MessengerChannelFields({
+  agentId,
+  enabled,
+  connected,
+  pageName,
+  pageId,
+  onChange,
+  onCleared,
+  onEnsureSaved,
+}: {
+  agentId: string;
+  enabled: boolean;
+  connected: boolean;
+  pageName: string;
+  pageId: string;
+  onChange: (patch: { fb_messenger_enabled?: boolean }) => void;
+  onCleared: () => void;
+  onEnsureSaved: () => Promise<string | null>;
+}) {
+  const router = useRouter();
+  const [pages, setPages] = useState<Array<{ id: string; name: string }>>([]);
+  const [pending, setPending] = useState<"page" | "off" | null>(null);
+  const [error, setError] = useState("");
+  const [query, setQuery] = useState({ select: false, error: "", connectedFlag: "" });
+  const notice = messengerNotice(query.error, query.connectedFlag, connected);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setQuery({
+      select: params.get("messenger_select") === "1",
+      error: params.get("messenger_error") ?? "",
+      connectedFlag: params.get("messenger_connected") ?? "",
+    });
+  }, []);
+  const webhookUrl = "https://www.strikeplatform.io/api/webhooks/messenger";
+
+  useEffect(() => {
+    if (!query.select || !agentId) return;
+    const headers = new Headers();
+    const accountHeader = activeAccountHeader();
+    if (accountHeader) headers.set("x-account-id", accountHeader);
+    void fetch(`/api/agents/${agentId}/messenger/pages`, { credentials: "same-origin", headers })
+      .then((response) => response.json())
+      .then((data: { pages?: Array<{ id: string; name: string }> }) => setPages(Array.isArray(data.pages) ? data.pages : []))
+      .catch(() => setPages([]));
+  }, [agentId, query.select]);
+
+  async function connect() {
+    const id = agentId || (await onEnsureSaved());
+    if (!id) return;
+    window.location.assign(`/api/integrations/messenger/connect?agentId=${encodeURIComponent(id)}`);
+  }
+
+  async function choose(page: string) {
+    if (!agentId) return;
+    setPending("page");
+    setError("");
+    try {
+      const headers = new Headers({ "Content-Type": "application/json" });
+      const accountHeader = activeAccountHeader();
+      if (accountHeader) headers.set("x-account-id", accountHeader);
+      const response = await fetch(`/api/agents/${agentId}/messenger/select-page`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+        body: JSON.stringify({ pageId: page }),
+      });
+      const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!response.ok || !data?.ok) {
+        setError(data?.error || "Не удалось подключить страницу.");
+        return;
+      }
+      onChange({ fb_messenger_enabled: true });
+      toast.success("Facebook-страница подключена");
+      void swrMutate("/api/agents");
+      router.refresh();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function disconnect() {
+    if (!agentId) {
+      onCleared();
+      return;
+    }
+    setPending("off");
+    setError("");
+    try {
+      const headers = new Headers();
+      const accountHeader = activeAccountHeader();
+      if (accountHeader) headers.set("x-account-id", accountHeader);
+      const response = await fetch(`/api/agents/${agentId}/messenger/disconnect`, {
+        method: "POST",
+        credentials: "same-origin",
+        headers,
+      });
+      const data = (await response.json().catch(() => null)) as { ok?: boolean; error?: string } | null;
+      if (!response.ok || !data?.ok) {
+        setError(data?.error || "Не удалось отключить Messenger.");
+        return;
+      }
+      onCleared();
+      toast.success("Messenger отключён");
+      void swrMutate("/api/agents");
+      router.refresh();
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : "Сеть недоступна");
+    } finally {
+      setPending(null);
+    }
+  }
+
+  async function copyWebhook() {
+    try {
+      await navigator.clipboard.writeText(webhookUrl);
+      toast.success("Webhook URL скопирован");
+    } catch {
+      toast.error("Не удалось скопировать адрес.");
+    }
+  }
+
+  return (
+    <div className="grid gap-4">
+      <input type="hidden" name="fb_messenger_enabled" value={connected && enabled ? "true" : "false"} />
+      {notice ? <p className={`text-xs ${notice.ok ? "text-emerald-400" : "text-red-400"}`}>{notice.text}</p> : null}
+      {connected ? (
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black px-3 py-2.5">
+          <div className="min-w-0">
+            <p className="truncate text-sm font-medium text-white">{pageName || "Facebook-страница"}</p>
+            <p className="truncate text-xs text-zinc-400">{pageId}</p>
+          </div>
+          <div className="flex gap-2">
+            <Button type="button" variant="outline" disabled={pending !== null} onClick={() => void connect()}>
+              Сменить страницу
+            </Button>
+            <Button type="button" variant="outline" disabled={pending === "off"} onClick={() => void disconnect()}>
+              {pending === "off" ? "Отключаем..." : "Отключить"}
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <Button type="button" className="bg-strike text-white hover:bg-strike/90" disabled={pending !== null} onClick={() => void connect()}>
+          Подключить через Facebook
+        </Button>
+      )}
+      {query.select && !connected ? (
+        pages.length > 0 ? (
+          <ul className="grid gap-2">
+            {pages.map((page) => (
+              <li key={page.id} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black px-3 py-2">
+                <span className="min-w-0 truncate text-sm text-white">{page.name}</span>
+                <Button type="button" variant="outline" disabled={pending === "page"} onClick={() => void choose(page.id)}>
+                  Выбрать
+                </Button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-xs text-zinc-400">Список страниц устарел. Нажмите «Подключить через Facebook» ещё раз.</p>
+        )
+      ) : null}
+      {error ? <p className="text-xs text-red-400">{error}</p> : null}
+      <label className="grid gap-1.5 text-xs font-medium text-zinc-400">
+        Webhook URL
+        <span className="flex gap-2">
+          <input readOnly value={webhookUrl} className={fieldClass} />
+          <Button type="button" variant="outline" onClick={() => void copyWebhook()}>
+            Скопировать
+          </Button>
+        </span>
+      </label>
+      <PaymentSetupHint>
+        <li>
+          Нажмите <strong>«Подключить через Facebook»</strong> и войдите в аккаунт администратора вашей бизнес-страницы.
+        </li>
+        <li>Выберите нужную Facebook-страницу и подтвердите доступ к сообщениям.</li>
+        <li>Включите тумблер канала и сохраните агента — при ответе менеджера из Meta Business Suite бот автоматически встанет на паузу.</li>
+      </PaymentSetupHint>
+    </div>
+  );
+}
+
+function messengerNotice(error: string | null, connectedFlag: string | null, connected: boolean) {
+  if (error === "no_pages") return { ok: false, text: "У этого аккаунта Facebook нет страниц, которыми можно управлять." };
+  if (error && !connected) return { ok: false, text: error };
+  if (connected && connectedFlag === "1") return { ok: true, text: "Facebook-страница подключена." };
+  return null;
 }
 
 function smsCredentialsReady(accountSid: string, authToken: string, phone: string, savedConnected: boolean) {

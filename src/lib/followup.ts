@@ -9,6 +9,7 @@ import { sendGreenMessage } from "@/lib/green-api";
 import { getOpenAI } from "@/lib/openai";
 import { sleep, stripMarkdown } from "@/lib/reply";
 import { sendTwilioSms } from "@/lib/twilio-sms";
+import { sendMessengerMessage } from "@/lib/messenger";
 import { sendViberMessage } from "@/lib/viber";
 
 /** Случайная пауза перед отправкой пуша: 3–12 с, чтобы пачка уведомлений не уходила в одну миллисекунду. */
@@ -86,6 +87,8 @@ type FollowupAgent = {
   email_password?: string | null;
   email_smtp_host?: string | null;
   email_smtp_port?: number | null;
+  fb_messenger_enabled?: boolean | null;
+  fb_page_access_token?: string | null;
 };
 
 type FollowupConversation = {
@@ -114,10 +117,15 @@ export async function runFollowups(supabase: AdminClient): Promise<FollowupSumma
   const smsColumns = "twilio_sms_enabled, twilio_account_sid, twilio_auth_token, twilio_sms_number";
   const mailColumns =
     "viber_enabled, viber_auth_token, viber_bot_name, email_enabled, email_address, email_password, email_smtp_host, email_smtp_port";
-  const withChannels = await supabase
+  const messengerColumns = "fb_messenger_enabled, fb_page_access_token";
+  const withMessenger = await supabase
     .from("agents")
-    .select(`${baseColumns}, ${smsColumns}, ${mailColumns}`)
+    .select(`${baseColumns}, ${smsColumns}, ${mailColumns}, ${messengerColumns}`)
     .eq("followup_enabled", true);
+  const withChannels =
+    withMessenger.error && /fb_messenger_|fb_page_|schema cache/i.test(withMessenger.error.message)
+      ? await supabase.from("agents").select(`${baseColumns}, ${smsColumns}, ${mailColumns}`).eq("followup_enabled", true)
+      : withMessenger;
   const channelMissing =
     withChannels.error && /viber_|email_enabled|email_address|email_password|email_smtp|schema cache/i.test(withChannels.error.message);
   const withSms = channelMissing
@@ -377,6 +385,7 @@ function canSend(agent: FollowupAgent, provider: string) {
     );
   }
   if (provider === "viber") return agent.viber_enabled === true && Boolean(agent.viber_auth_token);
+  if (provider === "messenger") return agent.fb_messenger_enabled === true && Boolean(agent.fb_page_access_token);
   if (provider === "email") {
     return agent.email_enabled === true && Boolean(agent.email_address && agent.email_password && agent.email_smtp_host);
   }
@@ -392,6 +401,15 @@ async function deliver(
 ) {
   const chatId = conversation.external_chat_id;
   try {
+    if (provider === "messenger") {
+      const sent = await sendMessengerMessage({
+        pageAccessToken: String(agent.fb_page_access_token),
+        recipientId: chatId,
+        text,
+      });
+      if (!sent.ok) throw new Error(sent.error);
+      return { ok: true as const, externalId: null };
+    }
     if (provider === "viber") {
       const sent = await sendViberMessage({
         authToken: String(agent.viber_auth_token),

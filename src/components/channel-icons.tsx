@@ -1,5 +1,5 @@
 import { Globe, Mail, MessageSquareText } from "lucide-react";
-import type { SVGProps } from "react";
+import { useId, type SVGProps } from "react";
 
 import type { IntegrationProvider } from "@/lib/integration-catalog";
 
@@ -11,6 +11,7 @@ const CHANNEL_ICONS: Record<IntegrationProvider, (props: SVGProps<SVGSVGElement>
   sms: SmsIcon,
   viber: ViberIcon,
   email: EmailIcon,
+  messenger: MessengerIcon,
 };
 
 export function ChannelIcon({
@@ -31,6 +32,25 @@ function SmsIcon(props: SVGProps<SVGSVGElement>) {
 
 function EmailIcon(props: SVGProps<SVGSVGElement>) {
   return <Mail strokeWidth={1.75} aria-hidden {...props} />;
+}
+
+function MessengerIcon(props: SVGProps<SVGSVGElement>) {
+  const id = `ms-${useId().replace(/:/g, "")}`;
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" {...props}>
+      <defs>
+        <linearGradient id={id} x1="4" y1="22" x2="20" y2="2" gradientUnits="userSpaceOnUse">
+          <stop offset="0" stopColor="#00B2FF" />
+          <stop offset="0.55" stopColor="#006AFF" />
+          <stop offset="1" stopColor="#A033FF" />
+        </linearGradient>
+      </defs>
+      <path
+        fill={`url(#${id})`}
+        d="M12 2C6.5 2 2 6.14 2 11.25c0 2.9 1.44 5.48 3.7 7.16V22l3.36-1.84c.93.26 1.92.4 2.94.4 5.5 0 10-4.14 10-9.25S17.5 2 12 2Zm1.05 12.45-2.54-2.71-4.96 2.71 5.46-5.79 2.6 2.71 4.9-2.71-5.46 5.79Z"
+      />
+    </svg>
+  );
 }
 
 function ViberIcon(props: SVGProps<SVGSVGElement>) {

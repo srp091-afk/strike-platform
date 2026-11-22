@@ -261,6 +261,9 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "Порт почты должен быть числом от 1 до 65535." };
   }
 
+  const messengerProvided = formData.has("fb_messenger_enabled");
+  const messengerEnabled = formData.get("fb_messenger_enabled") === "true";
+
   return {
     ok: true as const,
     followupEnabled,
@@ -343,6 +346,8 @@ function readAgentFields(formData: FormData) {
     mailImapPort: mailImapPort ?? 993,
     mailSmtpHost: mailSmtpHost || "",
     mailSmtpPort: mailSmtpPort ?? 465,
+    messengerProvided,
+    messengerEnabled,
   };
 }
 
@@ -541,6 +546,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
             ...(fields.mailPassword ? { email_password: fields.mailPassword } : {}),
           }
         : {}),
+      ...(fields.messengerProvided ? { fb_messenger_enabled: fields.messengerEnabled } : {}),
       active_channels: fields.activeChannels,
       user_id: userId,
       ...(fields.waInstanceId && fields.waApiToken
@@ -575,6 +581,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     const smsRequested = Boolean(fields.smsEnabled || fields.smsSid || fields.smsToken || fields.smsNumber);
     const viberRequested = Boolean(fields.viberEnabled || fields.viberToken || fields.viberBotName);
     const mailChannelRequested = Boolean(fields.mailEnabled || fields.mailAddress || fields.mailPassword || fields.mailImapHost || fields.mailSmtpHost);
+    const messengerRequested = fields.messengerEnabled;
     let agentId = fields.id;
     if (fields.id) {
       const updated = await supabase
@@ -584,7 +591,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         .eq("user_id", userId)
         .select("id")
         .maybeSingle();
-      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested, smsRequested, viberRequested, mailChannelRequested }) : null;
+      const updateFallback = updated.error ? dropUnavailableColumns(payload, updated.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested, smsRequested, viberRequested, mailChannelRequested, messengerRequested }) : null;
       const retried = updateFallback
         ? await supabase.from("agents").update(updateFallback).eq("id", fields.id).eq("user_id", userId).select("id").maybeSingle()
         : updated;
@@ -599,7 +606,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
     } else {
       await assertCanCreateAgent(userId);
       const inserted = await supabase.from("agents").insert(payload).select("id").single();
-      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested, smsRequested, viberRequested, mailChannelRequested }) : null;
+      const insertFallback = inserted.error ? dropUnavailableColumns(payload, inserted.error.message, { emailRequested, webhookRequested, amoRequested, pipedriveRequested, bitrixRequested, yclientsRequested, dikidiRequested, stripeRequested, yookassaRequested, prodamusRequested, paymentCopyRequested, analyticsRequested, smsRequested, viberRequested, mailChannelRequested, messengerRequested }) : null;
       const retried = insertFallback ? await supabase.from("agents").insert(insertFallback).select("id").single() : inserted;
       if (retried.error || !retried.data) {
         return failedSave(columnError(retried.error?.message ?? "Не удалось сохранить агента."));
@@ -652,6 +659,7 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     smsRequested: boolean;
     viberRequested: boolean;
     mailChannelRequested: boolean;
+    messengerRequested: boolean;
   },
 ) {
   const known =
@@ -666,7 +674,8 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     missingAnalyticsColumn(message) ||
     missingSmsColumn(message) ||
     missingViberColumn(message) ||
-    missingMailChannelColumn(message);
+    missingMailChannelColumn(message) ||
+    missingMessengerColumn(message);
   if (!known) return null;
   const next: Record<string, unknown> = { ...payload };
   let changed = false;
@@ -761,6 +770,13 @@ function dropUnavailableColumns<T extends Record<string, unknown>>(
     delete next.email_password;
     changed = true;
   }
+  if (!requested.messengerRequested) {
+    delete next.fb_messenger_enabled;
+    delete next.fb_page_id;
+    delete next.fb_page_name;
+    delete next.fb_page_access_token;
+    changed = true;
+  }
   return changed ? (next as T) : null;
 }
 
@@ -778,6 +794,10 @@ function missingSmsColumn(message: string) {
 
 function missingViberColumn(message: string) {
   return message.includes("viber_enabled") || message.includes("viber_auth_token") || message.includes("viber_bot_name");
+}
+
+function missingMessengerColumn(message: string) {
+  return message.includes("fb_messenger_enabled") || message.includes("fb_page_id") || message.includes("fb_page_name") || message.includes("fb_page_access_token");
 }
 
 function missingMailChannelColumn(message: string) {
@@ -821,6 +841,7 @@ function missingDikidiColumn(message: string) {
 }
 
 function columnError(message: string) {
+  if (missingMessengerColumn(message)) return "Чтобы подключить Facebook Messenger, выполните миграцию 20261122_agent_messenger.sql.";
   if (missingViberColumn(message) || missingMailChannelColumn(message)) {
     return "Чтобы подключить Viber или почту, выполните миграцию 20261122_agent_viber_email.sql.";
   }

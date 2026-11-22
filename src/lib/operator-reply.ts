@@ -4,6 +4,7 @@ import { readHandoffDuration } from "@/lib/agent-models";
 import { pauseBotForHandoff } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
 import { sendEmailReply, type EmailConfig } from "@/lib/email-channel";
+import { sendMessengerMessage } from "@/lib/messenger";
 import { markAgentReplied } from "@/lib/followup";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { sendGreenMessage } from "@/lib/green-api";
@@ -78,6 +79,11 @@ async function deliver(
   agent: OperatorAgent,
 ): Promise<{ ok: true; externalId: string | null } | { ok: false; error: string }> {
   try {
+    if (provider === "messenger") {
+      if (!agent.fb_page_access_token) return { ok: false, error: "Подключите Facebook Messenger у этого агента." };
+      const sent = await sendMessengerMessage({ pageAccessToken: agent.fb_page_access_token, recipientId: chatId, text: body });
+      return sent.ok ? { ok: true, externalId: null } : { ok: false, error: sent.error };
+    }
     if (provider === "viber") {
       if (!agent.viber_auth_token) return { ok: false, error: "Подключите Viber у этого агента." };
       const sent = await sendViberMessage({
@@ -180,6 +186,7 @@ type OperatorAgent = {
   email_password: string | null;
   email_smtp_host: string | null;
   email_smtp_port: number | null;
+  fb_page_access_token: string | null;
 };
 
 async function loadAgent(agentId: string, userId: string, provider: string) {
@@ -209,7 +216,19 @@ async function loadAgent(agentId: string, userId: string, provider: string) {
     email_password: null,
     email_smtp_host: null,
     email_smtp_port: null,
+    fb_page_access_token: null,
   };
+  if (provider === "messenger") {
+    const messenger = await supabase.from("agents").select("fb_page_access_token").eq("id", agentId).eq("user_id", userId).maybeSingle();
+    if (messenger.error) {
+      const message = /fb_page_|fb_messenger_|schema cache/i.test(messenger.error.message)
+        ? "Примените миграцию 20261122_agent_messenger.sql."
+        : messenger.error.message;
+      return { ok: false as const, error: message };
+    }
+    agent.fb_page_access_token = textOrNull(messenger.data?.fb_page_access_token);
+    return { ok: true as const, agent };
+  }
   if (provider === "viber") {
     const viber = await supabase.from("agents").select("viber_auth_token, viber_bot_name").eq("id", agentId).eq("user_id", userId).maybeSingle();
     if (viber.error) {

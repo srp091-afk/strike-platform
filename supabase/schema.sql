@@ -116,6 +116,10 @@ create table if not exists public.agents (
   email_smtp_port integer default 465,
   email_password text,
   email_last_uid bigint,
+  fb_messenger_enabled boolean not null default false,
+  fb_page_id text,
+  fb_page_name text,
+  fb_page_access_token text,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint agents_temperature_range check (temperature >= 0 and temperature <= 2),
@@ -169,7 +173,7 @@ create table if not exists public.integrations (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint integrations_provider_check
-    check (provider in ('whatsapp', 'instagram', 'telegram', 'widget', 'sms', 'viber', 'email')),
+    check (provider in ('whatsapp', 'instagram', 'telegram', 'widget', 'sms', 'viber', 'email', 'messenger')),
   constraint integrations_status_check
     check (status in ('connected', 'disconnected', 'error'))
 );

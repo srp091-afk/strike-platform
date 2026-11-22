@@ -11,7 +11,7 @@ export async function openChannelConversation(
   input: {
     userId: string;
     agentId: string;
-    provider: "viber" | "email";
+    provider: "viber" | "email" | "messenger";
     externalChatId: string;
     contactName: string | null;
     preview: string;
@@ -54,7 +54,7 @@ export async function openChannelConversation(
 
 async function ensureIntegration(
   supabase: Admin,
-  input: { userId: string; agentId: string; provider: "viber" | "email" },
+  input: { userId: string; agentId: string; provider: "viber" | "email" | "messenger" },
 ) {
   const externalId = `${input.provider}:${input.agentId}`;
   const { data: existing, error: lookupError } = await supabase
@@ -79,7 +79,7 @@ async function ensureIntegration(
       user_id: input.userId,
       agent_id: input.agentId,
       provider: input.provider,
-      name: input.provider === "viber" ? "Viber" : "Email",
+      name: input.provider === "viber" ? "Viber" : input.provider === "email" ? "Email" : "Messenger",
       status: "connected",
       external_id: externalId,
     })

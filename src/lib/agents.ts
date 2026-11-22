@@ -228,6 +228,10 @@ export async function listAgents(): Promise<AgentRecord[]> {
     .from("agents")
     .select("id, email_enabled, email_address, email_password, email_imap_host, email_imap_port, email_smtp_host, email_smtp_port")
     .eq("user_id", userId);
+  const messengerRows = await supabase
+    .from("agents")
+    .select("id, fb_messenger_enabled, fb_page_id, fb_page_name, fb_page_access_token")
+    .eq("user_id", userId);
   const sms = new Map<string, { enabled: boolean; connected: boolean; accountSid: string | null; phoneNumber: string | null }>(
     smsRows.error
       ? []
@@ -270,6 +274,16 @@ export async function listAgents(): Promise<AgentRecord[]> {
               smtpPort: Number(row.email_smtp_port) || 465,
             },
           ] as const;
+        }),
+  );
+  const messenger = new Map<string, { enabled: boolean; connected: boolean; pageId: string | null; pageName: string | null }>(
+    messengerRows.error
+      ? []
+      : (messengerRows.data ?? []).map((row) => {
+          const pageId = typeof row.fb_page_id === "string" && row.fb_page_id.trim() ? row.fb_page_id.trim() : null;
+          const pageName = typeof row.fb_page_name === "string" && row.fb_page_name.trim() ? row.fb_page_name.trim() : null;
+          const connected = Boolean(pageId && typeof row.fb_page_access_token === "string" && row.fb_page_access_token.trim());
+          return [String(row.id), { enabled: row.fb_messenger_enabled === true, connected, pageId, pageName }] as const;
         }),
   );
   const analytics = new Map<string, { ymCounterId: string | null; ga4MeasurementId: string | null; ga4Enabled: boolean }>(
@@ -486,6 +500,10 @@ export async function listAgents(): Promise<AgentRecord[]> {
     email_imap_port: mail.get(String(row.id))?.imapPort ?? 993,
     email_smtp_host: mail.get(String(row.id))?.smtpHost ?? null,
     email_smtp_port: mail.get(String(row.id))?.smtpPort ?? 465,
+    fb_messenger_enabled: messenger.get(String(row.id))?.enabled ?? false,
+    fbMessengerConnected: messenger.get(String(row.id))?.connected ?? false,
+    fb_page_id: messenger.get(String(row.id))?.pageId ?? null,
+    fb_page_name: messenger.get(String(row.id))?.pageName ?? null,
     ...readWidgetSettings(row as Record<string, unknown>),
   }));
 

@@ -14,7 +14,7 @@ export async function completeChannelReply(input: {
   supabase: Admin;
   agent: { id: string; system_prompt: string | null; model: string | null; temperature: number | null; split_messages: boolean | null };
   conversationId: string;
-  channel: "viber" | "email";
+  channel: "viber" | "email" | "messenger";
   chatId: string;
   clientName: string | null;
   question: string;

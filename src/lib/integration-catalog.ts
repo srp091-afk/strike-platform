@@ -1,4 +1,4 @@
-export const integrationProviders = ["telegram", "whatsapp", "instagram", "widget", "sms", "viber", "email"] as const;
+export const integrationProviders = ["telegram", "whatsapp", "instagram", "widget", "sms", "viber", "email", "messenger"] as const;
 
 export type IntegrationProvider = (typeof integrationProviders)[number];
 
@@ -61,6 +61,12 @@ export const integrationCatalog: readonly IntegrationDefinition[] = [
     description: "Входящие письма через IMAP и ответы через SMTP",
     fields: [],
   },
+  {
+    provider: "messenger",
+    title: "Messenger",
+    description: "Сообщения бизнес-страницы Facebook",
+    fields: [],
+  },
 ];
 
 /** Подписи каналов для списков и шапок. Новый канал — новая строка здесь. */
@@ -72,6 +78,7 @@ export const channelLabels = {
   sms: "SMS",
   viber: "Viber",
   email: "Email",
+  messenger: "Messenger",
   unknown: "Канал",
 } as const satisfies Record<IntegrationProvider | "unknown", string>;
 

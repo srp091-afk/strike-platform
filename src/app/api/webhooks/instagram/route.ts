@@ -4,6 +4,7 @@ import { normalizeAgentModel, readActiveChannels, readChannelDelays, readMessage
 import { pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { deliverChunk } from "@/lib/deliver";
 import { GRAPH, graphJson, verifySignature } from "@/lib/instagram";
+import { processMessengerWebhook } from "@/lib/messenger-inbound";
 import { withKnowledge } from "@/lib/knowledge";
 import { interpolatePrompt } from "@/lib/utils/prompt-parser";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
@@ -45,8 +46,19 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Bad JSON" }, { status: 400 });
   }
 
+  const root = asRecord(body);
+  if (root.object === "page") {
+    after(async () => {
+      try {
+        await processMessengerWebhook(body);
+      } catch (error) {
+        console.error("[messenger webhook]", error instanceof Error ? error.message : error);
+      }
+    });
+  }
+
   const events = readEvents(body);
-  console.log("[instagram webhook] received", JSON.stringify({ object: asRecord(body).object, events: events.length }));
+  console.log("[instagram webhook] received", JSON.stringify({ object: root.object, events: events.length }));
   if (events.length > 0) {
     after(async () => {
       for (const event of events) {
