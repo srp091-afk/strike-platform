@@ -1,6 +1,6 @@
 "use client";
 
-import { GripVertical, Loader2, Maximize, Play, Sparkles, Trash } from "lucide-react";
+import { Bell, GripVertical, Loader2, Maximize, Pause, Play, Shield, Sparkles, TextQuote, Timer, Trash } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -29,6 +29,7 @@ import { deleteAgent, reorderAgents, saveAgent, saveAgentDirect, type SaveState 
 import { disconnectInstagram, disconnectTelegram, disconnectWhatsApp, saveWhatsAppPhone } from "@/app/agents/channels";
 import { TelegramConnectModal } from "@/components/TelegramConnectModal";
 import { WidgetConnectModal } from "@/components/WidgetConnectModal";
+import { BehaviorAccordion, BehaviorIcon } from "@/components/behavior-accordion";
 import { ChannelAccordionCard } from "@/components/channel-accordion-card";
 import { ChannelIcon } from "@/components/channel-icons";
 import { Button } from "@/components/ui/button";
@@ -2572,7 +2573,7 @@ function AgentDialog({
                 </TabsContent>
 
                 <TabsContent value="behavior" forceMount className="data-[state=inactive]:hidden">
-                  <div className="grid content-start gap-6">
+                  <div className="grid content-start gap-0">
                     <HumanHandoffField
                       value={draft.human_handoff_duration}
                       onChange={(human_handoff_duration) => patchDraft({ human_handoff_duration })}
@@ -4578,14 +4579,19 @@ function HumanHandoffField({
   value: HandoffDuration;
   onChange: (value: HandoffDuration) => void;
 }) {
+  const pauseLabel = HANDOFF_DURATIONS.find((option) => option.value === value)?.label ?? "1 час";
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <div className="grid gap-2">
-        <h3 className="font-sans text-lg font-bold text-white">Вмешательство оператора</h3>
-        <p className="text-sm leading-6 text-zinc-400">
-          На какое время бот замолчит, если вы ответите клиенту вручную с телефона или ПК.
-        </p>
-      </div>
+    <BehaviorAccordion
+      title="Вмешательство оператора"
+      description="На какое время бот замолчит, если вы ответите клиенту вручную."
+      status={value === "forever" ? "Бессрочно" : pauseLabel}
+      plain
+      icon={
+        <BehaviorIcon tone="bg-[#D97706]/15">
+          <Pause className="size-4 text-[#D97706]" strokeWidth={2} aria-hidden />
+        </BehaviorIcon>
+      }
+    >
       <label className="grid gap-2">
         <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Пауза</span>
         <SelectField
@@ -4595,7 +4601,7 @@ function HumanHandoffField({
           onChange={(next) => onChange(next as HandoffDuration)}
         />
       </label>
-    </section>
+    </BehaviorAccordion>
   );
 }
 
@@ -4621,13 +4627,23 @@ function LeadNotificationsField({
     if (!next) onChange("");
   }
 
+  const notificationsOn = enabled || emailEnabled;
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <h3 className="font-sans text-lg font-bold text-white">Уведомления о лидах</h3>
+    <BehaviorAccordion
+      title="Уведомления о лидах"
+      description="Горячие лиды в Telegram-группу и на email."
+      status={notificationsOn ? "Включено" : "Выключено"}
+      active={notificationsOn}
+      icon={
+        <BehaviorIcon tone="bg-[#CF0234]/10">
+          <Bell className="size-4 text-[#CF0234]" strokeWidth={2} aria-hidden />
+        </BehaviorIcon>
+      }
+    >
       <input type="hidden" name="notify_email_enabled" value={emailEnabled ? "true" : "false"} />
       {enabled ? null : <input type="hidden" name="telegram_chat_id" value="" />}
       {emailEnabled ? null : <input type="hidden" name="notify_email_address" value={emailAddress} />}
-      <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+      <label className="flex items-center justify-between gap-3 py-1">
         <span className="text-sm font-medium text-zinc-200">Включить уведомления</span>
         <Switch checked={enabled} onCheckedChange={toggle} aria-label="Включить уведомления" />
       </label>
@@ -4654,7 +4670,7 @@ function LeadNotificationsField({
           </label>
         </>
       ) : null}
-      <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+      <label className="flex items-center justify-between gap-3 py-1">
         <span className="text-sm font-medium text-zinc-200">Отправлять лиды на Email</span>
         <Switch checked={emailEnabled} onCheckedChange={onEmailEnabled} aria-label="Отправлять лиды на Email" />
       </label>
@@ -4672,7 +4688,7 @@ function LeadNotificationsField({
           />
         </label>
       ) : null}
-    </section>
+    </BehaviorAccordion>
   );
 }
 
@@ -4687,15 +4703,26 @@ function MessageLimitsField({
   totalLimit: string;
   onChange: (patch: Partial<AgentDraft>) => void;
 }) {
+  const limitsOn = [agentLimit, clientLimit, totalLimit].some((item) => {
+    const count = Number(item);
+    return Number.isFinite(count) && count > 0;
+  });
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <div className="grid gap-2">
-        <h3 className="font-sans text-lg font-bold text-white">Защита от зацикливания (Лимиты)</h3>
-        <p className="text-sm leading-6 text-zinc-400">
-          Если указан 0, лимит отключен. При превышении лимита бот автоматически перейдет в статус &apos;На паузе&apos; для
-          этого диалога.
-        </p>
-      </div>
+    <BehaviorAccordion
+      title="Защита от зацикливания (Лимиты)"
+      description="Бот встаёт на паузу, если диалог превышает лимит сообщений."
+      status={limitsOn ? "Активно" : "Выключено"}
+      active={limitsOn}
+      icon={
+        <BehaviorIcon tone="bg-[#2563EB]/10">
+          <Shield className="size-4 text-[#2563EB]" strokeWidth={2} aria-hidden />
+        </BehaviorIcon>
+      }
+    >
+      <p className="text-sm leading-6 text-zinc-400">
+        Если указан 0, лимит отключен. При превышении лимита бот автоматически перейдет в статус &apos;На паузе&apos; для
+        этого диалога.
+      </p>
       <LimitInput
         label="Лимит сообщений от агента"
         name="limit_agent_messages"
@@ -4714,7 +4741,7 @@ function MessageLimitsField({
         value={totalLimit}
         onChange={(limit_total_messages) => onChange({ limit_total_messages })}
       />
-    </section>
+    </BehaviorAccordion>
   );
 }
 
@@ -4748,17 +4775,26 @@ function LimitInput({
 function SplitMessagesField({ enabled, onChange }: { enabled: boolean; onChange: (enabled: boolean) => void }) {
 
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <h3 className="font-sans text-lg font-bold text-white">Форматирование</h3>
+    <BehaviorAccordion
+      title="Форматирование"
+      description="Абзацы уходят отдельными сообщениями с паузой между ними."
+      status={enabled ? "Включено" : "Выключено"}
+      active={enabled}
+      icon={
+        <BehaviorIcon tone="bg-[#7360F2]/10">
+          <TextQuote className="size-4 text-[#7360F2]" strokeWidth={2} aria-hidden />
+        </BehaviorIcon>
+      }
+    >
       <input type="hidden" name="split_messages" value={enabled ? "true" : "false"} />
-      <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+      <label className="flex items-center justify-between gap-3 py-1">
         <span className="text-sm font-medium text-zinc-200">Дробить текст на отдельные сообщения</span>
         <Switch checked={enabled} onCheckedChange={onChange} aria-label="Дробить текст на отдельные сообщения" />
       </label>
       <p className="text-sm leading-6 text-zinc-400">
         Если включено, абзацы будут отправляться отдельными сообщениями (пузырями) с учетом задержки между ними
       </p>
-    </section>
+    </BehaviorAccordion>
   );
 }
 
@@ -4776,16 +4812,23 @@ function FollowupField({
   onChange: (patch: Partial<AgentDraft>) => void;
 }) {
   return (
-    <section className="grid content-start gap-4 rounded-2xl border border-zinc-800 bg-zinc-900 shadow-sm p-6 backdrop-blur-md">
-      <div className="grid gap-2">
-        <h3 className="font-sans text-lg font-bold text-white">Умные напоминания (Follow-up)</h3>
-        <p className="text-sm leading-6 text-zinc-400">
-          Если клиент перестал отвечать, ИИ сам решит, уместно ли напомнить о себе. Отказавшимся клиентам и диалогам,
-          где мы ждём действия от себя, напоминания не уходят.
-        </p>
-      </div>
+    <BehaviorAccordion
+      title="Умные напоминания (Follow-up)"
+      description="ИИ напомнит о себе, если клиент перестал отвечать."
+      status={enabled ? "Включено" : "Выключено"}
+      active={enabled}
+      icon={
+        <BehaviorIcon tone="bg-[#059669]/10">
+          <Timer className="size-4 text-[#059669]" strokeWidth={2} aria-hidden />
+        </BehaviorIcon>
+      }
+    >
+      <p className="text-sm leading-6 text-zinc-400">
+        Если клиент перестал отвечать, ИИ сам решит, уместно ли напомнить о себе. Отказавшимся клиентам и диалогам,
+        где мы ждём действия от себя, напоминания не уходят.
+      </p>
       <input type="hidden" name="followup_enabled" value={enabled ? "true" : "false"} />
-      <label className="flex items-center justify-between gap-3 rounded-xl border border-zinc-800 bg-black/40 px-4 py-3">
+      <label className="flex items-center justify-between gap-3 py-1">
         <span className="text-sm font-medium text-zinc-200">Включить напоминания</span>
         <Switch
           checked={enabled}
@@ -4848,7 +4891,7 @@ function FollowupField({
           <input type="hidden" name="followup_template" value={template} />
         </>
       )}
-    </section>
+    </BehaviorAccordion>
   );
 }
 
