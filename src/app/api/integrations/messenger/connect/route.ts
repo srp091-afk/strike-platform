@@ -4,7 +4,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { createState } from "@/lib/instagram";
-import { MESSENGER_OAUTH_COOKIE, MESSENGER_OAUTH_PATH, MESSENGER_SCOPES, messengerApp, messengerRedirectUri } from "@/lib/messenger";
+import { MESSENGER_OAUTH_COOKIE, MESSENGER_OAUTH_PATH, MESSENGER_SCOPES, messengerApp, messengerLoginConfigId, messengerRedirectUri } from "@/lib/messenger";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -45,8 +45,15 @@ export async function GET(request: NextRequest) {
   url.searchParams.set("redirect_uri", messengerRedirectUri(origin));
   url.searchParams.set("state", state);
   url.searchParams.set("response_type", "code");
-  url.searchParams.set("scope", MESSENGER_SCOPES.join(","));
   url.searchParams.set("auth_type", "rerequest");
+  const configId = messengerLoginConfigId();
+  if (configId) {
+    // Конфигурация Login for Business сама задаёт права и выбор страниц. scope рядом с ней Meta просит не передавать.
+    url.searchParams.set("config_id", configId);
+    url.searchParams.set("override_default_response_type", "true");
+  } else {
+    url.searchParams.set("scope", MESSENGER_SCOPES.join(","));
+  }
 
   const response = NextResponse.redirect(url);
   response.cookies.set(MESSENGER_OAUTH_COOKIE, nonce, {

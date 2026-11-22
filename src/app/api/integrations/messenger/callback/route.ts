@@ -6,6 +6,7 @@ import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { GRAPH, graphJson, readState } from "@/lib/instagram";
 import {
   attachMessengerPage,
+  listMessengerPages,
   MESSENGER_OAUTH_COOKIE,
   MESSENGER_OAUTH_PATH,
   MESSENGER_PAGES_COOKIE,
@@ -19,8 +20,6 @@ import {
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 type TokenResponse = { access_token: string };
-type PageItem = { id?: string; name?: string; access_token?: string };
-type PagesResponse = { data?: PageItem[] };
 
 /** Возврат с Facebook Login: код → long-lived токен → страницы → подписка или выбор. */
 export async function GET(request: NextRequest) {
@@ -70,7 +69,10 @@ export async function GET(request: NextRequest) {
     return fail("Сессия авторизации устарела. Подключите Facebook ещё раз.");
   }
   agentId = state.a;
-  if (params.get("error")) return fail("Доступ к страницам Facebook не был предоставлен.");
+  if (params.get("error")) {
+    const reason = (params.get("error_description") || params.get("error_reason") || params.get("error") || "доступ не выдан").slice(0, 240);
+    return fail(`Facebook не выдал доступ: ${reason}`);
+  }
   const code = params.get("code");
   if (!code) return fail("Meta не вернула код авторизации.");
 
@@ -103,14 +105,9 @@ export async function GET(request: NextRequest) {
       console.error("[messenger] long-lived", exchangeError instanceof Error ? exchangeError.message : exchangeError);
     }
 
-    const pagesResponse = await graphJson<PagesResponse>(
-      `${GRAPH}/me/accounts?${new URLSearchParams({ fields: "id,name,access_token", limit: "100", access_token: userToken })}`,
-    );
-    const pages = (pagesResponse.data ?? [])
-      .filter((page): page is { id: string; name?: string; access_token: string } => Boolean(page.id && page.access_token))
-      .map((page) => ({ id: page.id, name: (page.name ?? "").trim() || "Facebook", accessToken: page.access_token }));
-
-    if (pages.length === 0) return fail("no_pages");
+    const listed = await listMessengerPages(userToken, app);
+    const pages = listed.pages;
+    if (pages.length === 0) return fail(listed.error || "Meta не вернула страницы Facebook.");
     if (pages.length === 1) {
       const only = pages[0]!;
       const saved = await attachMessengerPage(admin, {
