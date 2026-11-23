@@ -170,6 +170,53 @@ export async function getConnectionState(instanceName: string) {
   return readEvolutionState(payload) || "close";
 }
 
+/** Скачивает входящее медиа. Сначала по key, затем целиком событие — Baileys ищет url внутри message. */
+export async function downloadEvolutionMedia(
+  instanceName: string,
+  key: Record<string, unknown>,
+  message?: unknown,
+) {
+  const attempts: unknown[] = [{ message: { key }, convertToMp4: false }];
+  if (message) attempts.push({ message, convertToMp4: false });
+
+  let lastError = "Evolution API не отдал файл.";
+  for (const body of attempts) {
+    const { response, payload } = await evolutionFetch(
+      `/chat/getBase64FromMediaMessage/${encodeURIComponent(instanceName)}`,
+      {
+        method: "POST",
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(60_000),
+      },
+    );
+    if (!response.ok) {
+      lastError = errorText(payload) || `Evolution API media ${response.status}`;
+      continue;
+    }
+    const base64 = readMediaBase64(payload);
+    if (!base64) {
+      lastError = "Evolution API вернул пустой файл.";
+      continue;
+    }
+    const root = asRecord(payload);
+    return {
+      base64,
+      mimeType: stringValue(root.mimetype) || stringValue(root.mimeType),
+      fileName: stringValue(root.fileName),
+    };
+  }
+  throw new Error(lastError);
+}
+
+function readMediaBase64(payload: unknown) {
+  const root = asRecord(payload);
+  const nested = asRecord(root.media);
+  const data = asRecord(root.data);
+  const raw = stringValue(root.base64) || stringValue(nested.base64) || stringValue(data.base64);
+  const cleaned = raw.replace(/^data:[^;]+;base64,/i, "").replace(/\s/g, "");
+  return cleaned.length >= 32 ? cleaned : "";
+}
+
 export async function sendTextMessage(instanceName: string, phone: string, text: string) {
   const number = phone.replace(/@.*/, "").replace(/\D/g, "");
   const { response, payload } = await evolutionFetch(`/message/sendText/${encodeURIComponent(instanceName)}`, {

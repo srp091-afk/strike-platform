@@ -79,6 +79,29 @@ export async function withKnowledge(systemPrompt: string, agentId: string, quest
   }
 }
 
+/** Текст вложения WhatsApp: pdf, docx, txt, csv, xlsx. null — формат без парсера. */
+export async function extractDocumentText(fileName: string, mimeType: string, buffer: Buffer) {
+  const extension = documentExtension(fileName, mimeType);
+  if (!extension) return null;
+  const text = (await extractText(extension, buffer)).replace(/\u0000/g, "").trim();
+  return text || null;
+}
+
+function documentExtension(fileName: string, mimeType: string): Extension | null {
+  const fromName = fileName.split(".").pop()?.trim().toLowerCase() ?? "";
+  if (fromName === "xls") return "xlsx";
+  if (fromName === "pdf" || fromName === "docx" || fromName === "txt" || fromName === "csv" || fromName === "xlsx") {
+    return fromName;
+  }
+  const mime = mimeType.toLowerCase();
+  if (mime.includes("pdf")) return "pdf";
+  if (mime.includes("wordprocessingml") || mime.includes("msword")) return "docx";
+  if (mime.includes("spreadsheet") || mime.includes("excel")) return "xlsx";
+  if (mime.includes("csv")) return "csv";
+  if (mime.startsWith("text/")) return "txt";
+  return null;
+}
+
 async function extractText(extension: Extension, buffer: Buffer) {
   if (extension === "txt" || extension === "csv") return buffer.toString("utf8");
   if (extension === "docx") {

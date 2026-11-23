@@ -2,7 +2,10 @@ import "server-only";
 
 import { toFile } from "openai";
 
+import { downloadEvolutionMedia } from "@/lib/evolution-api";
+import { type EvolutionInboundMedia } from "@/lib/evolution-inbound";
 import { downloadGreenFile, type GreenCredentials } from "@/lib/green-api";
+import { extractDocumentText } from "@/lib/knowledge";
 import { getOpenAI } from "@/lib/openai";
 
 export type WhatsAppMedia = {
@@ -79,6 +82,62 @@ export async function resolveWhatsAppMedia(media: WhatsAppMedia, credentials: Gr
     } satisfies VisionImage,
   };
 }
+
+/** Голос → Whisper, фото → Vision, pdf/docx/txt/csv/xlsx → текст файла. */
+export async function resolveEvolutionMedia(instanceName: string, media: EvolutionInboundMedia) {
+  const downloaded = media.base64
+    ? { base64: media.base64, mimeType: media.mimeType, fileName: media.fileName }
+    : await downloadEvolutionMedia(instanceName, media.key, media.message);
+  const mimeType = cleanMime(downloaded.mimeType || media.mimeType, defaultMime(media.kind));
+  const fileName = downloaded.fileName || media.fileName || defaultFileName(media.kind, mimeType);
+  const bytes = Buffer.from(downloaded.base64, "base64");
+  if (bytes.length < 8) throw new Error("Пустой медиафайл.");
+
+  if (media.kind === "audio" || mimeType.startsWith("audio/")) {
+    const transcript = await transcribeAudio(bytes, mimeType.startsWith("audio/") ? mimeType : "audio/ogg", fileName);
+    if (!transcript) throw new Error("Whisper вернул пустую расшифровку.");
+    const lead = media.lead.trim();
+    const text = lead.startsWith(">") ? `${lead}\n${transcript}` : transcript;
+    return { text: text.slice(0, 8000), image: null };
+  }
+
+  if (media.kind === "image" || mimeType.startsWith("image/")) {
+    const caption = media.lead.trim() || media.caption.trim() || "Изображение";
+    if (bytes.length > 8_000_000) return { text: caption.slice(0, 8000), image: null };
+    return {
+      text: caption.slice(0, 8000),
+      image: {
+        mimeType: mimeType.startsWith("image/") ? mimeType : "image/jpeg",
+        base64: bytes.toString("base64"),
+      } satisfies VisionImage,
+    };
+  }
+
+  let extracted: string | null = null;
+  try {
+    extracted = await extractDocumentText(fileName, mimeType, bytes);
+  } catch (error) {
+    console.error("[evolution media] document", error instanceof Error ? error.message : error);
+  }
+  const name = fileName || "файл";
+  const caption = media.lead.trim() || media.caption.trim();
+  const head = [`Клиент прислал файл «${name}».`, caption ? `Подпись: ${caption}` : ""].filter(Boolean).join("\n");
+  return { text: (extracted ? `${head}\n\n${extracted}` : head).slice(0, 8000), image: null };
+}
+
+function defaultMime(kind: EvolutionMediaKind) {
+  if (kind === "audio") return "audio/ogg";
+  if (kind === "image") return "image/jpeg";
+  return "application/octet-stream";
+}
+
+function defaultFileName(kind: EvolutionMediaKind, mimeType: string) {
+  if (kind === "audio") return audioName("", mimeType);
+  if (kind === "image") return "image.jpg";
+  return "file";
+}
+
+type EvolutionMediaKind = EvolutionInboundMedia["kind"];
 
 export function visionModel(agentModel: string) {
   if (/gpt-4o|gpt-4\.1|gpt-5|gpt-4-turbo/i.test(agentModel)) return agentModel;

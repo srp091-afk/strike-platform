@@ -5,13 +5,14 @@ import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { normalizeAgentModel, readChannelDelays, readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
 import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
 import { isEvolutionInstance, sendTextMessage } from "@/lib/evolution-api";
+import { readEvolutionContent, type EvolutionInboundMedia } from "@/lib/evolution-inbound";
 import { markAgentReplied, markClientReplied } from "@/lib/followup";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { withKnowledge } from "@/lib/knowledge";
 import { interpolatePrompt, phoneFromHandle } from "@/lib/utils/prompt-parser";
 import { completeWithNotifyManager } from "@/lib/notify-manager";
 import { replyChunks, sleep, splitPauseMs, systemPromptWithSplit } from "@/lib/reply";
-import { readGreenMedia, resolveWhatsAppMedia, visionModel, type VisionImage, type WhatsAppMedia } from "@/lib/whatsapp-media";
+import { readGreenMedia, resolveEvolutionMedia, resolveWhatsAppMedia, visionModel, type VisionImage, type WhatsAppMedia } from "@/lib/whatsapp-media";
 
 type AdminClient = SupabaseClient;
 
@@ -30,6 +31,7 @@ type IncomingJob = {
   sentAt: string | null;
   text: string;
   media: WhatsAppMedia | null;
+  evolutionMedia: EvolutionInboundMedia | null;
   transport: "green" | "evolution";
 };
 
@@ -196,6 +198,7 @@ async function enqueueIncoming(request: NextRequest, body: unknown): Promise<Inc
     sentAt: parsed.sentAt,
     text: parsed.text,
     media: parsed.media,
+    evolutionMedia: null,
     transport: "green",
   };
 }
@@ -219,17 +222,16 @@ async function processIncomingAi(job: IncomingJob) {
 
   let text = job.text;
   let image: VisionImage | null = null;
-  if (job.media) {
-    const resolved = await resolveWhatsAppMedia(job.media, job.credentials);
+  if (job.media || job.evolutionMedia) {
+    const resolved = job.evolutionMedia
+      ? await resolveEvolutionMedia(job.credentials.idInstance, job.evolutionMedia).catch((error) => {
+          console.error("[evolution webhook] media", error instanceof Error ? error.message : error);
+          return { text: job.text, image: null as VisionImage | null };
+        })
+      : await resolveWhatsAppMedia(job.media!, job.credentials);
     text = resolved.text;
     image = resolved.image;
-    if (text.trim() && job.messageId) {
-      await supabase
-        .from("messages")
-        .update({ content: text.slice(0, 8000) })
-        .eq("external_message_id", job.messageId)
-        .eq("conversation_id", job.conversationId);
-    }
+    if (text.trim()) await storeResolvedInbound(supabase, job, text);
   }
   if (!text.trim()) return;
 
@@ -404,6 +406,30 @@ type ChatText = {
   sentAt: string | null;
   media: WhatsAppMedia | null;
 };
+
+async function storeResolvedInbound(supabase: AdminClient, job: IncomingJob, text: string) {
+  const content = text.slice(0, 8000);
+  if (job.messageId) {
+    const updated = await supabase
+      .from("messages")
+      .update({ content })
+      .eq("external_message_id", job.messageId)
+      .eq("conversation_id", job.conversationId)
+      .select("id");
+    if (!updated.error && updated.data && updated.data.length > 0) return;
+  }
+  const latest = await supabase
+    .from("messages")
+    .select("id")
+    .eq("conversation_id", job.conversationId)
+    .eq("role", "user")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (latest.data?.id) {
+    await supabase.from("messages").update({ content }).eq("id", latest.data.id);
+  }
+}
 
 function completionMessages(
   dialogue: { role: "user" | "assistant"; content: string }[],
@@ -1304,9 +1330,10 @@ export async function handleEvolutionWebhook(body: unknown) {
     const remoteJid = evolutionRemoteJid(message);
     if (!remoteJid || ignoredWhatsAppJid(remoteJid)) continue;
     const messageType = stringValue(asRecord(message).messageType).toLowerCase();
-    if (messageType.includes("protocol") || messageType.includes("reaction")) continue;
+    if (["protocol", "reaction", "senderkey", "pollupdate"].some((part) => messageType.includes(part))) continue;
 
-    const text = evolutionMessageText(asRecord(message).message).slice(0, 8000);
+    const content = readEvolutionContent(message);
+    const text = content.text.slice(0, 8000);
     const fromMe = evolutionFromMe(message);
     const messageId = stringValue(asRecord(asRecord(message).key).id) || null;
     const sentAt = timestampToIso(asRecord(message).messageTimestamp);
@@ -1329,13 +1356,14 @@ export async function handleEvolutionWebhook(body: unknown) {
 
     const contactName = stringValue(asRecord(message).pushName) || null;
 
-    if (!text) continue;
+    if (!text && !content.media) continue;
     const job = await enqueueEvolutionIncoming(supabase, instanceName, {
       from: remoteJid,
-      text,
+      text: text || "Сообщение",
       messageId,
       contactName,
       sentAt,
+      evolutionMedia: content.media,
     });
     if (!job) continue;
     after(() =>
@@ -1390,16 +1418,6 @@ function ignoredWhatsAppJid(jid: string) {
 function evolutionFromMe(message: unknown) {
   const fromMe = asRecord(asRecord(message).key).fromMe;
   return fromMe === true || fromMe === "true";
-}
-
-function evolutionMessageText(message: unknown): string {
-  const record = asRecord(message);
-  if (typeof record.conversation === "string") return record.conversation;
-  const extended = stringValue(asRecord(record.extendedTextMessage).text);
-  if (extended) return extended;
-  if (record.ephemeralMessage) return evolutionMessageText(asRecord(record.ephemeralMessage).message);
-  if (record.viewOnceMessage) return evolutionMessageText(asRecord(record.viewOnceMessage).message);
-  return "";
 }
 
 async function applyEvolutionConnection(body: unknown) {
@@ -1500,7 +1518,14 @@ async function isOwnApiEcho(supabase: AdminClient, conversationId: string, text:
 async function enqueueEvolutionIncoming(
   supabase: AdminClient,
   instanceName: string,
-  parsed: { from: string; text: string; messageId: string | null; contactName: string | null; sentAt: string | null },
+  parsed: {
+    from: string;
+    text: string;
+    messageId: string | null;
+    contactName: string | null;
+    sentAt: string | null;
+    evolutionMedia: EvolutionInboundMedia | null;
+  },
 ): Promise<IncomingJob | null> {
   const channel = await resolveEvolutionAccount(supabase, instanceName);
   if (!channel) return null;
@@ -1551,6 +1576,7 @@ async function enqueueEvolutionIncoming(
     sentAt: parsed.sentAt,
     text: parsed.text,
     media: null,
+    evolutionMedia: parsed.evolutionMedia,
     transport: "evolution",
   };
 }
