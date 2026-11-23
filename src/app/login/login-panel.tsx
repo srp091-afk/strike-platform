@@ -94,7 +94,9 @@ export function LoginPanel() {
     <div className="space-y-5">
       {callbackError ? (
         <p className="rounded-xl border border-red-900/60 bg-red-950/50 px-4 py-3 text-sm text-red-200">
-          {callbackError === "no_code" ? "Ссылка недействительна или устарела. Запросите новую." : callbackError}
+          {callbackError === "no_code" || callbackError === "no_token"
+            ? "Ссылка недействительна или устарела. Запросите новую."
+            : callbackError}
         </p>
       ) : null}
 

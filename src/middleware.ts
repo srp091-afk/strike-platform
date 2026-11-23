@@ -19,8 +19,8 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // Не трогаем callback авторизации
-  if (pathname.startsWith("/auth/callback")) {
+  // Не трогаем callback и подтверждение email: ссылка из письма приходит без сессии.
+  if (pathname.startsWith("/auth/callback") || pathname.startsWith("/auth/confirm")) {
     return response;
   }
 
