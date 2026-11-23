@@ -24,6 +24,9 @@ import { useEffect, useState } from "react";
 import { AccountMenu } from "@/components/account-menu";
 import type { ClientAccount } from "@/lib/active-account";
 import type { AccountProfile } from "@/lib/auth-user";
+import { tierLabel, formatSc } from "@/lib/billing-catalog";
+import { CREDITS_LOW_SC } from "@/lib/credits-policy";
+import type { AgentTier } from "@/lib/config/pricing";
 import { Logo } from "@/components/ui/Logo";
 import { bottomNav, isNavActive, mainNav, type NavItem } from "@/lib/navigation";
 import { preloadNavData } from "@/lib/swr";
@@ -110,11 +113,41 @@ function NavLink({
   );
 }
 
+function CreditIndicator({
+  tier,
+  credits,
+  collapsed,
+  onNavigate,
+}: {
+  tier: AgentTier;
+  credits: number;
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
+  const low = credits < CREDITS_LOW_SC;
+  const label = `${tierLabel(tier)} · ${formatSc(credits)} SC`;
+  return (
+    <Link
+      href="/dashboard/billing"
+      onClick={onNavigate}
+      title={label}
+      className={cn(
+        "flex h-9 items-center rounded-lg px-3 text-xs font-semibold tabular-nums",
+        collapsed && "justify-center px-0",
+        low ? "text-red-600" : "text-gray-500 hover:text-gray-800",
+      )}
+    >
+      {collapsed ? formatSc(credits) : label}
+    </Link>
+  );
+}
+
 function SidebarBody({
   account,
   clients,
   activeAccountId,
   lockedHrefs,
+  wallet,
   collapsed,
   pathname,
   onToggle,
@@ -125,6 +158,7 @@ function SidebarBody({
   clients: ClientAccount[];
   activeAccountId: string;
   lockedHrefs: readonly string[];
+  wallet: { tier: AgentTier; credits: number } | null;
   collapsed: boolean;
   pathname: string;
   onToggle?: () => void;
@@ -171,6 +205,9 @@ function SidebarBody({
       </nav>
 
       <div className="flex shrink-0 flex-col gap-1 border-t border-gray-200 px-3 py-3">
+        {wallet ? (
+          <CreditIndicator tier={wallet.tier} credits={wallet.credits} collapsed={collapsed} onNavigate={onNavigate} />
+        ) : null}
         {bottomNav.map((item) => (
           <NavLink key={item.href} item={item} pathname={pathname} collapsed={collapsed} onNavigate={onNavigate} />
         ))}
@@ -193,11 +230,13 @@ export function AppSidebar({
   clients = [],
   activeAccountId = "",
   lockedHrefs = [],
+  wallet = null,
 }: {
   account: AccountProfile | null;
   clients?: ClientAccount[];
   activeAccountId?: string;
   lockedHrefs?: readonly string[];
+  wallet?: { tier: AgentTier; credits: number } | null;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -238,6 +277,7 @@ export function AppSidebar({
           clients={clients}
           activeAccountId={activeAccountId}
           lockedHrefs={lockedHrefs}
+          wallet={wallet}
           collapsed={collapsed}
           pathname={pathname}
           onToggle={toggleCollapsed}
@@ -273,6 +313,7 @@ export function AppSidebar({
               clients={clients}
               activeAccountId={activeAccountId}
               lockedHrefs={lockedHrefs}
+              wallet={wallet}
               collapsed={false}
               pathname={pathname}
               onToggle={() => setMobileOpen(false)}

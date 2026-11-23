@@ -3,6 +3,7 @@
 import useSWR from "swr";
 
 import { AgentManager } from "@/components/agent-manager";
+import { CreditsBanner } from "@/components/credits-banner";
 import { PageFrame } from "@/components/page-frame";
 import type { AgentRecord } from "@/lib/agent-models";
 import { jsonFetcher, useClientReady } from "@/lib/swr";
@@ -34,9 +35,11 @@ function ManagerSkeleton() {
 export function AgentsPageClient({
   initialAgentId,
   initialConnectChannel,
+  creditsExhausted = false,
 }: {
   initialAgentId?: string;
   initialConnectChannel?: "whatsapp" | "telegram" | "widget";
+  creditsExhausted?: boolean;
 } = {}) {
   const ready = useClientReady();
   const { data, error, isLoading, mutate } = useSWR<AgentsResponse>("/api/agents", jsonFetcher, {
@@ -50,6 +53,7 @@ export function AgentsPageClient({
       title="Агенты"
       description="Системная инструкция #ROLE, модель и имя. Запись сразу попадает в Supabase."
     >
+      <CreditsBanner show={creditsExhausted} />
       {!ready ? null : isLoading && !data ? (
         <ManagerSkeleton />
       ) : (

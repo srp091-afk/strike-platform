@@ -104,6 +104,35 @@ async function recordPayment(
   if (grantError) throw new Error(grantError.message);
 }
 
+/** Лимит месяца для AI-Агентов. Остаток прошлого периода сгорает. */
+const AGENT_PERIOD_CREDITS = { start: 5000, pro: 12000, agency: 35000 } as const;
+
+function agentPeriodCredits(plan: PaddlePlan) {
+  if (plan.patch.is_bundle_active === true) return null;
+  const tier = plan.patch.tier_agents;
+  if (tier === "start" || tier === "pro" || tier === "agency") return AGENT_PERIOD_CREDITS[tier];
+  return null;
+}
+
+/** Ставит баланс ровно в сумму периода. Повтор того же заказа ничего не меняет. */
+async function resetStrikeCredits(userId: string, orderId: string, credits: number) {
+  const admin = createSupabaseAdminClient();
+  const inserted = await admin.from("strike_credit_grants").insert({
+    order_id: orderId,
+    user_id: userId,
+    credits,
+  });
+  if (inserted.error) {
+    if (/duplicate|23505|unique/i.test(inserted.error.message)) return;
+    throw new Error(inserted.error.message);
+  }
+  const updated = await admin.from("profiles").update({ strike_credits: credits }).eq("id", userId);
+  if (updated.error) {
+    await admin.from("strike_credit_grants").delete().eq("order_id", orderId);
+    throw new Error(updated.error.message);
+  }
+}
+
 function money(raw: string) {
   const numeric = Number(raw);
   if (!Number.isFinite(numeric)) return 0;
@@ -169,6 +198,40 @@ async function applyPlan(userId: string, plan: PaddlePlan) {
   if (retry.error) throw new Error(retry.error.message);
 }
 
+/** Отмена подписки возвращает затронутый модуль на Trial. Баланс SC не обнуляется. */
+async function revertPlan(userId: string, ids: string[]) {
+  const plans = ids.map((priceId) => planByPriceId(priceId)).filter((plan): plan is PaddlePlan => plan !== null);
+  const patch: Record<string, string | boolean> = { subscription_status: "cancelled" };
+  if (plans.length === 0) {
+    patch.tier_agents = "trial";
+  }
+  for (const plan of plans) {
+    if ("tier_agents" in plan.patch || plan.patch.is_bundle_active === true) patch.tier_agents = "trial";
+    if ("tier_smm" in plan.patch) patch.tier_smm = "trial";
+    if ("tier_ads" in plan.patch) patch.tier_ads = "trial";
+    if ("tier_sites" in plan.patch) patch.tier_sites = "trial";
+    if (plan.patch.is_bundle_active === true) patch.is_bundle_active = false;
+  }
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin.from("profiles").update(patch).eq("id", userId);
+  if (!error) return;
+  if (!("tier_ads" in patch) || !error.message.toLowerCase().includes("tier_ads")) throw new Error(error.message);
+  const withoutAds = { ...patch };
+  delete withoutAds.tier_ads;
+  const retry = await admin.from("profiles").update(withoutAds).eq("id", userId);
+  if (retry.error) throw new Error(retry.error.message);
+}
+
+async function resolvePaddleUser(data: Json) {
+  const direct = userIdFrom(data);
+  if (UUID_PATTERN.test(direct)) return direct;
+  const subscriptionId = paddleId(data.id, "sub_") || paddleId(data.subscription_id, "sub_");
+  if (!subscriptionId) return "";
+  const admin = createSupabaseAdminClient();
+  const { data: profile } = await admin.from("profiles").select("id").eq("paddle_subscription_id", subscriptionId).maybeSingle();
+  return typeof profile?.id === "string" ? profile.id : "";
+}
+
 export async function POST(request: NextRequest) {
   const secret = process.env.PADDLE_WEBHOOK_SECRET;
   if (!secret) {
@@ -190,61 +253,74 @@ export async function POST(request: NextRequest) {
 
   const event = text(payload.event_type);
   const data = asRecord(payload.data);
-  if (event !== "transaction.completed" && event !== "subscription.created") {
+  const canceled = event === "subscription.canceled" || event === "subscription.cancelled";
+  if (event !== "transaction.completed" && event !== "subscription.created" && !canceled) {
     return Response.json({ ok: true, ignored: event });
   }
 
-  const userId = userIdFrom(data);
-  const orderId = text(data.id);
-  if (!UUID_PATTERN.test(userId) || !orderId) {
-    console.warn("[paddle] event without user or id", event);
+  const userId = await resolvePaddleUser(data);
+  if (!UUID_PATTERN.test(userId)) {
+    console.warn("[paddle] event without user", event);
     return Response.json({ ok: true, ignored: "no_user_id" });
   }
 
   try {
-    await savePaddleIdentity(userId, data, event);
-    const ids = priceIds(data);
-    if (event === "transaction.completed") {
-      const { amount, currency } = chargedAmount(data);
-      const method = paymentMethod(data, amount);
-      const labels: string[] = [];
-      let credits = 0;
-      let sawPack = false;
-      let sawPlan = false;
-      for (const priceId of ids) {
-        const label = purchaseLabel(priceId);
-        const pack = creditPackByPriceId(priceId);
-        if (pack) {
-          sawPack = true;
-          labels.push(label ?? "STRIKE Credits");
-          credits += pack.credits;
-          continue;
-        }
-        const plan = planByPriceId(priceId);
-        if (plan) {
-          sawPlan = true;
-          labels.push(label ?? "STRIKE");
-          credits += plan.credits;
-        }
-      }
-      if (labels.length > 0) {
-        await recordPayment(
-          userId,
-          orderId,
-          credits,
-          labels.join(", "),
-          amount,
-          currency,
-          method,
-          sawPack && !sawPlan ? "topup" : "subscription",
-        );
-      }
+    if (canceled) {
+      await revertPlan(userId, priceIds(data));
       return Response.json({ ok: true });
     }
 
+    await savePaddleIdentity(userId, data, event);
+    const ids = priceIds(data);
     for (const priceId of ids) {
       const plan = planByPriceId(priceId);
       if (plan) await applyPlan(userId, plan);
+    }
+
+    // История и баланс пишутся один раз на id транзакции. Start, Pro и Agency
+    // сбрасывают strike_credits до лимита месяца; докупка SC прибавляется.
+    const orderId = event === "transaction.completed" ? text(data.id) : text(data.transaction_id);
+    if (!orderId) return Response.json({ ok: true });
+
+    const { amount, currency } = chargedAmount(data);
+    const method = paymentMethod(data, amount);
+    const labels: string[] = [];
+    let topUpCredits = 0;
+    let otherCredits = 0;
+    let periodCredits: number | null = null;
+    let sawPack = false;
+    let sawPlan = false;
+    for (const priceId of ids) {
+      const label = purchaseLabel(priceId);
+      const pack = creditPackByPriceId(priceId);
+      if (pack) {
+        sawPack = true;
+        labels.push(label ?? "STRIKE Credits");
+        topUpCredits += pack.credits;
+        continue;
+      }
+      const plan = planByPriceId(priceId);
+      if (!plan) continue;
+      sawPlan = true;
+      labels.push(label ?? "STRIKE");
+      const period = agentPeriodCredits(plan);
+      if (period != null) periodCredits = period;
+      else otherCredits += plan.credits;
+    }
+    if (labels.length > 0) {
+      await recordPayment(
+        userId,
+        orderId,
+        periodCredits == null ? topUpCredits + otherCredits : 0,
+        labels.join(", "),
+        amount,
+        currency,
+        method,
+        sawPack && !sawPlan ? "topup" : "subscription",
+      );
+      if (periodCredits != null) {
+        await resetStrikeCredits(userId, orderId, periodCredits + topUpCredits + otherCredits);
+      }
     }
     return Response.json({ ok: true });
   } catch (error) {

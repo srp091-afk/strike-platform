@@ -2,7 +2,16 @@
 
 import { initializePaddle, type CheckoutSettings, type Paddle } from "@paddle/paddle-js";
 
-import { currentUser } from "@/lib/lemon-client";
+import { createSupabaseBrowserClient } from "@/lib/supabase";
+
+async function currentUser() {
+  try {
+    const { data } = await createSupabaseBrowserClient().auth.getUser();
+    return data.user;
+  } catch {
+    return null;
+  }
+}
 
 export type PaddleCheckoutResult = "opened" | "login" | "missing";
 

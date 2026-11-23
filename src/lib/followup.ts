@@ -7,6 +7,7 @@ import { readFollowupInterval, readFollowupMaxCount } from "@/lib/agent-models";
 import { sendEmailReply, type EmailConfig } from "@/lib/email-channel";
 import { isEvolutionInstance, sendConnectedWhatsApp } from "@/lib/evolution-api";
 import { getOpenAI } from "@/lib/openai";
+import { assertCanSpendAgentReply, CreditsExhaustedError, readUsageTokens, spendAgentReply } from "@/lib/strike-credits";
 import { sleep, stripMarkdown } from "@/lib/reply";
 import { sendTwilioSms } from "@/lib/twilio-sms";
 import { sendMessengerMessage } from "@/lib/messenger";
@@ -212,6 +213,12 @@ async function processConversation(
   // Захватываем диалог, чтобы параллельный вебхук/прогон не ответил одновременно.
   if (!(await claim(supabase, conversation.id))) return "skipped";
   try {
+    try {
+      await assertCanSpendAgentReply(conversation.user_id);
+    } catch (error) {
+      if (error instanceof CreditsExhaustedError) return "skipped";
+      throw error;
+    }
     const decision = await decide(history, agent);
     if (decision.action === "stop" || !decision.message) {
       await setWaiting(supabase, conversation.id, false);
@@ -229,6 +236,7 @@ async function processConversation(
     const pushCount = (conversation.push_count ?? 0) + 1;
     const now = new Date().toISOString();
 
+    await spendAgentReply({ userId: conversation.user_id, totalTokens: decision.tokens });
     if (!delivered.ok) {
       if (evolutionWa) {
         await supabase
@@ -289,7 +297,7 @@ async function loadHistory(supabase: AdminClient, conversationId: string): Promi
     .map((row) => ({ role: row.role as "user" | "assistant", content: String(row.content ?? "") }));
 }
 
-type Decision = { action: "push" | "stop"; message: string | null };
+type Decision = { action: "push" | "stop"; message: string | null; tokens: number };
 
 async function decide(history: HistoryMessage[], agent: FollowupAgent): Promise<Decision> {
   const template = agent.followup_template?.trim() ?? "";
@@ -313,6 +321,7 @@ async function decide(history: HistoryMessage[], agent: FollowupAgent): Promise<
     ? `\n\nCLIENT'S LAST MESSAGES (write the follow-up in THIS language, whatever language the agent or the template used):\n<<<\n${clientText}\n>>>`
     : "";
 
+  let tokens = 0;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     const completion = await getOpenAI().chat.completions.create({
       model: GATEKEEPER_MODEL,
@@ -329,13 +338,14 @@ async function decide(history: HistoryMessage[], agent: FollowupAgent): Promise<
       ],
     });
 
+    tokens += readUsageTokens(completion.usage);
     const decision = parseDecision(completion.choices[0]?.message?.content);
-    if (decision.action === "stop" || !decision.message || !clientText) return decision;
-    if (sameScript(clientText, decision.message)) return decision;
+    if (decision.action === "stop" || !decision.message || !clientText) return { ...decision, tokens };
+    if (sameScript(clientText, decision.message)) return { ...decision, tokens };
   }
 
   // Дважды промахнулись с языком — лучше не слать вообще, чем написать клиенту на чужом.
-  return { action: "stop", message: null };
+  return { action: "stop", message: null, tokens };
 }
 
 /** Грубая проверка алфавита: кириллица против латиницы. Ловит главный провал — русский пуш англоязычному клиенту. */
@@ -356,12 +366,12 @@ export function parseDecision(raw: string | null | undefined): Decision {
     const parsed = JSON.parse(raw ?? "") as { action?: unknown; message?: unknown };
     if (parsed.action === "push" && typeof parsed.message === "string") {
       const message = stripMarkdown(parsed.message).trim().slice(0, 1000);
-      if (message) return { action: "push", message };
+      if (message) return { action: "push", message, tokens: 0 };
     }
   } catch {
     // невалидный JSON — ниже вернём stop
   }
-  return { action: "stop", message: null };
+  return { action: "stop", message: null, tokens: 0 };
 }
 
 function mailConfig(agent: FollowupAgent): EmailConfig | null {

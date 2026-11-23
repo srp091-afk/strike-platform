@@ -9,6 +9,8 @@ import { toast } from "@/components/ui/toaster";
 import { ConsentCheckbox } from "@/components/consent-checkbox";
 import { BillingPlans } from "@/components/dashboard/billing-plans";
 import { formatSc, TOP_UPS, tierLabel, type TopUp } from "@/lib/billing-catalog";
+import { TIER_LIMITS, normalizeAgentTier } from "@/lib/config/pricing";
+import { AGENT_REPLY_MIN_SC, CREDITS_EMPTY_MESSAGE } from "@/lib/credits-policy";
 import { PADDLE_CREDIT_PRICE_IDS } from "@/lib/paddle-catalog";
 import { loadPaddle, onPaddleCheckoutCompleted, openPaddleCheckout } from "@/lib/paddle-client";
 import { cn } from "@/lib/utils";
@@ -21,17 +23,22 @@ const CRYPTO_CHECKOUT_ENABLED = false;
 type Method = "card" | "crypto";
 
 export type BillingData = {
-  plan: "free" | "starter" | "pro" | "agency";
-  priceUsd: number;
   status: string | null;
   renewsAt: string | null;
-  balanceUsd: number;
   strikeCredits: number;
   tiers: { agents: string; smm: string; ads: string; sites: string };
   isBundleActive: boolean;
-  usage: { key: "messages" | "agents" | "campaigns" | "sites"; used: number; limit: number | null }[];
+  isAdmin: boolean;
   hasSubscription: boolean;
-  transactions: { id: string; createdAt: string; description: string; method: string; amountUsd: number; status: string }[];
+  transactions: {
+    id: string;
+    createdAt: string;
+    description: string;
+    method: string;
+    amountUsd: number;
+    credits: number | null;
+    status: string;
+  }[];
 };
 
 const DATE_FORMAT = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" });
@@ -103,12 +110,21 @@ export function BillingView({ data }: { data: BillingData }) {
   }, []);
 
   const selected = TOP_UPS[topUpIndex];
-  const moduleTiers = [
-    { label: "Агенты", tier: data.tiers.agents },
-    { label: "SMM", tier: data.tiers.smm },
-    { label: "Ads", tier: data.tiers.ads },
-    { label: "Сайты", tier: data.tiers.sites },
-  ];
+  const agentTier = normalizeAgentTier(data.tiers.agents);
+  const agentLimit = TIER_LIMITS[agentTier].maxAgents;
+  const agentTariff =
+    agentTier === "trial"
+      ? "AI-Агенты: Trial"
+      : agentTier === "agency" || !Number.isFinite(agentLimit)
+        ? `AI-Агенты: ${tierLabel(agentTier)}`
+        : `AI-Агенты: ${tierLabel(agentTier)} · до ${agentLimit} агентов`;
+  const extraTiers = data.isAdmin
+    ? [
+        { label: "SMM", tier: data.tiers.smm },
+        { label: "Ads", tier: data.tiers.ads },
+        { label: "Сайты", tier: data.tiers.sites },
+      ]
+    : [];
 
   /** Оверлей Paddle на Price ID пакета. userId уходит в customData вебхука. */
   async function payByCard(pack: TopUp = selected) {
@@ -186,8 +202,13 @@ export function BillingView({ data }: { data: BillingData }) {
           <p className="text-xs font-semibold uppercase tracking-[0.18em] text-zinc-500">Биллинг</p>
           <h1 className="mt-2 pb-1 text-3xl font-semibold tracking-tight text-white sm:text-4xl">Тариф и баланс</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-400">
-            Единая валюта платформы — STRIKE Credits (100 SC = $1): ею оплачиваются любые генерации во всех модулях.
+            Единая валюта платформы — STRIKE Credits (100 SC = $1). Ответ агента стоит 2 SC или 1 SC за 1000 токенов, если ответ длиннее.
           </p>
+          {data.strikeCredits < AGENT_REPLY_MIN_SC ? (
+            <p className="mt-4 max-w-2xl rounded-xl border border-red-900/70 bg-red-950/70 px-4 py-3 text-sm leading-6 text-red-200" role="status">
+              {CREDITS_EMPTY_MESSAGE}
+            </p>
+          ) : null}
         </header>
 
         <div className="mt-8 grid items-stretch gap-5 lg:grid-cols-2">
@@ -209,12 +230,15 @@ export function BillingView({ data }: { data: BillingData }) {
                 </p>
               ) : null}
               <ul className="mt-3 flex flex-wrap gap-2">
-                {moduleTiers.map((item) => (
+                <li className="rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2 text-sm font-semibold text-[#0b0b0f]">
+                  {data.isBundleActive ? "AI-Агенты: Business" : agentTariff}
+                </li>
+                {extraTiers.map((item) => (
                   <li
                     key={item.label}
                     className="rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2 text-sm text-gray-500"
                   >
-                    {item.label}: <span className="font-semibold text-[#0b0b0f]">{data.isBundleActive ? "Business" : tierLabel(item.tier)}</span>
+                    {item.label}: <span className="font-semibold text-[#0b0b0f]">{tierLabel(item.tier)}</span>
                   </li>
                 ))}
               </ul>
@@ -400,7 +424,11 @@ export function BillingView({ data }: { data: BillingData }) {
                         <td className="py-3.5 text-zinc-400">{formatDate(tx.createdAt)}</td>
                         <td className="py-3.5 font-medium text-white">{tx.description}</td>
                         <td className="py-3.5 text-zinc-400">{paymentLabel(tx.method)}</td>
-                        <td className="py-3.5 text-right tabular-nums text-white">{formatUsd(tx.amountUsd)}</td>
+                        <td className="py-3.5 text-right tabular-nums text-white">
+                          {tx.credits != null && tx.credits !== 0
+                            ? `${tx.credits > 0 ? "+" : "−"}${formatSc(Math.abs(tx.credits))} SC`
+                            : formatUsd(tx.amountUsd)}
+                        </td>
                         <td className="py-3.5 text-right">
                           <span
                             className={cn(

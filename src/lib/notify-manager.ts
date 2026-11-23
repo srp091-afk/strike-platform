@@ -8,6 +8,8 @@ import { pauseBotForHandoff } from "@/lib/bot-state";
 import { sendLeadEmail } from "@/lib/email-notify";
 import { calendarSystemRule, calendarTimezone, runCalendarTool } from "@/lib/google-calendar";
 import { getOpenAI } from "@/lib/openai";
+import { assertCanSpendAgentReply, readUsageTokens, spendAgentReply } from "@/lib/strike-credits";
+import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { sendTelegramNotification } from "@/lib/telegram-notify";
 import { phoneFromHandle } from "@/lib/utils/prompt-parser";
 import { syncAgentTurnToAmo } from "@/lib/amocrm";
@@ -348,8 +350,20 @@ async function completeTurn(input: {
     payments: payments.length > 0,
     turn,
   };
-  if (input.model.includes("gpt-6")) return completeWithResponses(prepared);
-  return completeWithChat(prepared);
+  const ownerId = input.agentId ? await agentOwnerId(input.agentId) : null;
+  if (ownerId) await assertCanSpendAgentReply(ownerId);
+
+  const result = input.model.includes("gpt-6") ? await completeWithResponses(prepared) : await completeWithChat(prepared);
+  if (ownerId) {
+    await spendAgentReply({ userId: ownerId, totalTokens: result.tokens });
+  }
+  return result;
+}
+
+async function agentOwnerId(agentId: string) {
+  const { data, error } = await createSupabaseAdminClient().from("agents").select("user_id").eq("id", agentId).maybeSingle();
+  if (error) throw new Error(error.message);
+  return typeof data?.user_id === "string" ? data.user_id : null;
 }
 
 async function completeWithResponses(input: {
@@ -374,7 +388,7 @@ async function completeWithResponses(input: {
   const calls = first.output.filter(
     (item): item is OpenAI.Responses.ResponseFunctionToolCall => item.type === "function_call",
   );
-  if (calls.length === 0) return publishReply(input.turn, first.output_text, false);
+  if (calls.length === 0) return publishReply(input.turn, first.output_text, false, readUsageTokens(first.usage));
 
   let pausedByTool = false;
   const toolOutputs: OpenAI.Responses.ResponseInputItem.FunctionCallOutput[] = [];
@@ -395,7 +409,7 @@ async function completeWithResponses(input: {
     ...(tools.length ? { tools, tool_choice: "none" as const } : {}),
   });
 
-  return publishReply(input.turn, second.output_text, pausedByTool);
+  return publishReply(input.turn, second.output_text, pausedByTool, readUsageTokens(first.usage) + readUsageTokens(second.usage));
 }
 
 function toResponseInput(messages: OpenAI.Chat.ChatCompletionMessageParam[]): OpenAI.Responses.ResponseInput {
@@ -452,7 +466,7 @@ async function completeWithChat(input: {
     (call): call is OpenAI.Chat.ChatCompletionMessageFunctionToolCall => call.type === "function",
   );
   if (!choice || calls.length === 0) {
-    return publishReply(input.turn, choice?.content ?? "", false);
+    return publishReply(input.turn, choice?.content ?? "", false, readUsageTokens(first.usage));
   }
 
   let pausedByTool = false;
@@ -481,7 +495,12 @@ async function completeWithChat(input: {
     ],
   });
 
-  return publishReply(input.turn, second.choices[0]?.message?.content ?? "", pausedByTool);
+  return publishReply(
+    input.turn,
+    second.choices[0]?.message?.content ?? "",
+    pausedByTool,
+    readUsageTokens(first.usage) + readUsageTokens(second.usage),
+  );
 }
 
 function chatTools(chat: NotifyChat | null, calendar: boolean, booking: boolean, payments: boolean): OpenAI.Chat.ChatCompletionTool[] {
@@ -555,7 +574,7 @@ async function runTool(
   return { paused: false, output: JSON.stringify({ ok: false, error: "Неизвестная функция." }) };
 }
 
-function publishReply(turn: TurnSide, text: string, pausedByTool: boolean) {
+function publishReply(turn: TurnSide, text: string, pausedByTool: boolean, tokens = 0) {
   const reply = text.trim();
   if (reply) {
     emitWebhook(turn, { event: "message.sent", message: { role: "assistant", text: reply }, metadata: {} });
@@ -563,7 +582,7 @@ function publishReply(turn: TurnSide, text: string, pausedByTool: boolean) {
   scheduleAmoSync(turn, reply);
   schedulePipedriveSync(turn, reply);
   scheduleBitrixSync(turn, reply);
-  return { text: reply, pausedByTool, triggeredEvents: turn.analyticsEvents };
+  return { text: reply, pausedByTool, triggeredEvents: turn.analyticsEvents, tokens };
 }
 
 function scheduleAmoSync(turn: TurnSide, reply: string) {

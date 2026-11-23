@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { AgentsPageClient } from "@/components/agents-page-client";
+import { creditsAreExhausted } from "@/components/credits-notice";
 
 export const metadata: Metadata = {
   title: "Агенты",
@@ -23,5 +24,6 @@ export default async function AgentByIdPage({
   const connect =
     query.connect === "whatsapp" || query.connect === "telegram" || query.connect === "widget" ? query.connect : undefined;
 
-  return <AgentsPageClient initialAgentId={id} initialConnectChannel={connect} />;
+  const creditsExhausted = await creditsAreExhausted();
+  return <AgentsPageClient initialAgentId={id} initialConnectChannel={connect} creditsExhausted={creditsExhausted} />;
 }

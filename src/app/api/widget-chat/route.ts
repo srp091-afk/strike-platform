@@ -3,6 +3,7 @@ import type { NextRequest } from "next/server";
 import { normalizeAgentModel, readActiveChannels, readChannelDelays, WIDGET_DELAY_CAP_SECONDS } from "@/lib/agent-models";
 import { withKnowledge } from "@/lib/knowledge";
 import { completeWithCalendar } from "@/lib/notify-manager";
+import { CreditsExhaustedError } from "@/lib/strike-credits";
 import { interpolatePrompt } from "@/lib/utils/prompt-parser";
 import { replyChunks, sleep, systemPromptWithSplit } from "@/lib/reply";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -144,6 +145,9 @@ export async function POST(request: NextRequest) {
       ...(completion.triggeredEvents.length ? { triggered_events: completion.triggeredEvents } : {}),
     });
   } catch (failure) {
+    if (failure instanceof CreditsExhaustedError) {
+      return Response.json({ error: "Агент сейчас не отвечает. Попробуйте позже." }, { status: 402 });
+    }
     return Response.json(
       { error: failure instanceof Error ? failure.message : "Не удалось получить ответ." },
       { status: 502 },

@@ -10,7 +10,8 @@ import { ModularPlans } from "@/components/billing/modular-plans";
 import { LegalLinks } from "@/components/legal-links";
 import { toast } from "@/components/ui/toaster";
 import type { Lang } from "@/lib/billing-catalog";
-import { openPlanCheckout } from "@/lib/lemon-client";
+import { PADDLE_PLANS } from "@/lib/paddle-catalog";
+import { openPaddleCheckout } from "@/lib/paddle-client";
 import { cn } from "@/lib/utils";
 
 const DICT = {
@@ -100,10 +101,19 @@ export function PricingView() {
   const t: Dict = DICT[lang];
   const router = useRouter();
 
-  /** Оверлей Lemon Squeezy; без сессии платёж не к чему привязать, поэтому сначала вход. */
+  /** Оверлей Paddle. Без сессии платёж не к чему привязать, поэтому сначала вход. */
   async function buy(key: string) {
+    if (!key.startsWith("agents_")) {
+      toast.error(t.checkoutSoon);
+      return;
+    }
+    const priceId = PADDLE_PLANS[key]?.priceId;
+    if (!priceId || !priceId.startsWith("pri_")) {
+      toast.error(t.checkoutSoon);
+      return;
+    }
     try {
-      const result = await openPlanCheckout(key);
+      const result = await openPaddleCheckout(priceId);
       if (result === "login") router.push("/login");
       else if (result === "missing") toast.error(t.checkoutSoon);
     } catch {

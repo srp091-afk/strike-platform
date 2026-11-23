@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Anton, Bebas_Neue, Inter, Montserrat, Plus_Jakarta_Sans } from "next/font/google";
-import Script from "next/script";
 import { Suspense } from "react";
 
 import { AppShell } from "@/components/app-shell";
@@ -114,7 +113,6 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <Suspense fallback={null}>
           <CookieConsent />
         </Suspense>
-        <Script src="https://assets.lemonsqueezy.com/lemon.js" strategy="afterInteractive" />
       </body>
     </html>
   );

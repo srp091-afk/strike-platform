@@ -7,7 +7,7 @@ const LABELS = {
   en: { privacy: "Privacy Policy", terms: "Terms of Service", refund: "Refund Policy" },
 } as const;
 
-/** Ссылки на обязательные юридические страницы (Lemon Squeezy требует Refund Policy). */
+/** Ссылки на обязательные юридические страницы. */
 export function LegalLinks({ lang = "ru", className }: { lang?: "ru" | "en"; className?: string }) {
   const labels = LABELS[lang];
   const items = [

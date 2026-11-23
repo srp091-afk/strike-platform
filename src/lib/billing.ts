@@ -1,19 +1,6 @@
 import "server-only";
 
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
-import { AGENT_LIMITS } from "@/lib/billing-catalog";
-
-export type PlanId = "free" | "starter" | "pro" | "agency";
-
-/** Лимиты тарифов. null — без потолка: у Agency это AGENT_LIMITS.agency. */
-export const PLAN_LIMITS: Record<PlanId, { messages: number | null; agents: number | null; campaigns: number | null; sites: number | null }> = {
-  free: { messages: null, agents: null, campaigns: null, sites: null },
-  starter: { messages: 2500, agents: AGENT_LIMITS.start, campaigns: 150, sites: 3 },
-  pro: { messages: 10000, agents: AGENT_LIMITS.pro, campaigns: 500, sites: 10 },
-  agency: { messages: 100000, agents: null, campaigns: null, sites: null },
-};
-
-export const PLAN_PRICE_USD: Record<PlanId, number> = { free: 0, starter: 49, pro: 99, agency: 499 };
 
 export type BillingTransaction = {
   id: string;
@@ -21,11 +8,11 @@ export type BillingTransaction = {
   description: string;
   method: string;
   amountUsd: number;
+  credits: number | null;
   status: string;
 };
 
 export type BillingOverview = {
-  plan: PlanId;
   subscriptionStatus: string | null;
   renewsAt: string | null;
   balanceUsd: number;
@@ -37,10 +24,6 @@ export type BillingOverview = {
   hasSubscription: boolean;
   transactions: BillingTransaction[];
 };
-
-function planOf(value: unknown): PlanId {
-  return value === "starter" || value === "pro" || value === "agency" ? value : "free";
-}
 
 function startOfMonthIso() {
   const now = new Date();
@@ -67,7 +50,7 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
   const [profile, messages, agents, campaigns, sites, transactions] = await Promise.all([
     admin
       .from("profiles")
-      .select("plan, subscription_status, plan_renews_at, balance_usd")
+      .select("subscription_status, plan_renews_at, balance_usd")
       .eq("id", userId)
       .maybeSingle(),
     admin
@@ -80,13 +63,14 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
     admin.from("landings").select("id", { count: "exact", head: true }).eq("user_id", userId),
     admin
       .from("billing_transactions")
-      .select("id, created_at, description, method, payment_method, amount, amount_usd, status")
+      .select("id, created_at, description, method, payment_method, amount, amount_usd, status, credits")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(20),
   ]);
 
-  const failure = profile.error ?? (transactions.error && !/payment_method|amount/.test(transactions.error.message) ? transactions.error : null);
+  const tolerable = Boolean(transactions.error && /credits|payment_method|amount/.test(transactions.error.message));
+  const failure = profile.error ?? (transactions.error && !tolerable ? transactions.error : null);
   const rows = transactions.error
     ? (
         await admin
@@ -100,7 +84,6 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
   if (failure) throw new Error(failure.message);
 
   return {
-    plan: planOf(profile.data?.plan),
     subscriptionStatus: typeof profile.data?.subscription_status === "string" ? profile.data.subscription_status : null,
     renewsAt: typeof profile.data?.plan_renews_at === "string" ? profile.data.plan_renews_at : null,
     balanceUsd: Number(profile.data?.balance_usd ?? 0),
@@ -129,14 +112,17 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
         amount?: unknown;
         amount_usd: unknown;
         status: unknown;
+        credits?: unknown;
       };
       const paidAmount = record.amount ?? record.amount_usd;
+      const credits = Number(record.credits);
       return {
         id: String(record.id),
         createdAt: String(record.created_at),
         description: String(record.description),
         method: String(record.payment_method || record.method),
         amountUsd: Number(paidAmount ?? 0),
+        credits: Number.isFinite(credits) ? credits : null,
         status: String(record.status).toLowerCase(),
       };
     }),

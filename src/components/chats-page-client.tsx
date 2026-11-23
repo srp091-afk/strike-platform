@@ -4,6 +4,7 @@ import { useSearchParams } from "next/navigation";
 import useSWR from "swr";
 
 import { ChatInbox } from "@/components/chat-inbox";
+import { CreditsBanner } from "@/components/credits-banner";
 import { PageFrame } from "@/components/page-frame";
 import type { ChatAgentOption, ChatMessage, ChatThread } from "@/lib/chat-types";
 import { jsonFetcher, useClientReady } from "@/lib/swr";
@@ -29,7 +30,7 @@ function InboxSkeleton() {
   );
 }
 
-export function ChatsPageClient() {
+export function ChatsPageClient({ creditsExhausted = false }: { creditsExhausted?: boolean }) {
   const ready = useClientReady();
   const params = useSearchParams();
   const requestedChat = params.get("chat");
@@ -68,6 +69,7 @@ export function ChatsPageClient() {
       title="Чаты"
       description="Живые переписки из подключённых каналов. Агента можно остановить в конкретном диалоге."
     >
+      <CreditsBanner show={creditsExhausted} />
       {booting ? (
         <InboxSkeleton />
       ) : (
