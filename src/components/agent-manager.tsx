@@ -3289,7 +3289,6 @@ function ChannelSettings({
   onMessengerChange: (patch: { fb_messenger_enabled?: boolean }) => void;
   onMessengerCleared: () => void;
 }) {
-  const [whatsappAuthTab, setWhatsappAuthTab] = useState<"qr" | "phone">("qr");
   const [whatsappOpen, setWhatsappOpen] = useState(initialOpenChannel === "whatsapp");
   const [telegramOpen, setTelegramOpen] = useState(initialOpenChannel === "telegram");
   const [widgetOpen, setWidgetOpen] = useState(initialOpenChannel === "widget");
@@ -3385,10 +3384,7 @@ function ChannelSettings({
             evolution={evolutionWhatsApp}
             linked={whatsappConnected}
             connecting={connectingChannel === "whatsapp"}
-            onConnect={(tab) => {
-              setWhatsappAuthTab(tab);
-              void handleConnect("whatsapp");
-            }}
+            onConnect={() => void handleConnect("whatsapp")}
             onPhoneSaved={onWhatsAppPhone}
             onCleared={onWhatsAppCleared}
           />
@@ -3547,14 +3543,12 @@ function ChannelSettings({
       </ChannelAccordionCard>
       {whatsappOpen ? (
         <WhatsAppConnectDialog
-          key={whatsappAuthTab}
           agentId={agentId || agent?.id || ""}
           defaults={{
             instanceId: credentials.instanceId || greenDefaults.instanceId,
             apiToken: credentials.apiToken || greenDefaults.apiToken,
           }}
           evolution={evolutionWhatsApp}
-          initialTab={whatsappAuthTab}
           initialPhone={phone}
           onApply={onWhatsAppCredentials}
           onPhone={onWhatsAppPhone}
@@ -4336,7 +4330,7 @@ function WhatsAppChannel({
   evolution: boolean;
   linked: boolean;
   connecting: boolean;
-  onConnect: (tab: "qr" | "phone") => void;
+  onConnect: () => void;
   onPhoneSaved: (phone: string) => void;
   onCleared: () => void;
 }) {
@@ -4344,29 +4338,14 @@ function WhatsAppChannel({
   if (evolution) {
     if (!linked) {
       return (
-        <div className="grid gap-2">
-          <div className="grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              className="rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
-              disabled={connecting}
-              onClick={() => onConnect("qr")}
-            >
-              {connecting ? "Сохранение агента" : "QR-код"}
-            </button>
-            <button
-              type="button"
-              className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
-              disabled={connecting}
-              onClick={() => onConnect("phone")}
-            >
-              Код на телефон
-            </button>
-          </div>
-          <p className="text-xs leading-5 text-zinc-400">
-            QR сканируется в WhatsApp. Код на телефон — 8 символов, их вводят в связанных устройствах. Номер сам по себе канал не подключает.
-          </p>
-        </div>
+        <button
+          type="button"
+          className="w-full rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
+          disabled={connecting}
+          onClick={onConnect}
+        >
+          {connecting ? "Сохранение агента" : "Подключить номер"}
+        </button>
       );
     }
     return (
@@ -4387,7 +4366,7 @@ function WhatsAppChannel({
         type="button"
         className="w-full rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
         disabled={connecting}
-        onClick={() => onConnect("qr")}
+        onClick={onConnect}
       >
         {connecting ? "Сохранение агента" : "+ Подключить номер"}
       </button>

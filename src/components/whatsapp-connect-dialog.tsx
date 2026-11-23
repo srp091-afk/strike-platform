@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Loader2 } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import {
@@ -49,6 +50,7 @@ export function WhatsAppConnectDialog({
   const [watching, setWatching] = useState(false);
   const [qrPending, setQrPending] = useState(false);
   const [codePending, setCodePending] = useState(false);
+  const [activeTab, setActiveTab] = useState<"qr" | "phone">(initialTab);
   const requestId = useRef(0);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -127,6 +129,8 @@ export function WhatsAppConnectDialog({
     return null;
   }
 
+  const showQrRef = useRef<() => Promise<void>>(async () => {});
+
   async function showQr() {
     const invalid = credentialsError();
     if (invalid) {
@@ -160,6 +164,13 @@ export function WhatsAppConnectDialog({
       setMessage("Не удалось получить QR-код.");
     }
   }
+
+  showQrRef.current = showQr;
+
+  useEffect(() => {
+    if (activeTab !== "qr") return;
+    void showQrRef.current();
+  }, [activeTab]);
 
   function applyKeys() {
     const invalid = credentialsError();
@@ -226,9 +237,12 @@ export function WhatsAppConnectDialog({
         </h2>
         <div className="mt-5 grid gap-4">
           <Tabs
-            defaultValue={initialTab}
-            onValueChange={() => {
+            value={activeTab}
+            onValueChange={(value) => {
+              const next = value === "phone" ? "phone" : "qr";
+              if (next === activeTab) return;
               resetFlow();
+              setActiveTab(next);
             }}
           >
             <TabsList className="grid h-auto grid-cols-2">
@@ -236,16 +250,22 @@ export function WhatsAppConnectDialog({
               <TabsTrigger value="phone">Код на телефон</TabsTrigger>
             </TabsList>
             <TabsContent value="qr" className="grid gap-4">
-              <button
-                type="button"
-                className="rounded-xl bg-strike px-4 py-3 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
-                disabled={qrPending}
-                onClick={() => void showQr()}
-              >
-                {qrPending ? "Загрузка" : "Показать QR-код"}
-              </button>
-              {qrImage ? (
-                <img src={qrImage} alt="QR-код WhatsApp" className="mx-auto h-56 w-56 rounded-xl bg-white" />
+              <div className="flex min-h-56 items-center justify-center">
+                {qrPending ? (
+                  <Loader2 className="size-8 animate-spin text-zinc-400" aria-label="Загрузка QR-кода" />
+                ) : qrImage ? (
+                  <img src={qrImage} alt="QR-код WhatsApp" className="h-56 w-56 rounded-xl bg-white" />
+                ) : null}
+              </div>
+              {qrImage || (!qrPending && !alreadyAuthorized && message) ? (
+                <button
+                  type="button"
+                  className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+                  disabled={qrPending}
+                  onClick={() => void showQr()}
+                >
+                  Обновить QR
+                </button>
               ) : null}
               <p className="text-sm leading-6 text-zinc-400">
                 Откройте WhatsApp ➔ Связанные устройства ➔ Привязать устройство и сканируйте код
