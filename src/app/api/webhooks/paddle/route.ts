@@ -170,7 +170,10 @@ function paddleId(value: unknown, prefix: string) {
 /** Сохраняет покупателя и подписку Paddle. Пустое поле не затирает уже записанный id. */
 async function savePaddleIdentity(userId: string, data: Json, event: string) {
   const customerId = paddleId(data.customer_id, "ctm_") || paddleId(asRecord(data.customer).id, "ctm_");
-  const subscriptionId = event === "subscription.created" ? paddleId(data.id, "sub_") : paddleId(data.subscription_id, "sub_");
+  const subscriptionId =
+    event === "transaction.completed"
+      ? paddleId(data.subscription_id, "sub_")
+      : paddleId(data.id, "sub_") || paddleId(data.subscription_id, "sub_");
   const patch: Record<string, string> = {};
   if (customerId) patch.paddle_customer_id = customerId;
   if (subscriptionId) patch.paddle_subscription_id = subscriptionId;
@@ -222,6 +225,33 @@ async function revertPlan(userId: string, ids: string[]) {
   if (retry.error) throw new Error(retry.error.message);
 }
 
+function periodEndsAt(data: Json) {
+  const current = text(asRecord(data.current_billing_period).ends_at);
+  const billing = text(asRecord(data.billing_period).ends_at);
+  const scheduled = text(asRecord(data.scheduled_change).effective_at);
+  const raw = current || billing || scheduled;
+  const parsed = Date.parse(raw);
+  return raw && Number.isFinite(parsed) ? new Date(parsed).toISOString() : null;
+}
+
+function fallbackPeriodEnd() {
+  return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/** Пишет конец периода. При отмене без даты в payload поле очищается. */
+async function saveSubscriptionEnd(userId: string, data: Json, mode: "set" | "cancel") {
+  const fromPayload = periodEndsAt(data);
+  const endsAt = mode === "cancel" ? fromPayload : (fromPayload ?? fallbackPeriodEnd());
+  const admin = createSupabaseAdminClient();
+  const { error } = await admin.from("profiles").update({ subscription_ends_at: endsAt }).eq("id", userId);
+  if (!error) return;
+  if (/subscription_ends_at/.test(error.message)) {
+    console.error("[paddle] apply migration 20261123_subscription_ends_at.sql");
+    return;
+  }
+  throw new Error(error.message);
+}
+
 async function resolvePaddleUser(data: Json) {
   const direct = userIdFrom(data);
   if (UUID_PATTERN.test(direct)) return direct;
@@ -254,7 +284,8 @@ export async function POST(request: NextRequest) {
   const event = text(payload.event_type);
   const data = asRecord(payload.data);
   const canceled = event === "subscription.canceled" || event === "subscription.cancelled";
-  if (event !== "transaction.completed" && event !== "subscription.created" && !canceled) {
+  const subscriptionEvent = event === "subscription.created" || event === "subscription.updated";
+  if (event !== "transaction.completed" && !subscriptionEvent && !canceled) {
     return Response.json({ ok: true, ignored: event });
   }
 
@@ -267,6 +298,7 @@ export async function POST(request: NextRequest) {
   try {
     if (canceled) {
       await revertPlan(userId, priceIds(data));
+      await saveSubscriptionEnd(userId, data, "cancel");
       return Response.json({ ok: true });
     }
 
@@ -276,6 +308,12 @@ export async function POST(request: NextRequest) {
       const plan = planByPriceId(priceId);
       if (plan) await applyPlan(userId, plan);
     }
+
+    const hasPlan = ids.some((priceId) => planByPriceId(priceId));
+    if (subscriptionEvent || hasPlan) {
+      await saveSubscriptionEnd(userId, data, "set");
+    }
+    if (event === "subscription.updated") return Response.json({ ok: true });
 
     // История и баланс пишутся один раз на id транзакции. Start, Pro и Agency
     // сбрасывают strike_credits до лимита месяца; докупка SC прибавляется.

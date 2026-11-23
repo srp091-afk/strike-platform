@@ -27,6 +27,7 @@ async function LiveBilling() {
   const data: BillingData = {
     status: overview.subscriptionStatus,
     renewsAt: overview.renewsAt,
+    subscriptionEndsAt: overview.subscriptionEndsAt,
     strikeCredits: overview.strikeCredits,
     tiers: overview.tiers,
     isBundleActive: overview.isBundleActive,

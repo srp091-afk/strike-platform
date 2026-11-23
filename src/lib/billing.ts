@@ -15,6 +15,7 @@ export type BillingTransaction = {
 export type BillingOverview = {
   subscriptionStatus: string | null;
   renewsAt: string | null;
+  subscriptionEndsAt: string | null;
   balanceUsd: number;
   strikeCredits: number;
   tiers: { agents: string; smm: string; ads: string; sites: string };
@@ -43,6 +44,9 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
   // tier_ads — отдельная миграция (20261106_add_tier_ads): отдельный запрос, чтобы её отсутствие не ломало остальное.
   const adsQuery = await admin.from("profiles").select("tier_ads").eq("id", userId).maybeSingle();
   const tierAds = adsQuery.error ? "trial" : String(adsQuery.data?.tier_ads ?? "trial");
+  const endsQuery = await admin.from("profiles").select("subscription_ends_at").eq("id", userId).maybeSingle();
+  const subscriptionEndsAt =
+    endsQuery.error || typeof endsQuery.data?.subscription_ends_at !== "string" ? null : endsQuery.data.subscription_ends_at;
   const paddleQuery = await admin.from("profiles").select("paddle_customer_id, paddle_subscription_id").eq("id", userId).maybeSingle();
   const paddleCustomerId = paddleQuery.error ? "" : String(paddleQuery.data?.paddle_customer_id ?? "");
   const paddleSubscriptionId = paddleQuery.error ? "" : String(paddleQuery.data?.paddle_subscription_id ?? "");
@@ -86,6 +90,7 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
   return {
     subscriptionStatus: typeof profile.data?.subscription_status === "string" ? profile.data.subscription_status : null,
     renewsAt: typeof profile.data?.plan_renews_at === "string" ? profile.data.plan_renews_at : null,
+    subscriptionEndsAt,
     balanceUsd: Number(profile.data?.balance_usd ?? 0),
     strikeCredits: Number(credits?.strike_credits ?? 500),
     tiers: {

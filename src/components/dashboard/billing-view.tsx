@@ -25,6 +25,7 @@ type Method = "card" | "crypto";
 export type BillingData = {
   status: string | null;
   renewsAt: string | null;
+  subscriptionEndsAt: string | null;
   strikeCredits: number;
   tiers: { agents: string; smm: string; ads: string; sites: string };
   isBundleActive: boolean;
@@ -42,6 +43,12 @@ export type BillingData = {
 };
 
 const DATE_FORMAT = new Intl.DateTimeFormat("ru-RU", { day: "numeric", month: "short", year: "numeric" });
+
+function formatSubscriptionEnd(iso: string) {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return "";
+  return new Intl.DateTimeFormat("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
+}
 
 function formatDate(iso: string) {
   const date = new Date(iso);
@@ -112,12 +119,16 @@ export function BillingView({ data }: { data: BillingData }) {
   const selected = TOP_UPS[topUpIndex];
   const agentTier = normalizeAgentTier(data.tiers.agents);
   const agentLimit = TIER_LIMITS[agentTier].maxAgents;
-  const agentTariff =
-    agentTier === "trial"
+  const endsOn =
+    agentTier !== "trial" && data.subscriptionEndsAt ? formatSubscriptionEnd(data.subscriptionEndsAt) : "";
+  const agentTariff = data.isBundleActive
+    ? "AI-Агенты: Business"
+    : agentTier === "trial"
       ? "AI-Агенты: Trial"
       : agentTier === "agency" || !Number.isFinite(agentLimit)
         ? `AI-Агенты: ${tierLabel(agentTier)}`
         : `AI-Агенты: ${tierLabel(agentTier)} · до ${agentLimit} агентов`;
+  const agentTariffLabel = endsOn ? `${agentTariff} · действует до ${endsOn}` : agentTariff;
   const extraTiers = data.isAdmin
     ? [
         { label: "SMM", tier: data.tiers.smm },
@@ -231,7 +242,7 @@ export function BillingView({ data }: { data: BillingData }) {
               ) : null}
               <ul className="mt-3 flex flex-wrap gap-2">
                 <li className="rounded-xl border border-gray-200 bg-gray-50 px-3.5 py-2 text-sm font-semibold text-[#0b0b0f]">
-                  {data.isBundleActive ? "AI-Агенты: Business" : agentTariff}
+                  {agentTariffLabel}
                 </li>
                 {extraTiers.map((item) => (
                   <li
