@@ -71,13 +71,13 @@ function alreadyExists(status: number, payload: unknown) {
   return /already/i.test(errorText(payload));
 }
 
-export async function createInstance(instanceName: string, webhookUrl: string) {
+export async function createInstance(instanceName: string, webhookUrl: string, options?: { qrcode?: boolean }) {
   const { response, payload } = await evolutionFetch("/instance/create", {
     method: "POST",
     body: JSON.stringify({
       instanceName,
       integration: "WHATSAPP-BAILEYS",
-      qrcode: true,
+      qrcode: options?.qrcode !== false,
       webhook: {
         url: webhookUrl,
         byEvents: false,
@@ -130,13 +130,34 @@ export async function getQrCode(instanceName: string) {
   };
 }
 
-export async function getPairingCode(instanceName: string, phoneNumber: string) {
-  const digits = phoneNumber.replace(/\D/g, "");
+async function connectForPairing(instanceName: string, digits: string) {
   const { response, payload } = await evolutionFetch(
     `/instance/connect/${encodeURIComponent(instanceName)}?number=${encodeURIComponent(digits)}`,
   );
   if (!response.ok) throw new Error(errorText(payload) || `Evolution API pairing ${response.status}`);
-  const code = readEvolutionPairingCode(payload);
+  return readEvolutionPairingCode(payload);
+}
+
+export async function getPairingCode(instanceName: string, phoneNumber: string) {
+  const digits = phoneNumber.replace(/\D/g, "");
+  const state = await getConnectionState(instanceName).catch(() => "close");
+  if (state === "open") {
+    const error = new Error("WhatsApp уже подключён.");
+    error.name = "EvolutionAlreadyOpen";
+    throw error;
+  }
+
+  // Пока инстанс ждёт QR, Evolution отвечает 200, но pairingCode = null.
+  // Выходим из этой сессии и подключаемся сразу с номером.
+  let code = await connectForPairing(instanceName, digits);
+  if (!code) {
+    await evolutionFetch(`/instance/logout/${encodeURIComponent(instanceName)}`, { method: "DELETE" }).catch(() => null);
+    code = await connectForPairing(instanceName, digits);
+  }
+  if (!code) {
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    code = await connectForPairing(instanceName, digits);
+  }
   if (!code) throw new Error("Не удалось получить код связывания.");
   return code;
 }

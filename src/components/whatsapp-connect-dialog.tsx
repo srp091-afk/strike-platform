@@ -185,6 +185,11 @@ export function WhatsAppConnectDialog({
     const result = await requestWhatsAppLinkCode(instanceId, apiToken, digits, agentId);
     if (id !== requestId.current) return;
     setCodePending(false);
+    if ("alreadyAuthorized" in result && result.alreadyAuthorized) {
+      setAlreadyAuthorized(true);
+      setWatching(evolution);
+      return;
+    }
     if (!result.ok || !result.code) {
       setMessage(result.error ?? "Не удалось получить код связывания.");
       return;

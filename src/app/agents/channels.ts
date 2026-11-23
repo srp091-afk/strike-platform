@@ -423,7 +423,7 @@ function formatPairingCode(code: string) {
   return code.trim();
 }
 
-async function prepareEvolutionInstance(agentId: string) {
+async function prepareEvolutionInstance(agentId: string, qrcode = true) {
   if (!UUID_PATTERN.test(agentId)) return { ok: false as const, error: "Сначала сохраните агента.", instanceName: "", state: "" };
   if (!(await agentInWorkspace(agentId))) return { ok: false as const, error: "Агент не найден.", instanceName: "", state: "" };
 
@@ -440,7 +440,7 @@ async function prepareEvolutionInstance(agentId: string) {
 
   let created: unknown = null;
   try {
-    created = await createInstance(instanceName, evolutionWebhookUrl());
+    created = await createInstance(instanceName, evolutionWebhookUrl(), { qrcode });
   } catch (error) {
     console.error("[evolution] create", error instanceof Error ? error.message : error);
     return { ok: false as const, error: "Не удалось создать подключение WhatsApp.", instanceName: "", state: "" };
@@ -492,14 +492,18 @@ async function requestEvolutionLinkCode(agentId: string, phoneNumber: string) {
   if (!/^\d{8,15}$/.test(digits)) {
     return { ok: false as const, code: null, error: "Введите номер в международном формате, например 79991234567." };
   }
-  const prepared = await prepareEvolutionInstance(agentId);
-  if (!prepared.ok) return { ok: false as const, code: null, error: prepared.error };
+  const prepared = await prepareEvolutionInstance(agentId, false);
+  if (!prepared.ok) return { ok: false as const, code: null, alreadyAuthorized: false, error: prepared.error };
+  if (prepared.state === "open") return { ok: true as const, code: null, alreadyAuthorized: true, error: null };
   try {
     const code = formatPairingCode(await getPairingCode(prepared.instanceName, digits));
-    return { ok: true as const, code, error: null };
+    return { ok: true as const, code, alreadyAuthorized: false, error: null };
   } catch (error) {
     console.error("[evolution] pairing", error instanceof Error ? error.message : error);
-    return { ok: false as const, code: null, error: "Не удалось получить код связывания." };
+    if (error instanceof Error && error.name === "EvolutionAlreadyOpen") {
+      return { ok: true as const, code: null, alreadyAuthorized: true, error: null };
+    }
+    return { ok: false as const, code: null, alreadyAuthorized: false, error: "Не удалось получить код связывания." };
   }
 }
 
