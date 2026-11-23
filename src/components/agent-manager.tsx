@@ -3289,6 +3289,7 @@ function ChannelSettings({
   onMessengerChange: (patch: { fb_messenger_enabled?: boolean }) => void;
   onMessengerCleared: () => void;
 }) {
+  const [whatsappAuthTab, setWhatsappAuthTab] = useState<"qr" | "phone">("qr");
   const [whatsappOpen, setWhatsappOpen] = useState(initialOpenChannel === "whatsapp");
   const [telegramOpen, setTelegramOpen] = useState(initialOpenChannel === "telegram");
   const [widgetOpen, setWidgetOpen] = useState(initialOpenChannel === "widget");
@@ -3356,7 +3357,7 @@ function ChannelSettings({
       {connectError ? <p className="text-sm text-red-400">{connectError}</p> : null}
       <ChannelAccordionCard
         title="WhatsApp"
-        description="Подключение рабочего номера по QR-коду за 30 секунд или через Twilio API"
+        description="QR-код, код на телефон или официальный API Twilio"
         connected={whatsappConnected}
         icon={<ChannelMark provider="whatsapp" tone="bg-[#25D366]/10" />}
         enabled={whatsappConnected && channels.whatsapp}
@@ -3370,7 +3371,7 @@ function ChannelSettings({
         ) : null}
         <div className="grid grid-cols-2 gap-2">
           <button type="button" className={`${whatsappTab === "qr" ? platformTabActive : platformTabIdle} text-center leading-tight`} onClick={() => setWhatsappTab("qr")}>
-            По QR-коду (Рекомендуем)
+            QR или код на телефон
           </button>
           <button type="button" className={`${whatsappTab === "twilio" ? platformTabActive : platformTabIdle} text-center leading-tight`} onClick={() => setWhatsappTab("twilio")}>
             Официальный API (Twilio)
@@ -3381,8 +3382,13 @@ function ChannelSettings({
             agentId={agentId}
             instanceId={credentials.instanceId}
             phone={phone}
+            evolution={evolutionWhatsApp}
+            linked={whatsappConnected}
             connecting={connectingChannel === "whatsapp"}
-            onConnect={() => void handleConnect("whatsapp")}
+            onConnect={(tab) => {
+              setWhatsappAuthTab(tab);
+              void handleConnect("whatsapp");
+            }}
             onPhoneSaved={onWhatsAppPhone}
             onCleared={onWhatsAppCleared}
           />
@@ -3541,12 +3547,15 @@ function ChannelSettings({
       </ChannelAccordionCard>
       {whatsappOpen ? (
         <WhatsAppConnectDialog
+          key={whatsappAuthTab}
           agentId={agentId || agent?.id || ""}
           defaults={{
             instanceId: credentials.instanceId || greenDefaults.instanceId,
             apiToken: credentials.apiToken || greenDefaults.apiToken,
           }}
           evolution={evolutionWhatsApp}
+          initialTab={whatsappAuthTab}
+          initialPhone={phone}
           onApply={onWhatsAppCredentials}
           onPhone={onWhatsAppPhone}
           onClose={() => setWhatsappOpen(false)}
@@ -3578,7 +3587,7 @@ function ChannelSettings({
 
 function whatsappDraftConnected(instanceId: string, apiToken: string, phone: string, active: boolean) {
   if (/^strike_[0-9a-f]{8}$/i.test(instanceId.trim()) && apiToken.trim() === "evolution") {
-    return Boolean(active || phone.trim());
+    return active;
   }
   return Boolean(instanceId || phone || active);
 }
@@ -4314,6 +4323,8 @@ function WhatsAppChannel({
   agentId,
   instanceId,
   phone,
+  evolution,
+  linked,
   connecting,
   onConnect,
   onPhoneSaved,
@@ -4322,19 +4333,61 @@ function WhatsAppChannel({
   agentId: string;
   instanceId: string;
   phone: string;
+  evolution: boolean;
+  linked: boolean;
   connecting: boolean;
-  onConnect: () => void;
+  onConnect: (tab: "qr" | "phone") => void;
   onPhoneSaved: (phone: string) => void;
   onCleared: () => void;
 }) {
   const savedPhone = phone && phone !== instanceId ? phone : "";
+  if (evolution) {
+    if (!linked) {
+      return (
+        <div className="grid gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              className="rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
+              disabled={connecting}
+              onClick={() => onConnect("qr")}
+            >
+              {connecting ? "Сохранение агента" : "QR-код"}
+            </button>
+            <button
+              type="button"
+              className="rounded-xl border border-zinc-800 bg-zinc-900 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-zinc-800 disabled:opacity-50"
+              disabled={connecting}
+              onClick={() => onConnect("phone")}
+            >
+              Код на телефон
+            </button>
+          </div>
+          <p className="text-xs leading-5 text-zinc-400">
+            QR сканируется в WhatsApp. Код на телефон — 8 символов, их вводят в связанных устройствах. Номер сам по себе канал не подключает.
+          </p>
+        </div>
+      );
+    }
+    return (
+      <div className="flex items-center justify-between gap-3 py-1">
+        <p className="truncate text-sm font-medium text-white">{savedPhone || "Номер подключён"}</p>
+        <DisconnectButton
+          agentId={agentId}
+          kind="whatsapp"
+          label={`Отключить номер ${savedPhone || "WhatsApp"}`}
+          onDisconnected={onCleared}
+        />
+      </div>
+    );
+  }
   if (!instanceId && !savedPhone) {
     return (
       <button
         type="button"
         className="w-full rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow duration-200 hover:shadow-[0_0_15px_rgba(207,2,52,0.45)] disabled:opacity-50"
         disabled={connecting}
-        onClick={onConnect}
+        onClick={() => onConnect("qr")}
       >
         {connecting ? "Сохранение агента" : "+ Подключить номер"}
       </button>

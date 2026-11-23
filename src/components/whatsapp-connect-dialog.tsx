@@ -22,6 +22,8 @@ export function WhatsAppConnectDialog({
   agentId,
   defaults,
   evolution = false,
+  initialTab = "qr",
+  initialPhone = "",
   onApply,
   onPhone,
   onClose,
@@ -29,6 +31,8 @@ export function WhatsAppConnectDialog({
   agentId: string;
   defaults: GreenDefaults;
   evolution?: boolean;
+  initialTab?: "qr" | "phone";
+  initialPhone?: string;
   onApply: (credentials: GreenDefaults) => void;
   onPhone?: (phone: string) => void;
   onClose: () => void;
@@ -37,7 +41,7 @@ export function WhatsAppConnectDialog({
   const [instanceId, setInstanceId] = useState(defaults.instanceId);
   const [apiToken, setApiToken] = useState(defaults.apiToken);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState(initialPhone);
   const [qrImage, setQrImage] = useState<string | null>(null);
   const [linkCode, setLinkCode] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -222,7 +226,7 @@ export function WhatsAppConnectDialog({
         </h2>
         <div className="mt-5 grid gap-4">
           <Tabs
-            defaultValue="qr"
+            defaultValue={initialTab}
             onValueChange={() => {
               resetFlow();
             }}
