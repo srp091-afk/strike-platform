@@ -542,6 +542,7 @@ async function notifyPaidChat(agent: PaymentAgent | null, row: PaymentRow, text:
   try {
     const supabase = createSupabaseAdminClient();
     const conversation = await findConversation(supabase, agent.id, row.chat_id);
+    let outboundId: string | null = null;
     if (row.channel === "twilio") {
       const session = UUID_PATTERN.test(row.chat_id)
         ? await supabase.from("lead_sessions").select("phone").eq("id", row.chat_id).maybeSingle()
@@ -550,7 +551,7 @@ async function notifyPaidChat(agent: PaymentAgent | null, row: PaymentRow, text:
       const account = await twilioAccountForUser(agent.userId);
       if (phone && account.account) await sendTextMessage(account.account, { phoneDigits: phone, body: text.slice(0, 1600) });
     } else if (conversation?.externalChatId) {
-      await deliverChannel(agent, row.channel, conversation.provider, conversation.externalChatId, text);
+      outboundId = await deliverChannel(agent, row.channel, conversation.provider, conversation.externalChatId, text);
     }
     if (!conversation) return;
     const { error } = await supabase.from("messages").insert({
@@ -559,6 +560,7 @@ async function notifyPaidChat(agent: PaymentAgent | null, row: PaymentRow, text:
       role: "assistant",
       content: text.slice(0, 4000),
       status: "sent",
+      ...(outboundId ? { external_message_id: outboundId } : {}),
     });
     if (error && !/user_id/.test(error.message)) console.error("[payments] history", error.message);
     if (error?.code === "23502") {
@@ -567,6 +569,7 @@ async function notifyPaidChat(agent: PaymentAgent | null, row: PaymentRow, text:
         role: "assistant",
         content: text.slice(0, 4000),
         status: "sent",
+        ...(outboundId ? { external_message_id: outboundId } : {}),
       });
     }
     await supabase
@@ -581,8 +584,7 @@ async function notifyPaidChat(agent: PaymentAgent | null, row: PaymentRow, text:
 async function deliverChannel(agent: PaymentAgent, channel: string, provider: string, externalChatId: string, text: string) {
   const kind = provider || channel;
   if (kind === "whatsapp" && agent.waInstanceId && agent.waApiToken) {
-    await sendConnectedWhatsApp(agent.waInstanceId, agent.waApiToken, externalChatId, text);
-    return;
+    return (await sendConnectedWhatsApp(agent.waInstanceId, agent.waApiToken, externalChatId, text)) || null;
   }
   if (kind === "telegram" && agent.telegramBotToken) {
     await fetch(`https://api.telegram.org/bot${agent.telegramBotToken}/sendMessage`, {
@@ -591,7 +593,7 @@ async function deliverChannel(agent: PaymentAgent, channel: string, provider: st
       body: JSON.stringify({ chat_id: externalChatId, text: text.slice(0, 4000) }),
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
-    return;
+    return null;
   }
   if (kind === "instagram" && agent.instagramPageId && agent.instagramAccessToken) {
     await fetch(`https://graph.facebook.com/v21.0/${agent.instagramPageId}/messages`, {
@@ -601,6 +603,7 @@ async function deliverChannel(agent: PaymentAgent, channel: string, provider: st
       signal: AbortSignal.timeout(TIMEOUT_MS),
     });
   }
+  return null;
 }
 
 async function findConversation(supabase: ReturnType<typeof createSupabaseAdminClient>, agentId: string, chatId: string) {

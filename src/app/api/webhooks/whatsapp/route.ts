@@ -1309,17 +1309,16 @@ export async function handleEvolutionWebhook(body: unknown) {
     const text = evolutionMessageText(asRecord(message).message).slice(0, 8000);
     const fromMe = evolutionFromMe(message);
     const messageId = stringValue(asRecord(asRecord(message).key).id) || null;
-    const contactName = stringValue(asRecord(message).pushName) || null;
     const sentAt = timestampToIso(asRecord(message).messageTimestamp);
 
     if (fromMe) {
-      if (evolutionApiEcho(message)) continue;
+      // Эхо ответа бота: key.id уже лежит в messages.external_message_id.
+      if (messageId && (await messageExists(supabase, messageId))) continue;
       after(() =>
         handleEvolutionFromMe(supabase, instanceName, {
           from: remoteJid,
           text,
           messageId,
-          contactName,
           sentAt,
         }).catch((error) => {
           console.error("[evolution webhook] fromMe", error instanceof Error ? error.message : error);
@@ -1327,6 +1326,8 @@ export async function handleEvolutionWebhook(body: unknown) {
       );
       continue;
     }
+
+    const contactName = stringValue(asRecord(message).pushName) || null;
 
     if (!text) continue;
     const job = await enqueueEvolutionIncoming(supabase, instanceName, {
@@ -1372,8 +1373,13 @@ function evolutionMessages(body: unknown) {
 }
 
 function evolutionRemoteJid(message: unknown) {
+  // Собеседник только из key. Корневой sender в Evolution v2 — номер самого подключённого аккаунта.
   const key = asRecord(asRecord(message).key);
-  return stringValue(key.remoteJid) || stringValue(key.remoteJidAlt);
+  const remoteJid = stringValue(key.remoteJid);
+  if (!remoteJid || ignoredWhatsAppJid(remoteJid)) return "";
+  const alt = stringValue(key.remoteJidAlt);
+  if (remoteJid.toLowerCase().endsWith("@lid") && alt && !ignoredWhatsAppJid(alt)) return alt;
+  return remoteJid;
 }
 
 function ignoredWhatsAppJid(jid: string) {
@@ -1384,14 +1390,6 @@ function ignoredWhatsAppJid(jid: string) {
 function evolutionFromMe(message: unknown) {
   const fromMe = asRecord(asRecord(message).key).fromMe;
   return fromMe === true || fromMe === "true";
-}
-
-function evolutionApiEcho(message: unknown) {
-  const record = asRecord(message);
-  const status = stringValue(record.status).toLowerCase();
-  if (status === "pending" || status === "server_ack") return true;
-  const source = stringValue(record.source).toLowerCase();
-  return source === "unknown" || source === "api";
 }
 
 function evolutionMessageText(message: unknown): string {
@@ -1450,7 +1448,7 @@ async function resolveEvolutionAccount(supabase: AdminClient, instanceName: stri
 async function handleEvolutionFromMe(
   supabase: AdminClient,
   instanceName: string,
-  message: { from: string; text: string; messageId: string | null; contactName: string | null; sentAt: string | null },
+  message: { from: string; text: string; messageId: string | null; sentAt: string | null },
 ) {
   const channel = await resolveEvolutionAccount(supabase, instanceName);
   if (!channel) return;
@@ -1461,7 +1459,8 @@ async function handleEvolutionFromMe(
     agentId: channel.agentId,
     integrationId: channel.integrationId,
     externalChatId: message.from,
-    contactName: message.contactName,
+    // pushName при fromMe — имя владельца телефона, имя клиента не трогаем.
+    contactName: null,
     preview: message.text || "Сообщение оператора",
     touchPreview: Boolean(message.text),
   });

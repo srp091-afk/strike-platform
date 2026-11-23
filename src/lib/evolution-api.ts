@@ -203,8 +203,15 @@ export async function sendTextMessage(instanceName: string, phone: string, text:
     body: JSON.stringify({ number, text }),
   });
   if (!response.ok) throw new Error(`Evolution API sendText ${response.status}`);
-  const key = asRecord(asRecord(payload).key);
-  return stringValue(key.id) || null;
+  return readOutboundMessageId(payload);
+}
+
+function readOutboundMessageId(payload: unknown) {
+  const root = asRecord(payload);
+  const key = asRecord(root.key);
+  const data = asRecord(root.data);
+  const dataKey = asRecord(data.key);
+  return stringValue(key.id) || stringValue(dataKey.id) || stringValue(root.messageId) || null;
 }
 
 export async function logoutAndDeleteInstance(instanceName: string) {
