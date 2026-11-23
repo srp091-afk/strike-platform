@@ -5,7 +5,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { readBotFlags } from "@/lib/bot-state";
 import { readFollowupInterval, readFollowupMaxCount } from "@/lib/agent-models";
 import { sendEmailReply, type EmailConfig } from "@/lib/email-channel";
-import { sendGreenMessage } from "@/lib/green-api";
+import { isEvolutionInstance, sendConnectedWhatsApp } from "@/lib/evolution-api";
 import { getOpenAI } from "@/lib/openai";
 import { sleep, stripMarkdown } from "@/lib/reply";
 import { sendTwilioSms } from "@/lib/twilio-sms";
@@ -223,17 +223,40 @@ async function processConversation(
       SEND_JITTER_MIN_MS + Math.floor(Math.random() * (SEND_JITTER_MAX_MS - SEND_JITTER_MIN_MS + 1));
     await sleep(Math.max(0, Math.min(jitter, deadline - Date.now())));
 
+    const evolutionWa = provider === "whatsapp" && isEvolutionInstance(String(agent.wa_instance_id ?? ""));
+    if (evolutionWa) await storePush(supabase, conversation, decision.message, null);
     const delivered = await deliver(supabase, agent, provider, conversation, decision.message);
     const pushCount = (conversation.push_count ?? 0) + 1;
     const now = new Date().toISOString();
 
     if (!delivered.ok) {
+      if (evolutionWa) {
+        await supabase
+          .from("messages")
+          .delete()
+          .eq("conversation_id", conversation.id)
+          .eq("role", "assistant")
+          .eq("content", decision.message)
+          .is("external_message_id", null);
+      }
       // Считаем попытку, чтобы сломанный канал не молотил LLM каждый час бесконечно.
       await supabase.from("conversations").update({ push_count: pushCount }).eq("id", conversation.id);
       return "failed";
     }
 
-    await storePush(supabase, conversation, decision.message, delivered.externalId);
+    if (evolutionWa) {
+      if (delivered.externalId) {
+        await supabase
+          .from("messages")
+          .update({ external_message_id: delivered.externalId })
+          .eq("conversation_id", conversation.id)
+          .eq("role", "assistant")
+          .eq("content", decision.message)
+          .is("external_message_id", null);
+      }
+    } else {
+      await storePush(supabase, conversation, decision.message, delivered.externalId);
+    }
     const { error } = await supabase
       .from("conversations")
       .update({
@@ -455,10 +478,7 @@ async function deliver(
       return { ok: true as const, externalId: sent.sid };
     }
     if (provider === "whatsapp") {
-      const externalId = await sendGreenMessage(chatId, text, {
-        idInstance: String(agent.wa_instance_id),
-        apiToken: String(agent.wa_api_token),
-      });
+      const externalId = await sendConnectedWhatsApp(String(agent.wa_instance_id), String(agent.wa_api_token), chatId, text);
       return { ok: true as const, externalId };
     }
     const response = await fetch(`https://api.telegram.org/bot${agent.tg_bot_token}/sendMessage`, {

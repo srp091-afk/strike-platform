@@ -4,7 +4,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 
 import { noteAmoPayment } from "@/lib/amocrm";
 import { noteBitrixPayment } from "@/lib/bitrix24";
-import { sendGreenMessage } from "@/lib/green-api";
+import { sendConnectedWhatsApp } from "@/lib/evolution-api";
 import { notePipedrivePayment } from "@/lib/pipedrive";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { sendTextMessage } from "@/lib/twilio-content";
@@ -581,7 +581,7 @@ async function notifyPaidChat(agent: PaymentAgent | null, row: PaymentRow, text:
 async function deliverChannel(agent: PaymentAgent, channel: string, provider: string, externalChatId: string, text: string) {
   const kind = provider || channel;
   if (kind === "whatsapp" && agent.waInstanceId && agent.waApiToken) {
-    await sendGreenMessage(externalChatId, text, { idInstance: agent.waInstanceId, apiToken: agent.waApiToken });
+    await sendConnectedWhatsApp(agent.waInstanceId, agent.waApiToken, externalChatId, text);
     return;
   }
   if (kind === "telegram" && agent.telegramBotToken) {

@@ -10,6 +10,7 @@ import { jsonFetcher, useClientReady } from "@/lib/swr";
 type AgentsResponse = {
   agents: AgentRecord[];
   greenDefaults: { instanceId: string; apiToken: string };
+  whatsappProvider?: "evolution" | "green";
   agentAccess?: { isAdmin: boolean; maxAgents: number | null };
 };
 
@@ -57,6 +58,7 @@ export function AgentsPageClient({
           initialEditingId={initialAgentId}
           initialConnectChannel={initialConnectChannel}
           greenDefaults={data?.greenDefaults ?? { instanceId: "", apiToken: "" }}
+          evolutionWhatsApp={data?.whatsappProvider === "evolution"}
           agentAccess={data?.agentAccess}
           loadError={error ? error.message : null}
           onSaved={() => {

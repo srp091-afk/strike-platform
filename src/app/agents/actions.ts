@@ -22,6 +22,7 @@ import { readViberBotName, readViberToken } from "@/lib/viber";
 import { readGa4MeasurementId, readYmCounterId } from "@/lib/widget-analytics";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { assertCanCreateAgent } from "@/lib/access";
+import { EVOLUTION_TOKEN, isEvolutionInstance } from "@/lib/evolution-api";
 import { ensureGreenIncomingWebhook, getGreenPhone } from "@/lib/green-api";
 import { leadEmailSettingsSchema } from "@/lib/lead-notify";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
@@ -77,7 +78,8 @@ function readAgentFields(formData: FormData) {
     return { ok: false as const, error: "Лимит сообщений должен быть целым числом от 0." };
   }
 
-  if ((waInstanceId || waApiToken) && (!/^\d{4,}$/.test(waInstanceId) || waApiToken.length < 8)) {
+  const evolutionPair = isEvolutionInstance(waInstanceId) && waApiToken === EVOLUTION_TOKEN;
+  if ((waInstanceId || waApiToken) && !evolutionPair && (!/^\d{4,}$/.test(waInstanceId) || waApiToken.length < 8)) {
     return { ok: false as const, error: "Укажите Instance ID и API Token WhatsApp." };
   }
 
@@ -553,14 +555,15 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
         ? {
             wa_instance_id: fields.waInstanceId,
             wa_api_token: fields.waApiToken,
-            wa_is_active: true,
+            // Evolution сам ставит wa_is_active, когда инстанс переходит в open.
+            ...(isEvolutionInstance(fields.waInstanceId) ? {} : { wa_is_active: true }),
             ...(waPhoneNumber ? { wa_phone_number: waPhoneNumber } : {}),
           }
         : {}),
     };
 
     // Уже подключённые номера подтягиваем до актуальных настроек вебхуков (исходящие с телефона).
-    if (fields.waInstanceId && fields.waApiToken) {
+    if (fields.waInstanceId && fields.waApiToken && !isEvolutionInstance(fields.waInstanceId)) {
       await ensureGreenIncomingWebhook({ idInstance: fields.waInstanceId, apiToken: fields.waApiToken }).catch(
         (error) => console.error("[agents] green webhook", error instanceof Error ? error.message : error),
       );
@@ -630,7 +633,7 @@ async function persistAgent(formData: FormData): Promise<SaveState> {
 }
 
 async function readWhatsAppPhone(instanceId: string, apiToken: string) {
-  if (!instanceId || !apiToken) return null;
+  if (!instanceId || !apiToken || isEvolutionInstance(instanceId)) return null;
   try {
     const phone = await getGreenPhone({ idInstance: instanceId, apiToken });
     const digits = phone.replace(/\D/g, "");

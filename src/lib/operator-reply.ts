@@ -7,7 +7,7 @@ import { sendEmailReply, type EmailConfig } from "@/lib/email-channel";
 import { sendMessengerMessage } from "@/lib/messenger";
 import { markAgentReplied } from "@/lib/followup";
 import { getEffectiveUserId } from "@/lib/account-context";
-import { sendGreenMessage } from "@/lib/green-api";
+import { isEvolutionInstance, sendConnectedWhatsApp } from "@/lib/evolution-api";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import { sendTwilioSms } from "@/lib/twilio-sms";
 import { sendViberMessage } from "@/lib/viber";
@@ -43,20 +43,46 @@ export async function sendOperatorReply(conversationId: string, text: string) {
   const agent = await loadAgent(String(conversation.agent_id), userId, provider);
   if (!agent.ok) return agent;
 
-  const sent = await deliver(supabase, conversationId, provider, chatId, body, agent.agent);
-  if (!sent.ok) return sent;
+  const evolutionWa = provider === "whatsapp" && isEvolutionInstance(agent.agent.wa_instance_id ?? "");
+  let placeholderId: string | null = null;
+  if (evolutionWa) {
+    const placeholder = await supabase
+      .from("messages")
+      .insert({ conversation_id: conversationId, role: "assistant", content: body, status: "sent" })
+      .select("id")
+      .single();
+    if (placeholder.error || !placeholder.data) {
+      return { ok: false as const, error: "Не удалось сохранить ответ." };
+    }
+    placeholderId = String(placeholder.data.id);
+  }
 
-  const { data: stored, error: storedError } = await supabase
-    .from("messages")
-    .insert({
-      conversation_id: conversationId,
-      role: "assistant",
-      content: body,
-      status: "sent",
-      ...(sent.externalId ? { external_message_id: sent.externalId } : {}),
-    })
-    .select("id")
-    .single();
+  const sent = await deliver(supabase, conversationId, provider, chatId, body, agent.agent);
+  if (!sent.ok) {
+    if (placeholderId) await supabase.from("messages").delete().eq("id", placeholderId);
+    return sent;
+  }
+
+  const { data: stored, error: storedError } = placeholderId
+    ? sent.externalId
+      ? await supabase
+          .from("messages")
+          .update({ external_message_id: sent.externalId })
+          .eq("id", placeholderId)
+          .select("id")
+          .single()
+      : { data: { id: placeholderId }, error: null }
+    : await supabase
+        .from("messages")
+        .insert({
+          conversation_id: conversationId,
+          role: "assistant",
+          content: body,
+          status: "sent",
+          ...(sent.externalId ? { external_message_id: sent.externalId } : {}),
+        })
+        .select("id")
+        .single();
   if (storedError || !stored) {
     return { ok: false as const, error: "Сообщение ушло клиенту, но не сохранилось в истории." };
   }
@@ -133,10 +159,7 @@ async function deliver(
       if (!agent.wa_instance_id || !agent.wa_api_token) {
         return { ok: false, error: "Сначала подключите WhatsApp у этого агента." };
       }
-      const externalId = await sendGreenMessage(chatId, body, {
-        idInstance: agent.wa_instance_id,
-        apiToken: agent.wa_api_token,
-      });
+      const externalId = await sendConnectedWhatsApp(agent.wa_instance_id, agent.wa_api_token, chatId, body);
       return { ok: true, externalId: externalId || null };
     }
     if (provider === "telegram") {

@@ -238,6 +238,7 @@ function SortableAgentCard({ agent, onTest, onEdit }: { agent: AgentRecord; onTe
 export function AgentManager({
   agents,
   greenDefaults,
+  evolutionWhatsApp = false,
   loadError,
   onSaved,
   initialEditingId,
@@ -246,6 +247,7 @@ export function AgentManager({
 }: {
   agents: AgentRecord[];
   greenDefaults: GreenDefaults;
+  evolutionWhatsApp?: boolean;
   loadError: string | null;
   onSaved?: () => void;
   /** Агент из URL /agents/<id>: открыть его правку после загрузки списка. */
@@ -435,6 +437,7 @@ export function AgentManager({
               : null
           }
           greenDefaults={greenDefaults}
+          evolutionWhatsApp={evolutionWhatsApp}
           onClose={closeDialog}
         />
       ) : null}
@@ -2196,6 +2199,7 @@ function AgentDialog({
   error,
   saved,
   greenDefaults,
+  evolutionWhatsApp = false,
   onClose,
 }: {
   editing: AgentRecord | null;
@@ -2206,6 +2210,7 @@ function AgentDialog({
   error: string | null;
   saved: { attemptId: string; agentId: string; waPhoneNumber: string } | null;
   greenDefaults: GreenDefaults;
+  evolutionWhatsApp?: boolean;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -2214,6 +2219,8 @@ function AgentDialog({
   const [draft, setDraft] = useState(initialDraft);
   const [baseline, setBaseline] = useState(initialDraft);
   const [persistedId, setPersistedId] = useState(editing?.id ?? "");
+  const evolutionLinkedRef = useRef(false);
+  const [evolutionLinked, setEvolutionLinked] = useState(false);
   const [connectError, setConnectError] = useState<string | null>(null);
   const ensuringSave = useRef<Promise<string | null> | null>(null);
   const dirty = !sameDraft(draft, baseline);
@@ -2267,7 +2274,14 @@ function AgentDialog({
       "active_channels",
       JSON.stringify({
         ...current.active_channels,
-        whatsapp: Boolean(current.wa_instance_id || current.wa_phone_number || editing?.waIsActive) && current.active_channels.whatsapp,
+        whatsapp:
+          whatsappDraftConnected(
+            current.wa_instance_id,
+            current.wa_api_token,
+            current.wa_phone_number,
+            editing?.waIsActive === true || evolutionLinkedRef.current,
+          ) &&
+          current.active_channels.whatsapp,
       }),
     );
     data.set("channel_delays", JSON.stringify(current.channel_delays));
@@ -2509,16 +2523,22 @@ function AgentDialog({
                     credentials={{ instanceId: draft.wa_instance_id, apiToken: draft.wa_api_token }}
                     phone={draft.wa_phone_number}
                     greenDefaults={greenDefaults}
+                    evolutionWhatsApp={evolutionWhatsApp}
                     channels={draft.active_channels}
                     onChannelsChange={(active_channels) => patchDraft({ active_channels })}
                     delays={draft.channel_delays}
                     onDelaysChange={(channel_delays) => patchDraft({ channel_delays })}
-                    onWhatsAppCredentials={(credentials) =>
+                    onWhatsAppCredentials={(credentials) => {
+                      if (evolutionWhatsApp) {
+                        evolutionLinkedRef.current = true;
+                        setEvolutionLinked(true);
+                      }
                       patchDraft({
                         wa_instance_id: credentials.instanceId,
                         wa_api_token: credentials.apiToken,
-                      })
-                    }
+                      });
+                    }}
+                    whatsappLive={evolutionLinked}
                     onWhatsAppPhone={(wa_phone_number) => {
                       setDraft((current) => ({ ...current, wa_phone_number }));
                       setBaseline((current) => ({ ...current, wa_phone_number }));
@@ -3168,6 +3188,7 @@ function ChannelSettings({
   credentials,
   phone,
   greenDefaults,
+  evolutionWhatsApp = false,
   channels,
   onChannelsChange,
   delays,
@@ -3175,6 +3196,7 @@ function ChannelSettings({
   onWhatsAppCredentials,
   onWhatsAppPhone,
   onWhatsAppCleared,
+  whatsappLive = false,
   smsEnabled,
   smsAccountSid,
   smsAuthToken,
@@ -3215,6 +3237,7 @@ function ChannelSettings({
   credentials: GreenDefaults;
   phone: string;
   greenDefaults: GreenDefaults;
+  evolutionWhatsApp?: boolean;
   channels: ActiveChannels;
   onChannelsChange: (channels: ActiveChannels) => void;
   delays: ChannelDelays;
@@ -3222,6 +3245,7 @@ function ChannelSettings({
   onWhatsAppCredentials: (credentials: GreenDefaults) => void;
   onWhatsAppPhone: (phone: string) => void;
   onWhatsAppCleared: () => void;
+  whatsappLive?: boolean;
   smsEnabled: boolean;
   smsAccountSid: string;
   smsAuthToken: string;
@@ -3272,7 +3296,12 @@ function ChannelSettings({
 
   // Физическое подключение: есть инстанс/номер WhatsApp или токен/сессия Telegram.
   // Пока канала нет, его тумблер заблокирован и принудительно выключен.
-  const whatsappConnected = Boolean(credentials.instanceId || phone || agent?.waIsActive);
+  const whatsappConnected = whatsappDraftConnected(
+    credentials.instanceId,
+    credentials.apiToken,
+    phone,
+    agent?.waIsActive === true || whatsappLive,
+  );
   const telegramConnected = agent ? isTelegramConnected(agent) : false;
   const instagramConnected = Boolean(agent?.igAccountId);
   const [instagramConnecting, setInstagramConnecting] = useState(false);
@@ -3517,7 +3546,9 @@ function ChannelSettings({
             instanceId: credentials.instanceId || greenDefaults.instanceId,
             apiToken: credentials.apiToken || greenDefaults.apiToken,
           }}
+          evolution={evolutionWhatsApp}
           onApply={onWhatsAppCredentials}
+          onPhone={onWhatsAppPhone}
           onClose={() => setWhatsappOpen(false)}
         />
       ) : null}
@@ -3543,6 +3574,13 @@ function ChannelSettings({
       ) : null}
     </section>
   );
+}
+
+function whatsappDraftConnected(instanceId: string, apiToken: string, phone: string, active: boolean) {
+  if (/^strike_[0-9a-f]{8}$/i.test(instanceId.trim()) && apiToken.trim() === "evolution") {
+    return Boolean(active || phone.trim());
+  }
+  return Boolean(instanceId || phone || active);
 }
 
 function viberCredentialsReady(authToken: string, savedConnected: boolean) {

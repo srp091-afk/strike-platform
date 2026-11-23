@@ -1,8 +1,10 @@
+import { revalidatePath } from "next/cache";
 import { after, type NextRequest } from "next/server";
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 import { normalizeAgentModel, readChannelDelays, readHandoffDuration, readMessageLimit } from "@/lib/agent-models";
 import { pauseBotForHandoff, pauseIfDialogueOverLimit, readBotFlags } from "@/lib/bot-state";
+import { isEvolutionInstance, sendTextMessage } from "@/lib/evolution-api";
 import { markAgentReplied, markClientReplied } from "@/lib/followup";
 import { getGreenChatHistory, sendGreenMessage, type GreenCredentials } from "@/lib/green-api";
 import { withKnowledge } from "@/lib/knowledge";
@@ -28,6 +30,7 @@ type IncomingJob = {
   sentAt: string | null;
   text: string;
   media: WhatsAppMedia | null;
+  transport: "green" | "evolution";
 };
 
 export async function POST(request: NextRequest) {
@@ -193,6 +196,7 @@ async function enqueueIncoming(request: NextRequest, body: unknown): Promise<Inc
     sentAt: parsed.sentAt,
     text: parsed.text,
     media: parsed.media,
+    transport: "green",
   };
 }
 
@@ -235,7 +239,9 @@ async function processIncomingAi(job: IncomingJob) {
     return;
   }
 
-  await syncOpeningHistory(supabase, job.conversationId, job.userId, job.from, job.credentials);
+  if (job.transport !== "evolution") {
+    await syncOpeningHistory(supabase, job.conversationId, job.userId, job.from, job.credentials);
+  }
   if (!(await readBotActive(supabase, job.conversationId))) {
     await logChatPause(supabase, job.conversationId);
     return;
@@ -318,25 +324,52 @@ async function processIncomingAi(job: IncomingJob) {
     for (const [index, chunk] of chunks.entries()) {
       let delivered = false;
       let outboundId: string | null = null;
-      try {
-        // Каждое следующее сообщение — после паузы «на печать» (2–4 с), чтобы не слать пачкой и не ловить бан.
-        if (index > 0) await sleep(splitPauseMs());
-        else if (responseDelay > 0) await sleep(responseDelay * 1000);
-        outboundId = await sendGreenMessage(job.from, chunk, job.credentials);
-        delivered = true;
-      } catch (error) {
-        console.error("[whatsapp webhook] green", error instanceof Error ? error.message : error);
-      }
+      if (index > 0) await sleep(splitPauseMs());
+      else if (responseDelay > 0) await sleep(responseDelay * 1000);
 
-      await insertMessage(supabase, {
-        userId: job.userId,
-        conversationId: job.conversationId,
-        role: "assistant",
-        content: chunk,
-        status: delivered ? "sent" : "failed",
-        externalMessageId: outboundId,
-        createdAt: null,
-      });
+      if (job.transport === "evolution") {
+        // Строка появляется до отправки: эхо fromMe с тем же текстом не ставит бота на паузу.
+        const placeholder = await supabase
+          .from("messages")
+          .insert({
+            user_id: job.userId,
+            conversation_id: job.conversationId,
+            role: "assistant",
+            content: chunk,
+            status: "sent",
+            external_message_id: null,
+          })
+          .select("id")
+          .maybeSingle();
+        try {
+          outboundId = await sendTextMessage(job.credentials.idInstance, job.from, chunk);
+          delivered = true;
+          if (placeholder.data?.id && outboundId) {
+            await supabase.from("messages").update({ external_message_id: outboundId }).eq("id", placeholder.data.id);
+          }
+        } catch (error) {
+          console.error("[whatsapp webhook] send", error instanceof Error ? error.message : error);
+          if (placeholder.data?.id) {
+            await supabase.from("messages").update({ status: "failed" }).eq("id", placeholder.data.id);
+          }
+        }
+      } else {
+        try {
+          outboundId = await sendGreenMessage(job.from, chunk, job.credentials);
+          delivered = true;
+        } catch (error) {
+          console.error("[whatsapp webhook] send", error instanceof Error ? error.message : error);
+        }
+        await insertMessage(supabase, {
+          userId: job.userId,
+          conversationId: job.conversationId,
+          role: "assistant",
+          content: chunk,
+          status: delivered ? "sent" : "failed",
+          externalMessageId: outboundId,
+          createdAt: null,
+        });
+      }
       preview = chunk;
       repliedOk = delivered;
       if (!delivered) break;
@@ -1065,6 +1098,12 @@ function normalizeInstanceId(value: string) {
   return value.replace(/\D/g, "");
 }
 
+function whatsappExternalId(value: string) {
+  const trimmed = value.trim();
+  if (isEvolutionInstance(trimmed)) return trimmed.toLowerCase();
+  return normalizeInstanceId(trimmed);
+}
+
 async function bindConversationAgent(
   supabase: AdminClient,
   conversationId: string,
@@ -1081,7 +1120,7 @@ async function ensureWhatsAppIntegration(
   supabase: AdminClient,
   input: { userId: string; agentId: string | null; instanceId: string },
 ) {
-  const instanceId = normalizeInstanceId(input.instanceId);
+  const instanceId = whatsappExternalId(input.instanceId);
   const { data: existing, error: lookupError } = await supabase
     .from("integrations")
     .select("id")
@@ -1116,9 +1155,11 @@ async function ensureWhatsAppIntegration(
       console.error("[whatsapp webhook] integrations lookup", owned.error);
       throw new Error(owned.error.message);
     }
-    const reusable = (owned.data ?? []).find(
-      (row) => !row.external_id || normalizeInstanceId(String(row.external_id)) === instanceId,
-    );
+    const reusable = (owned.data ?? []).find((row) => {
+      const stored = String(row.external_id ?? "");
+      if (!stored) return true;
+      return whatsappExternalId(stored) === instanceId;
+    });
     if (reusable?.id) {
       const { error } = await supabase
         .from("integrations")
@@ -1244,4 +1285,273 @@ function stringValue(value: unknown) {
   if (typeof value === "string") return value.trim();
   if (typeof value === "number" && Number.isFinite(value)) return String(value);
   return "";
+}
+
+/** Вебхук Evolution API v2. Green-события сюда не приходят. */
+export async function handleEvolutionWebhook(body: unknown) {
+  const event = evolutionEventName(body);
+  if (event === "connection.update") {
+    await applyEvolutionConnection(body);
+    return;
+  }
+  if (event !== "messages.upsert") return;
+
+  const instanceName = evolutionInstanceFrom(body);
+  if (!instanceName) return;
+  const supabase = createWebhookAdmin();
+
+  for (const message of evolutionMessages(body)) {
+    const remoteJid = evolutionRemoteJid(message);
+    if (!remoteJid || ignoredWhatsAppJid(remoteJid)) continue;
+    const messageType = stringValue(asRecord(message).messageType).toLowerCase();
+    if (messageType.includes("protocol") || messageType.includes("reaction")) continue;
+
+    const text = evolutionMessageText(asRecord(message).message).slice(0, 8000);
+    const fromMe = evolutionFromMe(message);
+    const messageId = stringValue(asRecord(asRecord(message).key).id) || null;
+    const contactName = stringValue(asRecord(message).pushName) || null;
+    const sentAt = timestampToIso(asRecord(message).messageTimestamp);
+
+    if (fromMe) {
+      if (evolutionApiEcho(message)) continue;
+      after(() =>
+        handleEvolutionFromMe(supabase, instanceName, {
+          from: remoteJid,
+          text,
+          messageId,
+          contactName,
+          sentAt,
+        }).catch((error) => {
+          console.error("[evolution webhook] fromMe", error instanceof Error ? error.message : error);
+        }),
+      );
+      continue;
+    }
+
+    if (!text) continue;
+    const job = await enqueueEvolutionIncoming(supabase, instanceName, {
+      from: remoteJid,
+      text,
+      messageId,
+      contactName,
+      sentAt,
+    });
+    if (!job) continue;
+    after(() =>
+      processIncomingAi(job).catch((error) => {
+        console.error("[evolution webhook] ai", error instanceof Error ? error.message : error);
+      }),
+    );
+  }
+}
+
+function evolutionEventName(body: unknown) {
+  const record = asRecord(body);
+  return (stringValue(record.event) || stringValue(record.type)).toLowerCase().replace(/_/g, ".");
+}
+
+function evolutionInstanceFrom(body: unknown) {
+  const record = asRecord(body);
+  const data = asRecord(record.data);
+  const nested = asRecord(record.instance);
+  const name =
+    (typeof record.instance === "string" ? record.instance : "") ||
+    (typeof data.instance === "string" ? data.instance : "") ||
+    stringValue(nested.instanceName) ||
+    stringValue(record.instanceName);
+  return name.trim().toLowerCase();
+}
+
+function evolutionMessages(body: unknown) {
+  const data = asRecord(body).data;
+  if (Array.isArray(data)) return data;
+  const record = asRecord(data);
+  if (Array.isArray(record.messages)) return record.messages;
+  if (record.key) return [data];
+  return [];
+}
+
+function evolutionRemoteJid(message: unknown) {
+  const key = asRecord(asRecord(message).key);
+  return stringValue(key.remoteJid) || stringValue(key.remoteJidAlt);
+}
+
+function ignoredWhatsAppJid(jid: string) {
+  const value = jid.toLowerCase();
+  return value.endsWith("@g.us") || value.endsWith("@broadcast") || value === "status@broadcast";
+}
+
+function evolutionFromMe(message: unknown) {
+  const fromMe = asRecord(asRecord(message).key).fromMe;
+  return fromMe === true || fromMe === "true";
+}
+
+function evolutionApiEcho(message: unknown) {
+  const record = asRecord(message);
+  const status = stringValue(record.status).toLowerCase();
+  if (status === "pending" || status === "server_ack") return true;
+  const source = stringValue(record.source).toLowerCase();
+  return source === "unknown" || source === "api";
+}
+
+function evolutionMessageText(message: unknown): string {
+  const record = asRecord(message);
+  if (typeof record.conversation === "string") return record.conversation;
+  const extended = stringValue(asRecord(record.extendedTextMessage).text);
+  if (extended) return extended;
+  if (record.ephemeralMessage) return evolutionMessageText(asRecord(record.ephemeralMessage).message);
+  if (record.viewOnceMessage) return evolutionMessageText(asRecord(record.viewOnceMessage).message);
+  return "";
+}
+
+async function applyEvolutionConnection(body: unknown) {
+  const instanceName = evolutionInstanceFrom(body);
+  if (!instanceName) return;
+  const data = asRecord(asRecord(body).data);
+  const nested = asRecord(data.instance);
+  const state = (stringValue(data.state) || stringValue(nested.state)).toLowerCase();
+  if (state !== "open" && state !== "close") return;
+
+  const wuid = stringValue(data.wuid) || stringValue(nested.wuid) || stringValue(data.ownerJid);
+  const phone = wuid.replace(/\D/g, "");
+  const supabase = createWebhookAdmin();
+  const patch: { wa_is_active: boolean; wa_phone_number?: string } = { wa_is_active: state === "open" };
+  if (state === "open" && phone) patch.wa_phone_number = phone.slice(0, 40);
+  const { error } = await supabase.from("agents").update(patch).eq("wa_instance_id", instanceName);
+  if (error) console.error("[evolution webhook] connection", error.message);
+  else revalidatePath("/agents");
+}
+
+async function resolveEvolutionAccount(supabase: AdminClient, instanceName: string) {
+  const { data, error } = await supabase
+    .from("agents")
+    .select("id, user_id, wa_instance_id, wa_api_token, wa_is_active")
+    .eq("wa_instance_id", instanceName)
+    .limit(1)
+    .maybeSingle();
+  if (error) throw new Error(error.message);
+  if (!data?.user_id) return null;
+
+  const userId = String(data.user_id);
+  const agentId = String(data.id);
+  const integration = await ensureWhatsAppIntegration(supabase, { userId, agentId, instanceId: instanceName });
+  return {
+    integrationId: integration.id,
+    userId,
+    agentId,
+    canReply: data.wa_is_active === true,
+    credentials: {
+      idInstance: instanceName,
+      apiToken: String(data.wa_api_token ?? "evolution"),
+    } satisfies GreenCredentials,
+  };
+}
+
+async function handleEvolutionFromMe(
+  supabase: AdminClient,
+  instanceName: string,
+  message: { from: string; text: string; messageId: string | null; contactName: string | null; sentAt: string | null },
+) {
+  const channel = await resolveEvolutionAccount(supabase, instanceName);
+  if (!channel) return;
+  if (message.messageId && (await messageExists(supabase, message.messageId))) return;
+
+  const conversation = await upsertConversation(supabase, {
+    userId: channel.userId,
+    agentId: channel.agentId,
+    integrationId: channel.integrationId,
+    externalChatId: message.from,
+    contactName: message.contactName,
+    preview: message.text || "Сообщение оператора",
+    touchPreview: Boolean(message.text),
+  });
+  if (await isOwnApiEcho(supabase, conversation.id, message.text)) return;
+
+  if (message.text) {
+    await insertMessage(supabase, {
+      userId: channel.userId,
+      conversationId: conversation.id,
+      role: "assistant",
+      content: message.text,
+      status: "sent",
+      externalMessageId: message.messageId,
+      createdAt: message.sentAt,
+    });
+  }
+  await pauseBotForHandoff(supabase, conversation.id, await readAgentHandoffDuration(supabase, channel.agentId));
+}
+
+async function isOwnApiEcho(supabase: AdminClient, conversationId: string, text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return false;
+  const { data, error } = await supabase
+    .from("messages")
+    .select("content, created_at")
+    .eq("conversation_id", conversationId)
+    .eq("role", "assistant")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error || !data) return false;
+  if (String(data.content ?? "").trim() !== trimmed) return false;
+  const age = Date.now() - Date.parse(String(data.created_at ?? ""));
+  return Number.isFinite(age) && age >= 0 && age < 120_000;
+}
+
+async function enqueueEvolutionIncoming(
+  supabase: AdminClient,
+  instanceName: string,
+  parsed: { from: string; text: string; messageId: string | null; contactName: string | null; sentAt: string | null },
+): Promise<IncomingJob | null> {
+  const channel = await resolveEvolutionAccount(supabase, instanceName);
+  if (!channel) return null;
+  if (parsed.messageId && (await messageExists(supabase, parsed.messageId))) return null;
+
+  const priorId = await findConversationId(supabase, channel.integrationId, parsed.from);
+  const conversation = await upsertConversation(supabase, {
+    userId: channel.userId,
+    agentId: channel.agentId,
+    integrationId: channel.integrationId,
+    externalChatId: parsed.from,
+    contactName: parsed.contactName,
+    preview: parsed.text,
+  });
+  const claimed = await claimUserMessage(supabase, {
+    userId: channel.userId,
+    conversationId: conversation.id,
+    content: parsed.text,
+    externalMessageId: parsed.messageId,
+    createdAt: parsed.sentAt,
+  });
+  if (!claimed) return null;
+  await markClientReplied(supabase, conversation.id);
+
+  if (!channel.canReply) return null;
+  if (await processingLockIsFresh(supabase, conversation.id)) {
+    await bindConversationAgent(supabase, conversation.id, channel.agentId);
+    return null;
+  }
+  if (priorId) {
+    const assistantAt = await latestAssistantAt(supabase, priorId);
+    if (isLateClientMessage(parsed.sentAt, assistantAt)) return null;
+  }
+  if (!conversation.botActive) {
+    await logChatPause(supabase, conversation.id);
+    return null;
+  }
+
+  return {
+    userId: channel.userId,
+    agentId: channel.agentId,
+    integrationId: channel.integrationId,
+    conversationId: conversation.id,
+    credentials: channel.credentials,
+    from: parsed.from,
+    contactName: parsed.contactName,
+    messageId: parsed.messageId,
+    sentAt: parsed.sentAt,
+    text: parsed.text,
+    media: null,
+    transport: "evolution",
+  };
 }

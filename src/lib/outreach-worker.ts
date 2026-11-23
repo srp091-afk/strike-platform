@@ -1,6 +1,6 @@
 import "server-only";
 
-import { sendGreenMessage } from "@/lib/green-api";
+import { sendConnectedWhatsApp } from "@/lib/evolution-api";
 import { generateOutreachMessage } from "@/lib/outreach-generate";
 import { scheduleOpenBatch } from "@/lib/outreach";
 import { enqueueAt } from "@/lib/outreach-queue";
@@ -183,10 +183,7 @@ async function runOutreachLog(logId: string, generation?: number): Promise<Proce
   if (!agent.wa_instance_id || !agent.wa_api_token) return fail("У агента не подключён WhatsApp");
 
   try {
-    await sendGreenMessage(`${digits}@c.us`, generated.message, {
-      idInstance: String(agent.wa_instance_id),
-      apiToken: String(agent.wa_api_token),
-    });
+    await sendConnectedWhatsApp(String(agent.wa_instance_id), String(agent.wa_api_token), `${digits}@c.us`, generated.message);
   } catch (error) {
     return fail(`Ошибка отправки: ${error instanceof Error ? error.message : "неизвестная"}`);
   }

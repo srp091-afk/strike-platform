@@ -3,6 +3,7 @@ import { connection } from "next/server";
 import { deniedStatus } from "@/lib/account-context";
 import { readAccess } from "@/lib/access";
 import { listAgents, listChatAgents } from "@/lib/agents";
+import { evolutionConfigured } from "@/lib/evolution-api";
 import { readOptionalGreenCredentials } from "@/lib/green-api";
 
 export async function GET(request: Request) {
@@ -27,6 +28,7 @@ export async function GET(request: Request) {
       {
         agents,
         greenDefaults,
+        whatsappProvider: evolutionConfigured() ? "evolution" : "green",
         agentAccess: { isAdmin: access.isAdmin, maxAgents: Number.isFinite(access.maxAgents) ? access.maxAgents : null },
       },
       { headers: { "Cache-Control": "private, max-age=10, stale-while-revalidate=30" } },

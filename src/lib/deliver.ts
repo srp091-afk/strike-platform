@@ -1,5 +1,6 @@
 import "server-only";
 
+import { isEvolutionInstance, sendTextMessage } from "@/lib/evolution-api";
 import { sendGreenMessage } from "@/lib/green-api";
 import { markdownToTelegramHtml } from "@/lib/telegram-format";
 
@@ -64,7 +65,17 @@ async function sendTelegram(botToken: string | undefined, chatId: string, text: 
   return { delivered: true, detail: "telegram" };
 }
 
-async function sendWhatsApp(_credentials: Credentials, chatId: string, text: string) {
+async function sendWhatsApp(credentials: Credentials, chatId: string, text: string) {
+  if (isEvolutionInstance(credentials.idInstance || "")) {
+    try {
+      await sendTextMessage(credentials.idInstance, chatId, text);
+      return { delivered: true, detail: "whatsapp" };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "";
+      const status = message.match(/(\d{3})$/)?.[1];
+      return { delivered: false, detail: status ? `whatsapp_${status}` : "delivery_error" };
+    }
+  }
   try {
     await sendGreenMessage(chatId, text);
     return { delivered: true, detail: "whatsapp" };

@@ -21,12 +21,16 @@ const fieldClass =
 export function WhatsAppConnectDialog({
   agentId,
   defaults,
+  evolution = false,
   onApply,
+  onPhone,
   onClose,
 }: {
   agentId: string;
   defaults: GreenDefaults;
+  evolution?: boolean;
   onApply: (credentials: GreenDefaults) => void;
+  onPhone?: (phone: string) => void;
   onClose: () => void;
 }) {
   const router = useRouter();
@@ -44,6 +48,10 @@ export function WhatsAppConnectDialog({
   const requestId = useRef(0);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
+  const onApplyRef = useRef(onApply);
+  onApplyRef.current = onApply;
+  const onPhoneRef = useRef(onPhone);
+  onPhoneRef.current = onPhone;
 
   useEffect(() => {
     const previous = document.body.style.overflow;
@@ -77,6 +85,10 @@ export function WhatsAppConnectDialog({
       }
       setMessage(null);
       if (result.authorized) {
+        if ("instanceId" in result && result.instanceId && "apiToken" in result && result.apiToken) {
+          onApplyRef.current({ instanceId: result.instanceId, apiToken: result.apiToken });
+        }
+        if ("phone" in result && result.phone) onPhoneRef.current?.(result.phone);
         setWatching(false);
         onCloseRef.current();
         router.refresh();
@@ -103,6 +115,7 @@ export function WhatsAppConnectDialog({
   }
 
   function credentialsError() {
+    if (evolution) return null;
     if (!/^\d{4,}$/.test(instanceId.trim()) || apiToken.trim().length < 8) {
       setSettingsOpen(true);
       return "Укажите Instance ID и API Token в настройках инстанса.";
@@ -122,12 +135,12 @@ export function WhatsAppConnectDialog({
     setQrImage(null);
     setQrPending(true);
     try {
-      const result = await requestWhatsAppQr(instanceId, apiToken);
+      const result = await requestWhatsAppQr(instanceId, apiToken, agentId);
       if (id !== requestId.current) return;
       setQrPending(false);
       if (result.alreadyAuthorized) {
         setAlreadyAuthorized(true);
-        setWatching(false);
+        setWatching(evolution);
         return;
       }
       if (!result.ok || !result.image) {
@@ -169,7 +182,7 @@ export function WhatsAppConnectDialog({
     setMessage(null);
     setLinkCode(null);
     setCodePending(true);
-    const result = await requestWhatsAppLinkCode(instanceId, apiToken, digits);
+    const result = await requestWhatsAppLinkCode(instanceId, apiToken, digits, agentId);
     if (id !== requestId.current) return;
     setCodePending(false);
     if (!result.ok || !result.code) {
@@ -260,6 +273,7 @@ export function WhatsAppConnectDialog({
           {alreadyAuthorized ? <p className="text-sm font-medium text-zinc-200">Уже авторизован</p> : null}
           {message ? <p className="text-sm text-red-300">{message}</p> : null}
 
+          {evolution ? null : (
           <button
             type="button"
             className="text-left text-sm font-medium text-zinc-400 transition-colors hover:text-white"
@@ -268,7 +282,8 @@ export function WhatsAppConnectDialog({
           >
             ⚙️ Настройки инстанса Green API
           </button>
-          {settingsOpen ? (
+          )}
+          {!evolution && settingsOpen ? (
             <div className="grid gap-4">
               <label className="grid gap-2">
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">Instance ID</span>
@@ -307,6 +322,7 @@ export function WhatsAppConnectDialog({
             >
               Закрыть
             </button>
+            {evolution ? null : (
             <button
               type="button"
               className="rounded-xl bg-strike px-4 py-2.5 text-sm font-semibold text-white transition-shadow hover:shadow-[0_0_15px_rgba(207,2,52,0.45)]"
@@ -314,6 +330,7 @@ export function WhatsAppConnectDialog({
             >
               Применить ключи
             </button>
+            )}
           </div>
         </div>
       </div>

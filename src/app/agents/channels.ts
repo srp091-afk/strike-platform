@@ -5,6 +5,20 @@ import { revalidatePath } from "next/cache";
 import { readActiveChannels } from "@/lib/agent-models";
 import { getEffectiveUserId } from "@/lib/account-context";
 import {
+  EVOLUTION_TOKEN,
+  createInstance,
+  evolutionConfigured,
+  evolutionInstanceName,
+  evolutionWebhookUrl,
+  getConnectionState,
+  getInstancePhone,
+  getPairingCode,
+  getQrCode,
+  isEvolutionInstance,
+  logoutAndDeleteInstance,
+  readEvolutionQr,
+} from "@/lib/evolution-api";
+import {
   ensureGreenIncomingWebhook,
   getGreenAuthorizationCode,
   getGreenPhone,
@@ -38,7 +52,9 @@ async function agentInWorkspace(agentId: string) {
   return Boolean(data);
 }
 
-export async function requestWhatsAppQr(instanceId: string, apiToken: string) {
+export async function requestWhatsAppQr(instanceId: string, apiToken: string, agentId = "") {
+  if (evolutionConfigured()) return requestEvolutionQr(agentId);
+
   const credentials = readGreenPair(instanceId, apiToken);
   if (!credentials) {
     return { ok: false as const, image: null, alreadyAuthorized: false, error: "Укажите Instance ID и API Token." };
@@ -70,7 +86,9 @@ async function qrFailure(credentials: GreenCredentials) {
   return { ok: false as const, image: null, alreadyAuthorized: false, error: "Не удалось получить QR-код." };
 }
 
-export async function requestWhatsAppLinkCode(instanceId: string, apiToken: string, phoneNumber: string) {
+export async function requestWhatsAppLinkCode(instanceId: string, apiToken: string, phoneNumber: string, agentId = "") {
+  if (evolutionConfigured()) return requestEvolutionLinkCode(agentId, phoneNumber);
+
   const credentials = readGreenPair(instanceId, apiToken);
   const digits = phoneNumber.replace(/\D/g, "");
   if (!credentials) {
@@ -98,6 +116,8 @@ export async function confirmWhatsAppAuthorization(input: {
   agentId: string;
   phoneNumber: string;
 }) {
+  if (evolutionConfigured()) return confirmEvolutionAuthorization(input.agentId, input.phoneNumber);
+
   const credentials = readGreenPair(input.instanceId, input.apiToken);
   if (!credentials) {
     return { ok: false as const, authorized: false, error: "Укажите Instance ID и API Token." };
@@ -162,6 +182,16 @@ export async function disconnectWhatsApp(agentId: string) {
   try {
     if (!(await agentInWorkspace(agentId))) return { ok: false as const, error: "Агент не найден." };
     const supabase = createSupabaseAdminClient();
+    const { data: current } = await supabase.from("agents").select("wa_instance_id").eq("id", agentId).maybeSingle();
+    const instanceId = typeof current?.wa_instance_id === "string" ? current.wa_instance_id : "";
+    if (isEvolutionInstance(instanceId)) {
+      try {
+        await logoutAndDeleteInstance(instanceId);
+      } catch (error) {
+        console.error("[evolution] delete", error instanceof Error ? error.message : error);
+        return { ok: false as const, error: "Не удалось отключить номер в WhatsApp." };
+      }
+    }
     const { error } = await supabase
       .from("agents")
       .update({
@@ -384,6 +414,138 @@ export async function disconnectTelegram(agentId: string) {
     return { ok: true as const, error: null };
   } catch (error) {
     return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось отключить Telegram." };
+  }
+}
+
+function formatPairingCode(code: string) {
+  const clean = code.replace(/[^a-z0-9]/gi, "");
+  if (clean.length === 8) return `${clean.slice(0, 4)}-${clean.slice(4)}`;
+  return code.trim();
+}
+
+async function prepareEvolutionInstance(agentId: string) {
+  if (!UUID_PATTERN.test(agentId)) return { ok: false as const, error: "Сначала сохраните агента.", instanceName: "", state: "" };
+  if (!(await agentInWorkspace(agentId))) return { ok: false as const, error: "Агент не найден.", instanceName: "", state: "" };
+
+  const instanceName = evolutionInstanceName(agentId);
+  const supabase = createSupabaseAdminClient();
+  const { data: taken, error: takenError } = await supabase
+    .from("agents")
+    .select("id")
+    .eq("wa_instance_id", instanceName)
+    .neq("id", agentId)
+    .maybeSingle();
+  if (takenError) return { ok: false as const, error: takenError.message, instanceName: "", state: "" };
+  if (taken) return { ok: false as const, error: "Этот номер уже подключён к другому агенту.", instanceName: "", state: "" };
+
+  let created: unknown = null;
+  try {
+    created = await createInstance(instanceName, evolutionWebhookUrl());
+  } catch (error) {
+    console.error("[evolution] create", error instanceof Error ? error.message : error);
+    return { ok: false as const, error: "Не удалось создать подключение WhatsApp.", instanceName: "", state: "" };
+  }
+
+  let state = "close";
+  try {
+    state = await getConnectionState(instanceName);
+  } catch {
+    state = "close";
+  }
+
+  const { error } = await supabase
+    .from("agents")
+    .update({
+      wa_instance_id: instanceName,
+      wa_api_token: EVOLUTION_TOKEN,
+      ...(state === "open" ? { wa_is_active: true } : { wa_is_active: false, wa_phone_number: null }),
+    })
+    .eq("id", agentId);
+  if (error) return { ok: false as const, error: error.message, instanceName: "", state: "" };
+  return { ok: true as const, error: null, instanceName, state, created };
+}
+
+async function requestEvolutionQr(agentId: string) {
+  const prepared = await prepareEvolutionInstance(agentId);
+  if (!prepared.ok) return { ok: false as const, image: null, alreadyAuthorized: false, error: prepared.error };
+  if (prepared.state === "open") return { ok: true as const, image: null, alreadyAuthorized: true, error: null };
+
+  try {
+    let qr = await getQrCode(prepared.instanceName);
+    let image = qr.base64 || readEvolutionQr(prepared.created);
+    if (!image) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      qr = await getQrCode(prepared.instanceName);
+      image = qr.base64;
+    }
+    if (qr.state === "open") return { ok: true as const, image: null, alreadyAuthorized: true, error: null };
+    if (!image) return { ok: false as const, image: null, alreadyAuthorized: false, error: "Не удалось получить QR-код." };
+    return { ok: true as const, image, alreadyAuthorized: false, error: null };
+  } catch (error) {
+    console.error("[evolution] qr", error instanceof Error ? error.message : error);
+    return { ok: false as const, image: null, alreadyAuthorized: false, error: "Не удалось получить QR-код." };
+  }
+}
+
+async function requestEvolutionLinkCode(agentId: string, phoneNumber: string) {
+  const digits = phoneNumber.replace(/\D/g, "");
+  if (!/^\d{8,15}$/.test(digits)) {
+    return { ok: false as const, code: null, error: "Введите номер в международном формате, например 79991234567." };
+  }
+  const prepared = await prepareEvolutionInstance(agentId);
+  if (!prepared.ok) return { ok: false as const, code: null, error: prepared.error };
+  try {
+    const code = formatPairingCode(await getPairingCode(prepared.instanceName, digits));
+    return { ok: true as const, code, error: null };
+  } catch (error) {
+    console.error("[evolution] pairing", error instanceof Error ? error.message : error);
+    return { ok: false as const, code: null, error: "Не удалось получить код связывания." };
+  }
+}
+
+async function confirmEvolutionAuthorization(agentId: string, phoneNumber: string) {
+  if (!UUID_PATTERN.test(agentId)) {
+    return { ok: false as const, authorized: false, error: "Сначала сохраните агента.", instanceId: "", apiToken: "", phone: "" };
+  }
+  if (!(await agentInWorkspace(agentId))) {
+    return { ok: false as const, authorized: false, error: "Агент не найден.", instanceId: "", apiToken: "", phone: "" };
+  }
+  const instanceName = evolutionInstanceName(agentId);
+  try {
+    const state = await getConnectionState(instanceName);
+    if (state !== "open") return { ok: true as const, authorized: false, error: null, instanceId: "", apiToken: "", phone: "" };
+
+    let phone = "";
+    try {
+      phone = await getInstancePhone(instanceName);
+    } catch {
+      phone = "";
+    }
+    if (!phone) phone = phoneNumber.replace(/\D/g, "");
+
+    const supabase = createSupabaseAdminClient();
+    const { error } = await supabase
+      .from("agents")
+      .update({
+        wa_instance_id: instanceName,
+        wa_api_token: EVOLUTION_TOKEN,
+        wa_is_active: true,
+        ...(phone ? { wa_phone_number: phone.slice(0, 40) } : {}),
+      })
+      .eq("id", agentId);
+    if (error) return { ok: false as const, authorized: true, error: error.message, instanceId: "", apiToken: "", phone: "" };
+    revalidatePath("/agents");
+    return {
+      ok: true as const,
+      authorized: true,
+      error: null,
+      instanceId: instanceName,
+      apiToken: EVOLUTION_TOKEN,
+      phone,
+    };
+  } catch (error) {
+    console.error("[evolution] state", error instanceof Error ? error.message : error);
+    return { ok: false as const, authorized: false, error: "Не удалось проверить статус WhatsApp.", instanceId: "", apiToken: "", phone: "" };
   }
 }
 
