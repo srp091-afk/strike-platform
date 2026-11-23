@@ -90,7 +90,6 @@ export function WhatsAppConnectDialog({
         return;
       }
       setMessage(null);
-      if (!result.authorized && "code" in result && result.code) setLinkCode(result.code);
       if (result.authorized) {
         if ("instanceId" in result && result.instanceId && "apiToken" in result && result.apiToken) {
           onApplyRef.current({ instanceId: result.instanceId, apiToken: result.apiToken });

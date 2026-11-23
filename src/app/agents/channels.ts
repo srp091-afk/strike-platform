@@ -12,12 +12,12 @@ import {
   evolutionWebhookUrl,
   getConnectionState,
   getInstancePhone,
+  deleteEvolutionInstance,
   getPairingCode,
   getQrCode,
   isEvolutionInstance,
   logoutAndDeleteInstance,
   readEvolutionQr,
-  readLivePairingCode,
 } from "@/lib/evolution-api";
 import {
   ensureGreenIncomingWebhook,
@@ -439,18 +439,28 @@ async function prepareEvolutionInstance(agentId: string, qrcode = true) {
   if (takenError) return { ok: false as const, error: takenError.message, instanceName: "", state: "" };
   if (taken) return { ok: false as const, error: "Этот номер уже подключён к другому агенту.", instanceName: "", state: "" };
 
-  let created: unknown = null;
-  try {
-    created = await createInstance(instanceName, evolutionWebhookUrl(), { qrcode });
-  } catch (error) {
-    console.error("[evolution] create", error instanceof Error ? error.message : error);
-    return { ok: false as const, error: "Не удалось создать подключение WhatsApp.", instanceName: "", state: "" };
-  }
-
   let state = "close";
   try {
     state = await getConnectionState(instanceName);
   } catch {
+    state = "close";
+  }
+
+  let created: unknown = null;
+  if (state !== "open") {
+    try {
+      await deleteEvolutionInstance(instanceName);
+    } catch (error) {
+      console.error("[evolution] delete", error instanceof Error ? error.message : error);
+      return { ok: false as const, error: "Не удалось пересоздать подключение WhatsApp.", instanceName: "", state: "" };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    try {
+      created = await createInstance(instanceName, evolutionWebhookUrl(), { qrcode });
+    } catch (error) {
+      console.error("[evolution] create", error instanceof Error ? error.message : error);
+      return { ok: false as const, error: "Не удалось создать подключение WhatsApp.", instanceName: "", state: "" };
+    }
     state = "close";
   }
 
@@ -467,18 +477,13 @@ async function prepareEvolutionInstance(agentId: string, qrcode = true) {
 }
 
 async function requestEvolutionQr(agentId: string) {
-  const prepared = await prepareEvolutionInstance(agentId);
+  const prepared = await prepareEvolutionInstance(agentId, false);
   if (!prepared.ok) return { ok: false as const, image: null, alreadyAuthorized: false, error: prepared.error };
   if (prepared.state === "open") return { ok: true as const, image: null, alreadyAuthorized: true, error: null };
 
   try {
-    let qr = await getQrCode(prepared.instanceName);
-    let image = qr.base64 || readEvolutionQr(prepared.created);
-    if (!image) {
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      qr = await getQrCode(prepared.instanceName);
-      image = qr.base64;
-    }
+    const qr = await getQrCode(prepared.instanceName);
+    const image = qr.base64 || readEvolutionQr(prepared.created);
     if (qr.state === "open") return { ok: true as const, image: null, alreadyAuthorized: true, error: null };
     if (!image) return { ok: false as const, image: null, alreadyAuthorized: false, error: "Не удалось получить QR-код." };
     return { ok: true as const, image, alreadyAuthorized: false, error: null };
@@ -519,16 +524,7 @@ async function confirmEvolutionAuthorization(agentId: string, phoneNumber: strin
   try {
     const state = await getConnectionState(instanceName);
     if (state !== "open") {
-      let code: string | null = null;
-      if (state === "connecting") {
-        try {
-          const raw = await readLivePairingCode(instanceName);
-          code = raw ? formatPairingCode(raw) : null;
-        } catch {
-          code = null;
-        }
-      }
-      return { ok: true as const, authorized: false, error: null, instanceId: "", apiToken: "", phone: "", code };
+      return { ok: true as const, authorized: false, error: null, instanceId: "", apiToken: "", phone: "" };
     }
 
     let phone = "";
