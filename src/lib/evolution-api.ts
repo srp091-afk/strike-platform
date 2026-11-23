@@ -138,26 +138,53 @@ async function connectForPairing(instanceName: string, digits: string) {
   return readEvolutionPairingCode(payload);
 }
 
+async function waitUntilNotConnecting(instanceName: string) {
+  for (let attempt = 0; attempt < 8; attempt += 1) {
+    const state = await getConnectionState(instanceName).catch(() => "close");
+    if (state !== "connecting") return state;
+    await new Promise((resolve) => setTimeout(resolve, 400));
+  }
+  return getConnectionState(instanceName).catch(() => "close");
+}
+
+/** Текущий код сессии. В статусе connecting connect не открывает новый сокет. */
+export async function readLivePairingCode(instanceName: string) {
+  const state = await getConnectionState(instanceName).catch(() => "close");
+  if (state !== "connecting") return "";
+  const { response, payload } = await evolutionFetch(`/instance/connect/${encodeURIComponent(instanceName)}`);
+  if (!response.ok) return "";
+  return readEvolutionPairingCode(payload);
+}
+
 export async function getPairingCode(instanceName: string, phoneNumber: string) {
   const digits = phoneNumber.replace(/\D/g, "");
-  const state = await getConnectionState(instanceName).catch(() => "close");
+  let state = await getConnectionState(instanceName).catch(() => "close");
   if (state === "open") {
     const error = new Error("WhatsApp уже подключён.");
     error.name = "EvolutionAlreadyOpen";
     throw error;
   }
 
-  // Пока инстанс ждёт QR, Evolution отвечает 200, но pairingCode = null.
-  // Выходим из этой сессии и подключаемся сразу с номером.
-  let code = await connectForPairing(instanceName, digits);
-  if (!code) {
+  // Пока инстанс ждёт QR, Evolution игнорирует number и отдаёт qrCode без кода,
+  // который WhatsApp не регистрировал. Сначала закрываем эту сессию.
+  if (state === "connecting") {
     await evolutionFetch(`/instance/logout/${encodeURIComponent(instanceName)}`, { method: "DELETE" }).catch(() => null);
-    code = await connectForPairing(instanceName, digits);
+    state = await waitUntilNotConnecting(instanceName);
+    if (state === "open") {
+      const error = new Error("WhatsApp уже подключён.");
+      error.name = "EvolutionAlreadyOpen";
+      throw error;
+    }
   }
+
+  let code = await connectForPairing(instanceName, digits);
   if (!code) {
     await new Promise((resolve) => setTimeout(resolve, 1200));
     code = await connectForPairing(instanceName, digits);
   }
+  // Evolution меняет код на следующем QR (~45 с). Берём тот, что лежит в сессии сейчас.
+  const live = await readLivePairingCode(instanceName);
+  if (live) return live;
   if (!code) throw new Error("Не удалось получить код связывания.");
   return code;
 }

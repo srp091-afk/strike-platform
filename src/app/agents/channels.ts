@@ -17,6 +17,7 @@ import {
   isEvolutionInstance,
   logoutAndDeleteInstance,
   readEvolutionQr,
+  readLivePairingCode,
 } from "@/lib/evolution-api";
 import {
   ensureGreenIncomingWebhook,
@@ -517,7 +518,18 @@ async function confirmEvolutionAuthorization(agentId: string, phoneNumber: strin
   const instanceName = evolutionInstanceName(agentId);
   try {
     const state = await getConnectionState(instanceName);
-    if (state !== "open") return { ok: true as const, authorized: false, error: null, instanceId: "", apiToken: "", phone: "" };
+    if (state !== "open") {
+      let code: string | null = null;
+      if (state === "connecting") {
+        try {
+          const raw = await readLivePairingCode(instanceName);
+          code = raw ? formatPairingCode(raw) : null;
+        } catch {
+          code = null;
+        }
+      }
+      return { ok: true as const, authorized: false, error: null, instanceId: "", apiToken: "", phone: "", code };
+    }
 
     let phone = "";
     try {

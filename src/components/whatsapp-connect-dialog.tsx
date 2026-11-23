@@ -90,6 +90,7 @@ export function WhatsAppConnectDialog({
         return;
       }
       setMessage(null);
+      if (!result.authorized && "code" in result && result.code) setLinkCode(result.code);
       if (result.authorized) {
         if ("instanceId" in result && result.instanceId && "apiToken" in result && result.apiToken) {
           onApplyRef.current({ instanceId: result.instanceId, apiToken: result.apiToken });
@@ -293,7 +294,7 @@ export function WhatsAppConnectDialog({
               </button>
               {linkCode ? <p className="text-center text-3xl font-semibold tracking-[0.2em] text-white">{linkCode}</p> : null}
               <p className="text-sm leading-6 text-zinc-400">
-                Введите этот код в WhatsApp в разделе Связанные устройства
+                Введите код, который сейчас на экране: WhatsApp → Связанные устройства → Связать по номеру телефона. Код живёт около 45 секунд и сам сменяется — старый телефон не примет.
               </p>
             </TabsContent>
           </Tabs>
