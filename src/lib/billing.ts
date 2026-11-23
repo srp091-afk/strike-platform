@@ -67,8 +67,9 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
     admin.from("landings").select("id", { count: "exact", head: true }).eq("user_id", userId),
     admin
       .from("billing_transactions")
-      .select("id, created_at, description, method, payment_method, amount, amount_usd, status, credits")
+      .select("id, created_at, description, method, payment_method, amount, amount_usd, status, credits, kind")
       .eq("user_id", userId)
+      .neq("kind", "usage")
       .order("created_at", { ascending: false })
       .limit(20),
   ]);
@@ -79,8 +80,9 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
     ? (
         await admin
           .from("billing_transactions")
-          .select("id, created_at, description, method, amount_usd, status")
+          .select("id, created_at, description, method, amount_usd, status, kind")
           .eq("user_id", userId)
+          .neq("kind", "usage")
           .order("created_at", { ascending: false })
           .limit(20)
       ).data
@@ -107,7 +109,7 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
       sites: sites.count ?? 0,
     },
     hasSubscription: Boolean(paddleCustomerId || paddleSubscriptionId),
-    transactions: (rows ?? []).map((row) => {
+    transactions: (rows ?? []).flatMap((row) => {
       const record = row as {
         id: unknown;
         created_at: unknown;
@@ -118,18 +120,23 @@ export async function getBillingOverview(userId: string): Promise<BillingOvervie
         amount_usd: unknown;
         status: unknown;
         credits?: unknown;
+        kind?: unknown;
       };
+      const description = String(record.description ?? "");
+      if (record.kind === "usage" || description.startsWith("Ответ агента")) return [];
       const paidAmount = record.amount ?? record.amount_usd;
       const credits = Number(record.credits);
-      return {
-        id: String(record.id),
-        createdAt: String(record.created_at),
-        description: String(record.description),
-        method: String(record.payment_method || record.method),
-        amountUsd: Number(paidAmount ?? 0),
-        credits: Number.isFinite(credits) ? credits : null,
-        status: String(record.status).toLowerCase(),
-      };
+      return [
+        {
+          id: String(record.id),
+          createdAt: String(record.created_at),
+          description,
+          method: String(record.payment_method || record.method),
+          amountUsd: Number(paidAmount ?? 0),
+          credits: Number.isFinite(credits) ? credits : null,
+          status: String(record.status).toLowerCase(),
+        },
+      ];
     }),
   };
 }

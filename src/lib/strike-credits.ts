@@ -43,7 +43,7 @@ export async function assertCanSpendAgentReply(userId: string) {
   return wallet.credits;
 }
 
-/** Списывает стоимость ответа и пишет строку usage. Не бросает, если миграция ещё не применена. */
+/** Списывает стоимость ответа с баланса. В историю платежей строку не пишет. */
 export async function spendAgentReply(input: { userId: string; totalTokens: number | null }) {
   const credits = agentReplyCost(input.totalTokens);
   const admin = createSupabaseAdminClient();
