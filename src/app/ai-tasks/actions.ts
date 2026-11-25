@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 
 import { getEffectiveUserId } from "@/lib/account-context";
+import { canUseAssistantPro } from "@/lib/assistant-pro";
 import { parseCsv } from "@/lib/proactive/connectors/csv";
 import { sourceAdapter, type SourceType } from "@/lib/proactive/connectors";
 import { defaultDelivery, readDelivery, type DeliveryConfig, type ProactiveChannel } from "@/lib/proactive/delivery";
@@ -25,6 +26,11 @@ function fail(error: string): ActionResult {
   return { ...empty, error: migrationHint(error) };
 }
 
+async function lockedResult() {
+  if (await canUseAssistantPro()) return null;
+  return fail("Этот модуль пока недоступен в вашем тарифе.");
+}
+
 function migrationHint(message: string) {
   return /proactive_|agent_action_queue|claim_proactive_actions|contact_key|followup_conflict/.test(message)
     ? "Примените миграции 20261126_proactive_core.sql и 20261127_proactive_dialogs.sql."
@@ -32,6 +38,8 @@ function migrationHint(message: string) {
 }
 
 export async function createSource(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
+  const denied = await lockedResult();
+  if (denied) return denied;
   const type = String(formData.get("type") ?? "");
   const name = String(formData.get("name") ?? "").trim();
   if (!isSourceType(type)) return fail("Выберите тип источника.");
@@ -101,6 +109,8 @@ async function sourceConfig(type: SourceType, formData: FormData): Promise<{ ok:
 }
 
 export async function saveCampaign(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
+  const denied = await lockedResult();
+  if (denied) return denied;
   const name = String(formData.get("name") ?? "").trim();
   const agentId = String(formData.get("agent_id") ?? "");
   const sourceId = String(formData.get("source_id") ?? "");
@@ -135,6 +145,8 @@ export async function saveCampaign(_prev: ActionResult, formData: FormData): Pro
 }
 
 export async function createMessengerWatch(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
+  const denied = await lockedResult();
+  if (denied) return denied;
   const agentId = String(formData.get("agent_id") ?? "").trim();
   if (!agentId) return fail("Выберите агента.");
   try {
@@ -178,6 +190,8 @@ export async function createMessengerWatch(_prev: ActionResult, formData: FormDa
 }
 
 export async function updateDelivery(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
+  const denied = await lockedResult();
+  if (denied) return denied;
   const campaignId = String(formData.get("campaign_id") ?? "");
   const channel = String(formData.get("channel") ?? "whatsapp") as ProactiveChannel;
   const delivery = deliveryFromForm(formData, channel === "email" || channel === "telegram" ? channel : "whatsapp");
@@ -213,6 +227,8 @@ function deliveryFromForm(formData: FormData, channel: ProactiveChannel): Delive
 }
 
 export async function launchCampaign(campaignId: string): Promise<ActionResult> {
+  const denied = await lockedResult();
+  if (denied) return denied;
   try {
     const result = await planCampaign(await getEffectiveUserId(), campaignId);
     if (!result.ok) return fail(result.error);
@@ -225,6 +241,8 @@ export async function launchCampaign(campaignId: string): Promise<ActionResult> 
 }
 
 export async function approveTasks(ids: string[]): Promise<ActionResult> {
+  const denied = await lockedResult();
+  if (denied) return denied;
   try {
     const userId = await getEffectiveUserId();
     const result = await scheduleTasks(userId, ids);
@@ -236,6 +254,8 @@ export async function approveTasks(ids: string[]): Promise<ActionResult> {
 }
 
 export async function rejectTask(id: string): Promise<ActionResult> {
+  const denied = await lockedResult();
+  if (denied) return denied;
   try {
     const userId = await getEffectiveUserId();
     const admin = createSupabaseAdminClient();
@@ -248,6 +268,8 @@ export async function rejectTask(id: string): Promise<ActionResult> {
 }
 
 export async function saveDraft(id: string, message: string, subject: string): Promise<ActionResult> {
+  const denied = await lockedResult();
+  if (denied) return denied;
   const text = message.trim();
   if (!text) return fail("Текст не может быть пустым.");
   try {
@@ -267,6 +289,8 @@ export async function saveDraft(id: string, message: string, subject: string): P
 }
 
 export async function setCampaignStatus(campaignId: string, status: "active" | "paused"): Promise<ActionResult> {
+  const denied = await lockedResult();
+  if (denied) return denied;
   try {
     const userId = await getEffectiveUserId();
     const admin = createSupabaseAdminClient();
@@ -280,6 +304,8 @@ export async function setCampaignStatus(campaignId: string, status: "active" | "
 }
 
 export async function retryTask(id: string): Promise<ActionResult> {
+  const denied = await lockedResult();
+  if (denied) return denied;
   try {
     const result = await scheduleTasks(await getEffectiveUserId(), [id]);
     if (!result.ok) return fail(result.error);
@@ -290,6 +316,8 @@ export async function retryTask(id: string): Promise<ActionResult> {
 }
 
 export async function runDueNow(): Promise<ActionResult> {
+  const denied = await lockedResult();
+  if (denied) return denied;
   try {
     const summary = await executeDueProactive({ userId: await getEffectiveUserId(), plan: false });
     if (!summary.ok) return fail(summary.error ?? "Не удалось отправить.");

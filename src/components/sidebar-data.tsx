@@ -4,7 +4,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { readAccountSwitcher } from "@/lib/account-context";
 import { readAccess } from "@/lib/access";
 import { getAccountProfile } from "@/lib/auth-user";
-import { ASSISTANT_PRO_HREF, ASSISTANT_PRO_LOCKED_FOR_ALL_TIERS } from "@/lib/assistant-pro";
+import { ASSISTANT_PRO_HREF, assistantProAllowed } from "@/lib/assistant-pro";
 import { lockedModuleHrefs } from "@/lib/config/pricing";
 import { readCabinetNotices } from "@/lib/read-cabinet-notices";
 import { countPendingApprovals } from "@/lib/proactive/load";
@@ -18,12 +18,11 @@ export async function SidebarData() {
   const walletUserId = access.activeAccountId || account?.id || "";
   const wallet = walletUserId ? await readStrikeWallet(walletUserId).catch(() => null) : null;
   const notices = walletUserId ? await readCabinetNotices(walletUserId) : [];
-  const taskCount =
-    !ASSISTANT_PRO_LOCKED_FOR_ALL_TIERS && walletUserId ? await countPendingApprovals(walletUserId) : 0;
+  const sessionAccess = account ? await readAccess(account.id) : null;
+  const assistantOpen = assistantProAllowed({ email: account?.email, isAdmin: Boolean(sessionAccess?.isAdmin) });
+  const taskCount = assistantOpen && walletUserId ? await countPendingApprovals(walletUserId) : 0;
   const lockedHrefs = gate ? [...lockedModuleHrefs(gate.allowedModules)] : [];
-  if (ASSISTANT_PRO_LOCKED_FOR_ALL_TIERS && !lockedHrefs.includes(ASSISTANT_PRO_HREF)) {
-    lockedHrefs.push(ASSISTANT_PRO_HREF);
-  }
+  if (!assistantOpen && !lockedHrefs.includes(ASSISTANT_PRO_HREF)) lockedHrefs.push(ASSISTANT_PRO_HREF);
   return (
     <AppSidebar
       account={account}
