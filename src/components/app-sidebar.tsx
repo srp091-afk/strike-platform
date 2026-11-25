@@ -7,6 +7,7 @@ import {
   LayoutDashboard,
   Megaphone,
   Send,
+  ListTodo,
   Lock,
   Menu,
   MessagesSquare,
@@ -42,6 +43,7 @@ const ICONS: Record<NavItem["icon"], LucideIcon> = {
   outreach: Send,
   smm: Share2,
   chats: MessagesSquare,
+  tasks: ListTodo,
   billing: CreditCard,
   settings: Settings,
 };
@@ -53,12 +55,14 @@ function NavLink({
   pathname,
   collapsed,
   locked = false,
+  badge = 0,
   onNavigate,
 }: {
   item: NavItem;
   pathname: string;
   collapsed: boolean;
   locked?: boolean;
+  badge?: number;
   onNavigate?: () => void;
 }) {
   const Icon = ICONS[item.icon];
@@ -75,6 +79,7 @@ function NavLink({
       {active ? <span aria-hidden className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-strike" /> : null}
       <Icon className="size-[18px] shrink-0" strokeWidth={1.75} />
       {item.beta && collapsed && !locked ? <span aria-hidden className="absolute right-2 top-2 size-1.5 rounded-full bg-strike" /> : null}
+      {badge > 0 && collapsed ? <span aria-hidden className="absolute right-1.5 top-1.5 size-2 rounded-full bg-strike" /> : null}
       {locked && collapsed ? <Lock aria-hidden className="absolute right-1.5 top-1.5 size-3" strokeWidth={2.25} /> : null}
       {collapsed ? null : <span className="min-w-0 flex-1 truncate">{item.label}</span>}
       {item.beta && !collapsed && !locked ? (
@@ -83,6 +88,11 @@ function NavLink({
         </span>
       ) : null}
       {locked && !collapsed ? <Lock aria-hidden className="size-3.5 shrink-0" strokeWidth={2} /> : null}
+      {badge > 0 && !collapsed ? (
+        <span className="shrink-0 rounded-full bg-strike px-1.5 text-[10px] font-semibold leading-4 text-[#fff]">
+          <span>{badge > 99 ? "99+" : badge}</span>
+        </span>
+      ) : null}
       {item.soon && !collapsed ? (
         <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-gray-500">
           Скоро
@@ -151,6 +161,7 @@ function SidebarBody({
   lockedHrefs,
   wallet,
   notices,
+  taskCount,
   collapsed,
   pathname,
   onToggle,
@@ -163,6 +174,7 @@ function SidebarBody({
   lockedHrefs: readonly string[];
   wallet: { tier: AgentTier; credits: number } | null;
   notices: CabinetNotice[];
+  taskCount: number;
   collapsed: boolean;
   pathname: string;
   onToggle?: () => void;
@@ -206,6 +218,7 @@ function SidebarBody({
             pathname={pathname}
             collapsed={collapsed}
             locked={lockedHrefs.includes(item.href)}
+            badge={item.href === "/ai-tasks" ? taskCount : 0}
             onNavigate={onNavigate}
           />
         ))}
@@ -239,6 +252,7 @@ export function AppSidebar({
   lockedHrefs = [],
   wallet = null,
   notices = [],
+  taskCount = 0,
 }: {
   account: AccountProfile | null;
   clients?: ClientAccount[];
@@ -246,6 +260,7 @@ export function AppSidebar({
   lockedHrefs?: readonly string[];
   wallet?: { tier: AgentTier; credits: number } | null;
   notices?: CabinetNotice[];
+  taskCount?: number;
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -288,6 +303,7 @@ export function AppSidebar({
           lockedHrefs={lockedHrefs}
           wallet={wallet}
           notices={notices}
+          taskCount={taskCount}
           collapsed={collapsed}
           pathname={pathname}
           onToggle={toggleCollapsed}
@@ -326,6 +342,7 @@ export function AppSidebar({
               lockedHrefs={lockedHrefs}
               wallet={wallet}
               notices={notices}
+              taskCount={taskCount}
               collapsed={false}
               pathname={pathname}
               onToggle={() => setMobileOpen(false)}

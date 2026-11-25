@@ -2,7 +2,7 @@ export type NavItem = {
   href: string;
   label: string;
   /** Ключ иконки: сопоставляется с lucide-иконкой в сайдбаре. */
-  icon: "dashboard" | "agents" | "sites" | "ads" | "outreach" | "smm" | "chats" | "billing" | "settings";
+  icon: "dashboard" | "agents" | "sites" | "ads" | "outreach" | "smm" | "chats" | "tasks" | "billing" | "settings";
   /** Визуальная заглушка будущего раздела: пункт показывается, но никуда не ведёт. */
   soon?: boolean;
   /** Раздел в бета-версии: рядом с названием показывается бейдж «Beta». */
@@ -18,6 +18,7 @@ export const mainNav: readonly NavItem[] = [
   { href: "/leads", label: "Лидогенерация", icon: "outreach" },
   { href: "/smm", label: "SMM", icon: "smm", beta: true },
   { href: "/chats", label: "Чаты", icon: "chats" },
+  { href: "/ai-tasks", label: "Задачи ИИ", icon: "tasks" },
 ];
 
 /** Нижний блок сайдбара (над профилем). */
@@ -36,6 +37,7 @@ const PORTAL_PREFIXES = [
   "/ads",
   "/leads",
   "/chats",
+  "/ai-tasks",
   "/settings",
   "/playground",
   "/test-creatives",

@@ -6,6 +6,7 @@ import { readAccess } from "@/lib/access";
 import { getAccountProfile } from "@/lib/auth-user";
 import { lockedModuleHrefs } from "@/lib/config/pricing";
 import { readCabinetNotices } from "@/lib/read-cabinet-notices";
+import { countPendingApprovals } from "@/lib/proactive/load";
 import { readStrikeWallet } from "@/lib/strike-credits";
 
 export async function SidebarData() {
@@ -16,6 +17,7 @@ export async function SidebarData() {
   const walletUserId = access.activeAccountId || account?.id || "";
   const wallet = walletUserId ? await readStrikeWallet(walletUserId).catch(() => null) : null;
   const notices = walletUserId ? await readCabinetNotices(walletUserId) : [];
+  const taskCount = walletUserId ? await countPendingApprovals(walletUserId) : 0;
   return (
     <AppSidebar
       account={account}
@@ -24,6 +26,7 @@ export async function SidebarData() {
       lockedHrefs={gate ? lockedModuleHrefs(gate.allowedModules) : []}
       wallet={wallet}
       notices={notices}
+      taskCount={taskCount}
     />
   );
 }
