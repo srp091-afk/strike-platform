@@ -161,6 +161,8 @@ function SidebarBody({
   lockedHrefs,
   wallet,
   notices,
+  noticeCabinetId,
+  readNoticeKeys,
   taskCount,
   collapsed,
   pathname,
@@ -174,6 +176,8 @@ function SidebarBody({
   lockedHrefs: readonly string[];
   wallet: { tier: AgentTier; credits: number } | null;
   notices: CabinetNotice[];
+  noticeCabinetId: string;
+  readNoticeKeys: readonly string[];
   taskCount: number;
   collapsed: boolean;
   pathname: string;
@@ -190,7 +194,7 @@ function SidebarBody({
           </Link>
         )}
         <div className={cn("flex items-center", collapsed && "flex-col gap-1")}>
-          <NoticeBell notices={notices} compact={collapsed} />
+          <NoticeBell notices={notices} cabinetId={noticeCabinetId} readKeys={readNoticeKeys} compact={collapsed} />
           {onToggle ? (
             <button
               type="button"
@@ -252,6 +256,8 @@ export function AppSidebar({
   lockedHrefs = [],
   wallet = null,
   notices = [],
+  noticeCabinetId = "",
+  readNoticeKeys = [],
   taskCount = 0,
 }: {
   account: AccountProfile | null;
@@ -260,6 +266,8 @@ export function AppSidebar({
   lockedHrefs?: readonly string[];
   wallet?: { tier: AgentTier; credits: number } | null;
   notices?: CabinetNotice[];
+  noticeCabinetId?: string;
+  readNoticeKeys?: readonly string[];
   taskCount?: number;
 }) {
   const pathname = usePathname();
@@ -303,6 +311,8 @@ export function AppSidebar({
           lockedHrefs={lockedHrefs}
           wallet={wallet}
           notices={notices}
+          noticeCabinetId={noticeCabinetId}
+          readNoticeKeys={readNoticeKeys}
           taskCount={taskCount}
           collapsed={collapsed}
           pathname={pathname}
@@ -323,7 +333,7 @@ export function AppSidebar({
         <Link href="/dashboard" aria-label="STRIKE" className="flex items-center">
           <Logo variant="dark" />
         </Link>
-        <NoticeBell notices={notices} className="ml-auto" />
+        <NoticeBell notices={notices} cabinetId={noticeCabinetId} readKeys={readNoticeKeys} className="ml-auto" />
       </div>
 
       {mobileOpen ? (
@@ -342,6 +352,8 @@ export function AppSidebar({
               lockedHrefs={lockedHrefs}
               wallet={wallet}
               notices={notices}
+              noticeCabinetId={noticeCabinetId}
+              readNoticeKeys={readNoticeKeys}
               taskCount={taskCount}
               collapsed={false}
               pathname={pathname}

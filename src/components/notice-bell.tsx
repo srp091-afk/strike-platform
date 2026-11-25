@@ -5,27 +5,82 @@ import Link from "next/link";
 import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-import type { CabinetNotice } from "@/lib/cabinet-notices";
+import { markNoticesRead } from "@/app/actions/notices";
+import { noticeReadKey, type CabinetNotice } from "@/lib/cabinet-notices";
 import { cn } from "@/lib/utils";
+
+const readListeners = new Set<(keys: string[]) => void>();
 
 type PanelBox = { top: number; left: number; width: number };
 
 export function NoticeBell({
   notices,
+  cabinetId,
+  readKeys,
   compact = false,
   className,
 }: {
   notices: CabinetNotice[];
+  cabinetId: string;
+  readKeys: readonly string[];
   compact?: boolean;
   className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [box, setBox] = useState<PanelBox | null>(null);
+  const [read, setRead] = useState(() => new Set(readKeys));
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelRef = useRef<HTMLDivElement>(null);
   const panelId = useId();
-  const count = notices.length;
+  const savedKeys = readKeys.join("\n");
+  const unread = notices.filter((notice) => cabinetId && !read.has(noticeReadKey(cabinetId, notice.id)));
+  const count = unread.length;
+
+  useEffect(() => {
+    const incoming = savedKeys.split("\n").filter(Boolean);
+    setRead((current) => {
+      let changed = false;
+      const next = new Set(current);
+      for (const key of incoming) {
+        if (!next.has(key)) {
+          next.add(key);
+          changed = true;
+        }
+      }
+      return changed ? next : current;
+    });
+  }, [savedKeys]);
+
+  useEffect(() => {
+    function remember(keys: string[]) {
+      setRead((current) => {
+        const next = new Set(current);
+        for (const key of keys) next.add(key);
+        return next;
+      });
+    }
+    readListeners.add(remember);
+    return () => {
+      readListeners.delete(remember);
+    };
+  }, []);
+
+  function markVisibleRead() {
+    if (!cabinetId) return;
+    const pending = notices
+      .map((notice) => noticeReadKey(cabinetId, notice.id))
+      .filter((key) => !read.has(key));
+    if (pending.length === 0) return;
+    for (const listener of readListeners) listener(pending);
+    void markNoticesRead(pending);
+  }
+
+  const opened = useRef(false);
+  useEffect(() => {
+    if (open && !opened.current) markVisibleRead();
+    opened.current = open;
+  });
 
   function place(height = 280) {
     const button = buttonRef.current;
@@ -84,7 +139,7 @@ export function NoticeBell({
             <p className="px-2 py-1.5 text-xs font-semibold uppercase tracking-wide text-gray-400">
               <span>Уведомления</span>
             </p>
-            {count === 0 ? (
+            {notices.length === 0 ? (
               <p className="px-2 py-2 text-sm text-gray-500">
                 <span>Пока пусто. Сюда приходят низкий баланс, подписка и сбои каналов — если это включено в настройках.</span>
               </p>
@@ -92,7 +147,14 @@ export function NoticeBell({
               <ul className="space-y-1">
                 {notices.map((notice) => (
                   <li key={notice.id}>
-                    <Link href={notice.href} onClick={() => setOpen(false)} className="block rounded-lg px-2 py-2 hover:bg-gray-50">
+                    <Link
+                      href={notice.href}
+                      onClick={() => {
+                        markVisibleRead();
+                        setOpen(false);
+                      }}
+                      className="block rounded-lg px-2 py-2 hover:bg-gray-50"
+                    >
                       <span className={cn("block text-sm font-medium", notice.tone === "warning" ? "text-red-600" : "text-gray-900")}>
                         {notice.title}
                       </span>

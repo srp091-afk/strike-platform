@@ -6,6 +6,11 @@ export type CabinetNotice = {
   href: string;
 };
 
+/** Ключ прочтения включает кабинет, чтобы чтение в одном аккаунте не гасило то же событие в другом. */
+export function noticeReadKey(cabinetUserId: string, noticeId: string) {
+  return `${cabinetUserId}:${noticeId}`.slice(0, 200);
+}
+
 export type ChannelAlert = {
   agentId: string;
   agentName: string;

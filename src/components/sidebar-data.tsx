@@ -6,6 +6,8 @@ import { readAccess } from "@/lib/access";
 import { getAccountProfile } from "@/lib/auth-user";
 import { ASSISTANT_PRO_HREF, canUseAssistantPro } from "@/lib/assistant-pro";
 import { lockedModuleHrefs } from "@/lib/config/pricing";
+import { noticeReadKey } from "@/lib/cabinet-notices";
+import { readNotificationReads } from "@/lib/notification-reads";
 import { readCabinetNotices } from "@/lib/read-cabinet-notices";
 import { countPendingApprovals } from "@/lib/proactive/load";
 import { readStrikeWallet } from "@/lib/strike-credits";
@@ -18,6 +20,9 @@ export async function SidebarData() {
   const walletUserId = access.activeAccountId || account?.id || "";
   const wallet = walletUserId ? await readStrikeWallet(walletUserId).catch(() => null) : null;
   const notices = walletUserId ? await readCabinetNotices(walletUserId) : [];
+  const readKeys = account?.id
+    ? await readNotificationReads(account.id, notices.map((notice) => noticeReadKey(walletUserId, notice.id)))
+    : [];
   const assistantOpen = await canUseAssistantPro();
   const taskCount = assistantOpen && walletUserId ? await countPendingApprovals(walletUserId) : 0;
   const lockedHrefs = gate ? [...lockedModuleHrefs(gate.allowedModules)] : [];
@@ -30,6 +35,8 @@ export async function SidebarData() {
       lockedHrefs={lockedHrefs}
       wallet={wallet}
       notices={notices}
+      noticeCabinetId={walletUserId}
+      readNoticeKeys={readKeys}
       taskCount={taskCount}
     />
   );
