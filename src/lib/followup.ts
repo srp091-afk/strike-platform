@@ -3,6 +3,7 @@ import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 import { readBotFlags } from "@/lib/bot-state";
+import { builtinFollowupBlocked } from "@/lib/proactive/followup-guard";
 import { readFollowupInterval, readFollowupMaxCount } from "@/lib/agent-models";
 import { sendEmailReply, type EmailConfig } from "@/lib/email-channel";
 import { isEvolutionInstance, sendConnectedWhatsApp } from "@/lib/evolution-api";
@@ -97,6 +98,7 @@ type FollowupConversation = {
   user_id: string;
   agent_id: string;
   external_chat_id: string;
+  contact_handle?: string | null;
   push_count: number | null;
   integration: { provider: string } | { provider: string }[] | null;
 };
@@ -151,7 +153,7 @@ export async function runFollowups(supabase: AdminClient): Promise<FollowupSumma
 
     const { data: due, error: dueError } = await supabase
       .from("conversations")
-      .select("id, user_id, agent_id, external_chat_id, push_count, integration:integrations(provider)")
+      .select("id, user_id, agent_id, external_chat_id, contact_handle, push_count, integration:integrations(provider)")
       .eq("agent_id", agent.id)
       .eq("is_waiting_for_user", true)
       .eq("is_processing", false)
@@ -208,6 +210,18 @@ async function processConversation(
   if (history.length === 0 || history[history.length - 1]!.role !== "assistant") {
     await setWaiting(supabase, conversation.id, false);
     return "stopped";
+  }
+
+  if (
+    await builtinFollowupBlocked(supabase, {
+      userId: conversation.user_id,
+      agentId: conversation.agent_id,
+      conversationId: conversation.id,
+      handle: conversation.contact_handle ?? "",
+      externalId: conversation.external_chat_id,
+    })
+  ) {
+    return "skipped";
   }
 
   // Захватываем диалог, чтобы параллельный вебхук/прогон не ответил одновременно.

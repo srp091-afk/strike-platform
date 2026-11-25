@@ -4,6 +4,8 @@ import { normalizeAgentModel } from "@/lib/agent-models";
 import { sourceAdapter } from "@/lib/proactive/connectors";
 import { withDeal } from "@/lib/proactive/connectors/pipedrive";
 import type { PostAction, SourceEntity } from "@/lib/proactive/connectors/types";
+import { contactKey } from "@/lib/proactive/contact-key";
+import { readCrmSnapshot, recentChatContext } from "@/lib/proactive/crm-context";
 import type { ProactiveChannel } from "@/lib/proactive/delivery";
 import { scheduleTasks } from "@/lib/proactive/scheduler";
 import { getOpenAI } from "@/lib/openai";
@@ -11,11 +13,25 @@ import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 const RUN_CAP = 12;
 
+const CATEGORIES = [
+  "waiting_proposal",
+  "shared_contact",
+  "unanswered_question",
+  "stalled_dialog",
+  "crm_followup",
+  "reactivation",
+] as const;
+
+type DialogCategory = (typeof CATEGORIES)[number];
+
+const SILENCE: ReadonlySet<DialogCategory> = new Set(["unanswered_question", "stalled_dialog", "reactivation"]);
+
 type Plan = {
   should_contact: boolean;
   ai_reasoning: string;
   draft_subject: string;
   draft_message: string;
+  dialog_category: DialogCategory;
   post_action: PostAction;
 };
 
@@ -29,17 +45,18 @@ const PLAN_SCHEMA = {
     ai_reasoning: { type: "string" },
     draft_subject: { type: "string" },
     draft_message: { type: "string" },
+    dialog_category: { type: "string", enum: [...CATEGORIES] },
     add_note: { type: "boolean" },
     move_stage_id: { type: "string" },
   },
-  required: ["should_contact", "ai_reasoning", "draft_subject", "draft_message", "add_note", "move_stage_id"],
+  required: ["should_contact", "ai_reasoning", "draft_subject", "draft_message", "dialog_category", "add_note", "move_stage_id"],
 } as const;
 
 export async function planCampaign(userId: string, campaignId: string): Promise<PlanResult> {
   const admin = createSupabaseAdminClient();
   const campaign = await admin
     .from("proactive_campaigns")
-    .select("id, user_id, agent_id, source_id, channel, goal_prompt, require_approval, status")
+    .select("id, user_id, agent_id, source_id, channel, goal_prompt, require_approval, status, followup_conflict_mode")
     .eq("id", campaignId)
     .eq("user_id", userId)
     .maybeSingle();
@@ -47,7 +64,7 @@ export async function planCampaign(userId: string, campaignId: string): Promise<
   if (!campaign.data) return { ok: false, error: "Кампания не найдена." };
 
   const [agent, source, seen] = await Promise.all([
-    admin.from("agents").select("id, name, system_prompt, model").eq("id", campaign.data.agent_id).eq("user_id", userId).maybeSingle(),
+    admin.from("agents").select("id, name, system_prompt, model, followup_enabled, followup_max_count").eq("id", campaign.data.agent_id).eq("user_id", userId).maybeSingle(),
     admin.from("proactive_sources").select("id, type, config").eq("id", campaign.data.source_id).eq("user_id", userId).maybeSingle(),
     admin.from("agent_action_queue").select("external_entity_id, status").eq("campaign_id", campaignId).eq("user_id", userId),
   ]);
@@ -60,7 +77,7 @@ export async function planCampaign(userId: string, campaignId: string): Promise<
 
   let entities: SourceEntity[] = [];
   try {
-    entities = await adapter.fetchEntities(asConfig(source.data.config));
+    entities = await adapter.fetchEntities({ ...asConfig(source.data.config), userId, agentId: campaign.data.agent_id });
   } catch (error) {
     await admin.from("proactive_sources").update({ status: "error" }).eq("id", source.data.id).eq("user_id", userId);
     return { ok: false, error: error instanceof Error ? error.message : "Не удалось прочитать источник." };
@@ -72,10 +89,16 @@ export async function planCampaign(userId: string, campaignId: string): Promise<
     .eq("user_id", userId);
 
   const blocked = new Set(
-    (seen.data ?? []).filter((row) => row.status !== "rejected").map((row) => String(row.external_entity_id)),
+    (seen.data ?? []).filter((row) => row.status !== "rejected" && row.status !== "stale").map((row) => String(row.external_entity_id)),
   );
   const channel = campaign.data.channel as ProactiveChannel;
-  const fresh = entities.filter((entity) => !blocked.has(entity.externalId) && targetOf(entity, channel));
+  const sourceConfig = asConfig(source.data.config);
+  const cooldownHours = Number(sourceConfig.cooldown_hours ?? 24) || 24;
+  const busy = await busyContacts(admin, userId, cooldownHours);
+  const mode = campaign.data.followup_conflict_mode === "override_builtin" ? "override_builtin" : "wait_builtin";
+  const followupOn = agent.data.followup_enabled === true;
+  const followupMax = Number(agent.data.followup_max_count ?? 2) || 2;
+  const fresh = entities.filter((entity) => !blocked.has(entity.externalId) && targetOf(entity, sendChannel(entity, channel)));
   const wallet = await readCredits(admin, userId);
   if (wallet < 1) return { ok: false, error: "Закончились STRIKE Credits. Пополните баланс, чтобы собрать план." };
 
@@ -88,8 +111,25 @@ export async function planCampaign(userId: string, campaignId: string): Promise<
       notice = "Генерация остановлена: на счёте 0 SC.";
       break;
     }
-    const target = targetOf(entity, channel);
+    const outbound = sendChannel(entity, channel);
+    const target = targetOf(entity, outbound);
     if (!target) {
+      skipped += 1;
+      continue;
+    }
+    const prepared = await prepareEntity({
+      userId,
+      agentId: String(agent.data.id),
+      sourceType: String(source.data.type),
+      entity,
+      cooldownHours,
+    });
+    if (!prepared) {
+      skipped += 1;
+      continue;
+    }
+    const key = prepared.payload.contactKey || contactKey(target) || `chat:${entity.externalId}`;
+    if (busy.has(key)) {
       skipped += 1;
       continue;
     }
@@ -100,8 +140,9 @@ export async function planCampaign(userId: string, campaignId: string): Promise<
         agentName: String(agent.data.name ?? "Агент"),
         role: String(agent.data.system_prompt ?? ""),
         goal: String(campaign.data.goal_prompt ?? ""),
-        channel,
-        entity,
+        channel: outbound,
+        entity: prepared,
+        sourceType: String(source.data.type),
       });
     } catch (error) {
       return { ok: false, error: error instanceof Error ? error.message : "Модель не ответила." };
@@ -110,9 +151,15 @@ export async function planCampaign(userId: string, campaignId: string): Promise<
       skipped += 1;
       continue;
     }
+    const builtinStillRunning =
+      followupOn && prepared.payload.waiting === "1" && Number(prepared.payload.pushCount ?? 0) < followupMax;
+    if (mode === "wait_builtin" && builtinStillRunning && SILENCE.has(plan.dialog_category)) {
+      skipped += 1;
+      continue;
+    }
     const postAction = withDeal(
       { add_note: plan.post_action.add_note, move_stage_id: plan.post_action.move_stage_id, note: plan.ai_reasoning },
-      entity.payload,
+      prepared.payload,
     );
     const inserted = await admin
       .from("agent_action_queue")
@@ -124,10 +171,15 @@ export async function planCampaign(userId: string, campaignId: string): Promise<
         external_entity_id: entity.externalId,
         contact_name: entity.name.slice(0, 160),
         contact_target: target.slice(0, 200),
-        channel,
+        contact_key: key.slice(0, 200),
+        conversation_id: uuidOrNull(prepared.payload.conversationId),
+        crm_deal_id: prepared.payload.crmDealId || null,
+        dialog_category: plan.dialog_category,
+        snapshot_last_msg_at: prepared.payload.lastMessageAt || null,
+        channel: outbound,
         ai_reasoning: plan.ai_reasoning.slice(0, 280),
-        context_payload: entity.payload,
-        draft_subject: channel === "email" ? plan.draft_subject.slice(0, 160) : null,
+        context_payload: { ...prepared.payload, crmStage: prepared.payload.crmStage ?? "" },
+        draft_subject: outbound === "email" ? plan.draft_subject.slice(0, 160) : null,
         draft_message: plan.draft_message.slice(0, 2000),
         post_action: postAction,
         status: "pending_approval",
@@ -148,6 +200,7 @@ export async function planCampaign(userId: string, campaignId: string): Promise<
       break;
     }
     if (inserted.data?.id) createdIds.push(String(inserted.data.id));
+    busy.add(key);
     created += 1;
   }
 
@@ -162,6 +215,73 @@ export async function planCampaign(userId: string, campaignId: string): Promise<
   return { ok: true, created, skipped, notice };
 }
 
+async function prepareEntity(input: {
+  userId: string;
+  agentId: string;
+  sourceType: string;
+  entity: SourceEntity;
+  cooldownHours: number;
+}) {
+  const payload = { ...input.entity.payload };
+  const key = payload.contactKey || contactKey(input.entity.phone || input.entity.email || input.entity.telegram);
+  if (key) payload.contactKey = key;
+  let context = input.entity.context;
+  if (payload.conversationId && uuidOrNull(payload.conversationId)) {
+    const crm = await readCrmSnapshot(input.agentId, payload.conversationId, input.cooldownHours);
+    if (!crm.connected) {
+      /* CRM нет — остаёмся на переписке. */
+    } else if (crm.closed || crm.touchedRecently) {
+      return null;
+    } else if (crm.dealId) {
+      payload.crmDealId = crm.dealId;
+      payload.crmStage = crm.stage;
+      context = `${context}\n\nСделка CRM: ${crm.notes || crm.dealId}. Стадия: ${crm.stage || "не указана"}.`;
+    }
+  } else if (input.sourceType === "pipedrive" || input.sourceType === "amocrm") {
+    if (payload.updatedAt && Date.now() - Date.parse(payload.updatedAt) < input.cooldownHours * 3_600_000) return null;
+    const chat = await recentChatContext(input.userId, key);
+    if (chat) context = `${context}\n\n${chat}`;
+  }
+  return { ...input.entity, context, payload };
+}
+
+async function busyContacts(admin: ReturnType<typeof createSupabaseAdminClient>, userId: string, cooldownHours: number) {
+  const keys = new Set<string>();
+  const active = await admin
+    .from("agent_action_queue")
+    .select("contact_key, status, sent_at")
+    .eq("user_id", userId)
+    .in("status", ["pending_approval", "scheduled", "sending", "sent"])
+    .order("created_at", { ascending: false })
+    .limit(200);
+  if (active.error) return keys;
+  const cutoff = Date.now() - cooldownHours * 3_600_000;
+  for (const row of active.data ?? []) {
+    const key = String(row.contact_key ?? "");
+    if (!key) continue;
+    if (row.status !== "sent") keys.add(key);
+    else if (typeof row.sent_at === "string" && Date.parse(row.sent_at) >= cutoff) keys.add(key);
+  }
+  return keys;
+}
+
+function sendChannel(entity: SourceEntity, fallback: ProactiveChannel): ProactiveChannel {
+  const provider = entity.payload.provider;
+  return provider === "whatsapp" || provider === "telegram" ? provider : fallback;
+}
+
+function uuidOrNull(value: string | undefined) {
+  return value && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value) ? value : null;
+}
+
+function categoryOf(value: unknown, sourceType: string): DialogCategory {
+  const raw = String(value ?? "");
+  if ((CATEGORIES as readonly string[]).includes(raw)) return raw as DialogCategory;
+  if (sourceType === "strike_chats") return "stalled_dialog";
+  if (sourceType === "csv" || sourceType === "google_sheets") return "reactivation";
+  return "crm_followup";
+}
+
 async function draftPlan(input: {
   model: unknown;
   agentName: string;
@@ -169,6 +289,7 @@ async function draftPlan(input: {
   goal: string;
   channel: ProactiveChannel;
   entity: SourceEntity;
+  sourceType: string;
 }): Promise<Plan> {
   const model = normalizeAgentModel(input.model);
   const messages = [
@@ -180,8 +301,11 @@ async function draftPlan(input: {
         "",
         `Задача кампании: ${input.goal.trim() || "Написать первое полезное сообщение."}`,
         `Канал: ${input.channel}.`,
-        "Реши, стоит ли писать этому контакту. Если данных мало или контакт не подходит под задачу, should_contact = false.",
-        "draft_message — готовый текст без markdown, до 700 знаков. Для email заполни draft_subject. ai_reasoning — одна короткая строка, почему такой заход.",
+        "Реши, стоит ли писать. Отказ, покупка, спам и логически закрытый разговор — should_contact = false.",
+        "Если клиент ждёт КП, смету или презентацию — dialog_category = waiting_proposal.",
+        "Если оставил контакт или просит созвон — shared_contact. Если вопрос остался без ответа — unanswered_question.",
+        "Если диалог просто затих — stalled_dialog. Сделка CRM — crm_followup. Холодная база — reactivation.",
+        "draft_message — готовый текст без markdown, до 700 знаков. ai_reasoning — одна короткая строка.",
         "Ответ — только JSON. Пиши на языке контакта. Если язык неясен — по-русски.",
       ].join("\n"),
     },
@@ -215,6 +339,7 @@ async function draftPlan(input: {
     ai_reasoning: String(parsed.ai_reasoning ?? "").trim(),
     draft_subject: String(parsed.draft_subject ?? "").trim(),
     draft_message: String(parsed.draft_message ?? "").trim(),
+    dialog_category: categoryOf(parsed.dialog_category, input.sourceType),
     post_action: { add_note: parsed.add_note !== false, move_stage_id: String(parsed.move_stage_id ?? "").trim() },
   };
 }
@@ -248,7 +373,9 @@ async function spendOne(admin: ReturnType<typeof createSupabaseAdminClient>, use
 }
 
 function missingTable(message: string) {
-  return /proactive_|agent_action_queue/.test(message) ? "Примените миграцию 20261126_proactive_core.sql." : message;
+  return /proactive_|agent_action_queue|contact_key|followup_conflict/.test(message)
+    ? "Примените миграции 20261126_proactive_core.sql и 20261127_proactive_dialogs.sql."
+    : message;
 }
 
 export async function planDueCampaigns() {

@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 
 import {
   approveTasks,
+  createMessengerWatch,
   createSource,
   launchCampaign,
   rejectTask,
@@ -50,12 +51,14 @@ export function TasksDesk({
   const [campaignFilter, setCampaignFilter] = useState("all");
   const [channelFilter, setChannelFilter] = useState("all");
   const [channelPreset, setChannelPreset] = useState<ProactiveChannel>("whatsapp");
+  const [agentId, setAgentId] = useState(agents[0]?.id ?? "");
+  const selectedAgent = agents.find((agent) => agent.id === agentId) ?? null;
 
   const pendingTasks = useMemo(
     () => tasks.filter((task) => task.status === "pending_approval" && match(task, campaignFilter, channelFilter)),
     [tasks, campaignFilter, channelFilter],
   );
-  const queue = tasks.filter((task) => task.status === "scheduled" || task.status === "sending" || task.status === "sent" || task.status === "failed");
+  const queue = tasks.filter((task) => task.status === "scheduled" || task.status === "sending" || task.status === "sent" || task.status === "failed" || task.status === "stale");
 
   function run(action: () => Promise<ActionResult>) {
     start(async () => setNotice(await action()));
@@ -65,7 +68,7 @@ export function TasksDesk({
     <div className="space-y-6">
       {migration ? (
         <p className="text-sm text-red-300">
-          <span>Примените миграцию 20261126_proactive_core.sql, затем обновите страницу.</span>
+          <span>Примените миграции 20261126_proactive_core.sql и 20261127_proactive_dialogs.sql, затем обновите страницу.</span>
         </p>
       ) : null}
       <StatusLine result={notice} />
@@ -120,7 +123,10 @@ export function TasksDesk({
                     <p className="text-sm font-medium text-white">
                       <span>{task.contactName || task.contactTarget}</span>
                     </p>
-                    <span className="text-xs text-zinc-400">{CHANNEL_LABEL[task.channel]}</span>
+                    <span className="flex items-center gap-2">
+                      <CategoryBadge category={task.category} />
+                      <span className="text-xs text-zinc-400">{CHANNEL_LABEL[task.channel]}</span>
+                    </span>
                   </div>
                   <p className="text-sm text-zinc-300">
                     <span>{statusLine(task, timezone)}</span>
@@ -154,6 +160,12 @@ export function TasksDesk({
         </TabsContent>
 
         <TabsContent value="setup" className="grid gap-8 lg:grid-cols-2">
+          <form action={(formData) => run(() => createMessengerWatch(idle, formData))} className="lg:col-span-2">
+            <input type="hidden" name="agent_id" value={agentId} />
+            <Button type="submit" disabled={pending || agents.length === 0}>
+              <span>Мониторинг активных чатов WhatsApp / Мессенджеров</span>
+            </Button>
+          </form>
           <form action={(formData) => run(() => createSource(idle, formData))} className="space-y-4">
             <h2 className="text-lg font-semibold text-white">
               <span>Источник</span>
@@ -163,6 +175,15 @@ export function TasksDesk({
               <option value="csv">CSV</option>
               <option value="google_sheets">Google Таблица</option>
               <option value="pipedrive">Pipedrive</option>
+              <option value="amocrm">amoCRM агента</option>
+              <option value="strike_chats">Диалоги мессенджеров</option>
+            </select>
+            <select name="agent_id" className={fieldClass} value={agentId} onChange={(event) => setAgentId(event.target.value)}>
+              {agents.map((agent) => (
+                <option key={agent.id} value={agent.id}>
+                  {agent.name}
+                </option>
+              ))}
             </select>
             <input name="file" type="file" accept=".csv,text/csv" className="text-sm text-zinc-300" />
             <input name="url" placeholder="Ссылка на Google Таблицу" className={fieldClass} />
@@ -183,12 +204,21 @@ export function TasksDesk({
               <span>Кампания</span>
             </h2>
             <input name="name" required placeholder="Название" className={fieldClass} />
-            <select name="agent_id" required className={fieldClass} defaultValue={agents[0]?.id ?? ""}>
+            <select name="agent_id" required className={fieldClass} value={agentId} onChange={(event) => setAgentId(event.target.value)}>
               {agents.map((agent) => (
                 <option key={agent.id} value={agent.id}>
                   {agent.name}
                 </option>
               ))}
+            </select>
+            {selectedAgent?.followupEnabled ? (
+              <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+                <span>У этого агента включены умные напоминания. Пока их цепочка не закончится, обычный дожим из «Задач ИИ» не создаётся. Запрос КП и оставленный контакт всё равно попадут в очередь, а встроенное напоминание по этому чату остановится.</span>
+              </p>
+            ) : null}
+            <select name="followup_conflict_mode" className={fieldClass} defaultValue="wait_builtin">
+              <option value="wait_builtin">Ждать встроенный follow-up</option>
+              <option value="override_builtin">Задачи ИИ вместо таймера</option>
             </select>
             <select name="source_id" required className={fieldClass} defaultValue={sources[0]?.id ?? ""}>
               {sources.map((source) => (
@@ -244,8 +274,16 @@ function ApprovalCard({
         <p className="text-sm font-medium text-white">
           <span>{task.contactName || "Контакт"}</span>
         </p>
-        <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300">{CHANNEL_LABEL[task.channel]}</span>
+        <span className="flex items-center gap-2">
+          <CategoryBadge category={task.category} />
+          <span className="rounded-full border border-zinc-700 px-2 py-0.5 text-xs text-zinc-300">{CHANNEL_LABEL[task.channel]}</span>
+        </span>
       </div>
+      {task.crmStage ? (
+        <p className="text-xs text-zinc-300">
+          <span>{`Сделка CRM: ${task.crmStage}`}</span>
+        </p>
+      ) : null}
       <p className="text-sm text-zinc-400">
         <span>{task.contactTarget}</span>
       </p>
@@ -441,7 +479,23 @@ function statusLine(task: TaskCard, timezone: string) {
   if (task.status === "sent") return `Отправлено ${formatStamp(task.sentAt, timezone)}`;
   if (task.status === "failed") return "Ошибка отправки";
   if (task.status === "sending") return "Отправляется";
+  if (task.status === "stale") return "Неактуально (диалог обновился)";
   return `Запланировано ${formatStamp(task.scheduledFor, timezone)}`;
+}
+
+const CATEGORY_BADGE: Record<string, { label: string; className: string }> = {
+  waiting_proposal: { label: "Ждёт КП", className: "bg-amber-500/15 text-amber-200" },
+  shared_contact: { label: "Оставил контакт", className: "bg-sky-500/15 text-sky-200" },
+  unanswered_question: { label: "Вопрос без ответа", className: "bg-violet-500/15 text-violet-200" },
+  stalled_dialog: { label: "Диалог затих", className: "bg-zinc-700 text-zinc-100" },
+  crm_followup: { label: "Дожим по CRM", className: "bg-[#cf0234]/15 text-[#ffb3c0]" },
+  reactivation: { label: "Реактивация", className: "bg-emerald-500/15 text-emerald-200" },
+};
+
+function CategoryBadge({ category }: { category: string }) {
+  const badge = CATEGORY_BADGE[category];
+  if (!badge) return null;
+  return <span className={`rounded-full px-2 py-0.5 text-xs ${badge.className}`}>{badge.label}</span>;
 }
 
 function formatStamp(iso: string | null, timezone: string) {

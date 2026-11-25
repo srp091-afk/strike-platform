@@ -4910,6 +4910,9 @@ function FollowupField({
       </label>
       {enabled ? (
         <>
+          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
+            <span>Если для этого агента запущена кампания «Задачи ИИ», таймерные напоминания не уйдут, пока по чату есть задача или кампания перехватывает дожим. По умолчанию кампания ждёт встроенную цепочку и отдельно поднимает запрос КП и оставленный контакт.</span>
+          </p>
           <label className="grid gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
               Интервал ожидания (в часах)

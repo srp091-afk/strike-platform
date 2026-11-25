@@ -26,7 +26,9 @@ function fail(error: string): ActionResult {
 }
 
 function migrationHint(message: string) {
-  return /proactive_|agent_action_queue|claim_proactive_actions/.test(message) ? "Примените миграцию 20261126_proactive_core.sql." : message;
+  return /proactive_|agent_action_queue|claim_proactive_actions|contact_key|followup_conflict/.test(message)
+    ? "Примените миграции 20261126_proactive_core.sql и 20261127_proactive_dialogs.sql."
+    : message;
 }
 
 export async function createSource(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
@@ -39,9 +41,9 @@ export async function createSource(_prev: ActionResult, formData: FormData): Pro
   if (!built.ok) return fail(built.error);
   const adapter = sourceAdapter(kind);
   if (!adapter) return fail("Источник не поддерживается.");
-  const tested = await adapter.testConnection(built.config);
   try {
     const userId = await getEffectiveUserId();
+    const tested = await adapter.testConnection({ ...built.config, userId });
     const admin = createSupabaseAdminClient();
     const { error } = await admin.from("proactive_sources").insert({
       user_id: userId,
@@ -59,7 +61,7 @@ export async function createSource(_prev: ActionResult, formData: FormData): Pro
 }
 
 function isSourceType(value: string): value is SourceType {
-  return value === "csv" || value === "google_sheets" || value === "pipedrive";
+  return value === "csv" || value === "google_sheets" || value === "pipedrive" || value === "strike_chats" || value === "amocrm";
 }
 
 async function sourceConfig(type: SourceType, formData: FormData): Promise<{ ok: true; config: Record<string, unknown> } | { ok: false; error: string }> {
@@ -76,6 +78,21 @@ async function sourceConfig(type: SourceType, formData: FormData): Promise<{ ok:
     const url = String(formData.get("url") ?? "").trim();
     if (!url.includes("docs.google.com/spreadsheets")) return { ok: false, error: "Нужна ссылка на Google Таблицу." };
     return { ok: true, config: { url } };
+  }
+  if (type === "strike_chats" || type === "amocrm") {
+    const agentId = String(formData.get("agent_id") ?? "").trim();
+    if (!agentId) return { ok: false, error: "Выберите агента." };
+    if (type === "amocrm") return { ok: true, config: { agentId } };
+    return {
+      ok: true,
+      config: {
+        agentId,
+        channels: ["whatsapp", "telegram", "instagram"],
+        min_silence_hours: 4,
+        max_silence_days: 14,
+        cooldown_hours: 24,
+      },
+    };
   }
   const apiToken = String(formData.get("api_token") ?? "").trim();
   if (!apiToken) return { ok: false, error: "Укажите API-токен Pipedrive." };
@@ -107,12 +124,56 @@ export async function saveCampaign(_prev: ActionResult, formData: FormData): Pro
       require_approval: formData.get("require_approval") === "on",
       schedule_cron: cron || null,
       delivery_config: delivery,
+      followup_conflict_mode: formData.get("followup_conflict_mode") === "override_builtin" ? "override_builtin" : "wait_builtin",
       status: "draft",
     });
     if (error) return fail(error.message);
     return done("Кампания создана.");
   } catch (error) {
     return fail(error instanceof Error ? error.message : "Не удалось создать кампанию.");
+  }
+}
+
+export async function createMessengerWatch(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
+  const agentId = String(formData.get("agent_id") ?? "").trim();
+  if (!agentId) return fail("Выберите агента.");
+  try {
+    const userId = await getEffectiveUserId();
+    const admin = createSupabaseAdminClient();
+    const source = await admin
+      .from("proactive_sources")
+      .insert({
+        user_id: userId,
+        name: "Мониторинг чатов",
+        type: "strike_chats",
+        config: {
+          agentId,
+          channels: ["whatsapp", "telegram", "instagram"],
+          min_silence_hours: 4,
+          max_silence_days: 14,
+          cooldown_hours: 24,
+        },
+        status: "active",
+      })
+      .select("id")
+      .maybeSingle();
+    if (source.error || !source.data) return fail(source.error?.message || "Не удалось создать источник.");
+    const campaign = await admin.from("proactive_campaigns").insert({
+      user_id: userId,
+      agent_id: agentId,
+      source_id: source.data.id,
+      name: "Мониторинг активных чатов",
+      channel: "whatsapp",
+      goal_prompt: "Следи за затихшими диалогами. Если клиент ждёт КП или оставил контакт — подготовь точный следующий шаг. Закрытые и отказные разговоры не пиши.",
+      require_approval: true,
+      followup_conflict_mode: "wait_builtin",
+      delivery_config: defaultDelivery("whatsapp"),
+      status: "draft",
+    });
+    if (campaign.error) return fail(campaign.error.message);
+    return done("Кампания мониторинга чатов создана. Запустите сбор, когда будете готовы.");
+  } catch (error) {
+    return fail(error instanceof Error ? error.message : "Не удалось создать мониторинг.");
   }
 }
 

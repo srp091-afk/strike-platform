@@ -646,6 +646,14 @@ async function insertMessage(
 
     const { error } = await supabase.from("messages").insert(payload);
     if (error && error.code !== "23505") throw error;
+    if (!error) {
+      const { retireTasksForConversation } = await import("@/lib/proactive/stale");
+      await retireTasksForConversation(supabase, {
+        userId: row.userId,
+        conversationId: row.conversationId,
+        reason: row.role === "user" ? undefined : "Менеджер ответил в диалоге — задача снята с отправки",
+      });
+    }
   } catch (error) {
     console.error("[whatsapp webhook] messages insert", error);
     throw error instanceof Error ? error : new Error("Не удалось записать сообщение.");

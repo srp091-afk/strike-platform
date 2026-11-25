@@ -1,3 +1,4 @@
+import { contactKey } from "@/lib/proactive/contact-key";
 import type { DataSourceAdapter, PostAction, SourceEntity } from "@/lib/proactive/connectors/types";
 
 const API = "https://api.pipedrive.com/v1";
@@ -101,7 +102,15 @@ async function dealEntity(token: string, row: Record<string, unknown>): Promise<
     email: firstValue(person.email),
     telegram: "",
     context: [`Сделка: ${text(row.title)}`, `Сумма: ${text(row.value)} ${text(row.currency)}`, noteText].filter(Boolean).join("\n"),
-    payload: { dealId: text(row.id), title: text(row.title), personId },
+    payload: {
+      dealId: text(row.id),
+      crmDealId: text(row.id),
+      title: text(row.title),
+      personId,
+      contactKey: contactKey(firstValue(person.phone) || firstValue(person.email)) || `pd:${text(row.id)}`,
+      updatedAt: text(row.update_time),
+      crmStage: text(row.stage_id) ? `Стадия ${text(row.stage_id)}` : "",
+    },
   };
 }
 

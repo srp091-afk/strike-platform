@@ -9,6 +9,7 @@ import { sourceAdapter } from "@/lib/proactive/connectors";
 import type { PostAction } from "@/lib/proactive/connectors/types";
 import { recordOutboundChat } from "@/lib/proactive/inbox";
 import { planDueCampaigns } from "@/lib/proactive/planner";
+import { dialogIsStale } from "@/lib/proactive/stale";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 type Claimed = {
@@ -25,6 +26,8 @@ type Claimed = {
   draft_message: string;
   post_action: PostAction | null;
   context_payload: Record<string, string> | null;
+  conversation_id?: string | null;
+  snapshot_last_msg_at?: string | null;
 };
 
 export async function executeDueProactive(options?: { userId?: string; plan?: boolean }) {
@@ -45,22 +48,22 @@ export async function executeDueProactive(options?: { userId?: string; plan?: bo
   const messengers = rows.filter((row) => row.channel !== "email");
   for (const row of messengers) {
     const result = await deliverOne(admin, row);
-    if (result) sent += 1;
-    else failed += 1;
+    if (result === "sent") sent += 1;
+    else if (result === "failed") failed += 1;
   }
   const emailResults = await Promise.all(emails.map((row) => deliverOne(admin, row)));
   for (const result of emailResults) {
-    if (result) sent += 1;
-    else failed += 1;
+    if (result === "sent") sent += 1;
+    else if (result === "failed") failed += 1;
   }
   return { ok: true as const, sent, failed, error: null };
 }
 
-async function deliverOne(admin: ReturnType<typeof createSupabaseAdminClient>, row: Claimed) {
+async function deliverOne(admin: ReturnType<typeof createSupabaseAdminClient>, row: Claimed): Promise<"sent" | "failed" | "stale"> {
   const credits = await readCredits(admin, row.user_id);
   if (credits < 1) {
     await fail(admin, row, "Закончились STRIKE Credits. Отправка остановлена.");
-    return false;
+    return "failed";
   }
   const agent = await admin
     .from("agents")
@@ -69,12 +72,20 @@ async function deliverOne(admin: ReturnType<typeof createSupabaseAdminClient>, r
     .maybeSingle();
   if (agent.error || !agent.data) {
     await fail(admin, row, "Агент не найден.");
-    return false;
+    return "failed";
+  }
+  if (await dialogIsStale({ conversationId: row.conversation_id ?? null, snapshot: row.snapshot_last_msg_at ?? null })) {
+    await admin
+      .from("agent_action_queue")
+      .update({ status: "stale", error_message: "Клиент написал новое сообщение — задача снята с отправки" })
+      .eq("id", row.id)
+      .eq("status", "sending");
+    return "stale";
   }
   const sent = await sendByChannel(row, agent.data as Record<string, unknown>);
   if (!sent.ok) {
     await fail(admin, row, sent.error);
-    return false;
+    return "failed";
   }
   await spendOne(admin, row.user_id, `proactive_send_${row.id}`);
   await admin
@@ -92,7 +103,7 @@ async function deliverOne(admin: ReturnType<typeof createSupabaseAdminClient>, r
     context: row.ai_reasoning,
   }).catch((error) => console.error("[proactive chat]", error instanceof Error ? error.message : error));
   await runPostAction(admin, row, sent.chatId).catch((error) => console.error("[proactive post]", error instanceof Error ? error.message : error));
-  return true;
+  return "sent";
 }
 
 async function sendByChannel(row: Claimed, agent: Record<string, unknown>): Promise<

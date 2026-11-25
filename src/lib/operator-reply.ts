@@ -93,6 +93,13 @@ export async function sendOperatorReply(conversationId: string, text: string) {
     .eq("id", conversationId);
   await pauseBotForHandoff(supabase, conversationId, readHandoffDuration(agent.agent.human_handoff_duration));
   await markAgentReplied(supabase, conversationId);
+  const { retireTasksForConversation } = await import("@/lib/proactive/stale");
+  await retireTasksForConversation(supabase, {
+    userId,
+    conversationId,
+    contact: chatId,
+    reason: "Менеджер ответил в диалоге — задача снята с отправки",
+  });
   return { ok: true as const, messageId: String(stored.id) };
 }
 

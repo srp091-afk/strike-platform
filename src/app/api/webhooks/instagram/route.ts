@@ -146,6 +146,12 @@ async function handleMessage(message: IncomingEvent) {
     external_message_id: externalId,
   });
   if (inboundError) throw new Error(inboundError.message);
+  const { retireTasksForConversation } = await import("@/lib/proactive/stale");
+  await retireTasksForConversation(supabase, {
+    userId: String(agent.user_id),
+    conversationId: conversation.id,
+    contact: message.senderId,
+  });
 
   if (agent.is_active !== true || !readActiveChannels(agent.active_channels).instagram) return;
   if (!conversation.botActive) return;
