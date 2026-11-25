@@ -34,7 +34,7 @@ export function PreferencesPanel({
           <span>Уведомления</span>
         </p>
         <p className="mt-1 text-sm text-zinc-400">
-          <span>Что показывать и присылать по этому аккаунту.</span>
+          <span>Переключатели включают оповещения в колокольчике кабинета. Письма не отправляются.</span>
         </p>
       </div>
       <input type="hidden" name="low_balance" value={lowBalance ? "on" : ""} />
@@ -43,19 +43,19 @@ export function PreferencesPanel({
       <input type="hidden" name="timezone" value={selectedZone} />
       <Toggle
         label="Низкий баланс"
-        hint="Предупреждение, когда STRIKE Credits меньше 100."
+        hint="Колокольчик в шапке кабинета, когда на счёте меньше 100 SC, но баланс ещё больше нуля. Ссылка ведёт в биллинг."
         checked={lowBalance}
         onChange={setLowBalance}
       />
       <Toggle
         label="Подписка"
-        hint="Статус тарифа и напоминание о продлении."
+        hint="Колокольчик: окончание в ближайшие 5 дней, отмена, past due, активация или продление. Дата считается в часовом поясе ниже и открывается в биллинге."
         checked={subscription}
         onChange={setSubscription}
       />
       <Toggle
         label="Каналы"
-        hint="Если отключится или сломается WhatsApp, Instagram или виджет."
+        hint="Колокольчик, если WhatsApp, Instagram или виджет отключились или перешли в ошибку. Ссылка открывает агента."
         checked={channelAlerts}
         onChange={setChannelAlerts}
       />

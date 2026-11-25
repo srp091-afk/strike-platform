@@ -22,10 +22,12 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import { AccountMenu } from "@/components/account-menu";
+import { NoticeBell } from "@/components/notice-bell";
 import type { ClientAccount } from "@/lib/active-account";
 import type { AccountProfile } from "@/lib/auth-user";
 import { tierLabel, formatSc } from "@/lib/billing-catalog";
 import { CREDITS_LOW_SC } from "@/lib/credits-policy";
+import type { CabinetNotice } from "@/lib/cabinet-notices";
 import type { AgentTier } from "@/lib/config/pricing";
 import { Logo } from "@/components/ui/Logo";
 import { bottomNav, isNavActive, mainNav, type NavItem } from "@/lib/navigation";
@@ -148,6 +150,7 @@ function SidebarBody({
   activeAccountId,
   lockedHrefs,
   wallet,
+  notices,
   collapsed,
   pathname,
   onToggle,
@@ -159,6 +162,7 @@ function SidebarBody({
   activeAccountId: string;
   lockedHrefs: readonly string[];
   wallet: { tier: AgentTier; credits: number } | null;
+  notices: CabinetNotice[];
   collapsed: boolean;
   pathname: string;
   onToggle?: () => void;
@@ -167,28 +171,31 @@ function SidebarBody({
 }) {
   return (
     <div className="flex h-full flex-col">
-      <div className={cn("flex h-14 shrink-0 items-center px-3", collapsed ? "justify-center" : "justify-between")}>
+      <div className={cn("flex shrink-0 items-center px-3", collapsed ? "flex-col gap-1 py-3" : "h-14 justify-between")}>
         {collapsed ? null : (
           <Link href="/dashboard" aria-label="STRIKE" onClick={onNavigate} className="flex items-center pl-2">
             <Logo variant="dark" />
           </Link>
         )}
-        {onToggle ? (
-          <button
-            type="button"
-            onClick={onToggle}
-            aria-label={toggleIcon === "close" ? "Закрыть меню" : collapsed ? "Развернуть меню" : "Свернуть меню"}
-            className="grid size-8 place-items-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
-          >
-            {toggleIcon === "close" ? (
-              <X className="size-[18px]" strokeWidth={1.75} />
-            ) : collapsed ? (
-              <PanelLeftOpen className="size-[18px]" strokeWidth={1.75} />
-            ) : (
-              <PanelLeftClose className="size-[18px]" strokeWidth={1.75} />
-            )}
-          </button>
-        ) : null}
+        <div className={cn("flex items-center", collapsed && "flex-col gap-1")}>
+          <NoticeBell notices={notices} compact={collapsed} />
+          {onToggle ? (
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-label={toggleIcon === "close" ? "Закрыть меню" : collapsed ? "Развернуть меню" : "Свернуть меню"}
+              className="grid size-8 place-items-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900"
+            >
+              {toggleIcon === "close" ? (
+                <X className="size-[18px]" strokeWidth={1.75} />
+              ) : collapsed ? (
+                <PanelLeftOpen className="size-[18px]" strokeWidth={1.75} />
+              ) : (
+                <PanelLeftClose className="size-[18px]" strokeWidth={1.75} />
+              )}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <nav aria-label="Основное меню" className="flex flex-1 flex-col gap-1 overflow-y-auto px-3 py-2">
@@ -231,12 +238,14 @@ export function AppSidebar({
   activeAccountId = "",
   lockedHrefs = [],
   wallet = null,
+  notices = [],
 }: {
   account: AccountProfile | null;
   clients?: ClientAccount[];
   activeAccountId?: string;
   lockedHrefs?: readonly string[];
   wallet?: { tier: AgentTier; credits: number } | null;
+  notices?: CabinetNotice[];
 }) {
   const pathname = usePathname();
   const [collapsed, setCollapsed] = useState(false);
@@ -278,6 +287,7 @@ export function AppSidebar({
           activeAccountId={activeAccountId}
           lockedHrefs={lockedHrefs}
           wallet={wallet}
+          notices={notices}
           collapsed={collapsed}
           pathname={pathname}
           onToggle={toggleCollapsed}
@@ -297,6 +307,7 @@ export function AppSidebar({
         <Link href="/dashboard" aria-label="STRIKE" className="flex items-center">
           <Logo variant="dark" />
         </Link>
+        <NoticeBell notices={notices} className="ml-auto" />
       </div>
 
       {mobileOpen ? (
@@ -314,6 +325,7 @@ export function AppSidebar({
               activeAccountId={activeAccountId}
               lockedHrefs={lockedHrefs}
               wallet={wallet}
+              notices={notices}
               collapsed={false}
               pathname={pathname}
               onToggle={() => setMobileOpen(false)}

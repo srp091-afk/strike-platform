@@ -1435,7 +1435,13 @@ async function applyEvolutionConnection(body: unknown) {
   if (state === "open" && phone) patch.wa_phone_number = phone.slice(0, 40);
   const { error } = await supabase.from("agents").update(patch).eq("wa_instance_id", instanceName);
   if (error) console.error("[evolution webhook] connection", error.message);
-  else revalidatePath("/agents");
+  const integration = await supabase
+    .from("integrations")
+    .update({ status: state === "open" ? "connected" : "disconnected" })
+    .eq("provider", "whatsapp")
+    .eq("external_id", instanceName.toLowerCase());
+  if (integration.error) console.error("[evolution webhook] connection", integration.error.message);
+  if (!error) revalidatePath("/agents");
 }
 
 async function resolveEvolutionAccount(supabase: AdminClient, instanceName: string) {

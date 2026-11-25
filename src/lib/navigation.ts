@@ -29,6 +29,7 @@ export const bottomNav: readonly NavItem[] = [
 /** Разделы внутреннего портала (светлая тема, сайдбар). Всё остальное — публичные страницы. */
 const PORTAL_PREFIXES = [
   "/dashboard",
+  "/billing",
   "/agents",
   "/funnels",
   "/sites",

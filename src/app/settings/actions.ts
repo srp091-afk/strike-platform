@@ -138,6 +138,7 @@ export async function saveWorkspace(
       };
     }
     revalidatePath("/settings");
+    revalidatePath("/", "layout");
     return { ok: true, error: null, notice: "Настройки сохранены." };
   } catch (error) {
     return { ...savedNotice, error: error instanceof Error ? error.message : "Не удалось сохранить настройки." };
