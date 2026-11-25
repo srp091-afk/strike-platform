@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getEffectiveUserId, readAccountSwitcher } from "@/lib/account-context";
 import { readAccess } from "@/lib/access";
 import { getAccountProfile } from "@/lib/auth-user";
 
@@ -16,10 +17,21 @@ export function assistantProAllowed(input: { email?: string | null; isAdmin: boo
   return input.isAdmin || email === OWNER_EMAIL;
 }
 
-/** Доступ сессии, а не переключённого кабинета: владелец остаётся владельцем и в чужом аккаунте. */
+/** Доступ считается по открытому кабинету. Чужой кабинет без is_admin раздел не открывает. */
 export async function canUseAssistantPro() {
   const profile = await getAccountProfile();
   if (!profile) return false;
-  const access = await readAccess(profile.id);
-  return assistantProAllowed({ email: profile.email, isAdmin: access.isAdmin });
+  let userId = profile.id;
+  try {
+    userId = await getEffectiveUserId();
+  } catch {
+    return false;
+  }
+  const access = await readAccess(userId);
+  let email = profile.email;
+  if (userId !== profile.id) {
+    const { accounts } = await readAccountSwitcher();
+    email = accounts.find((item) => item.id === userId)?.email ?? "";
+  }
+  return assistantProAllowed({ email, isAdmin: access.isAdmin });
 }
