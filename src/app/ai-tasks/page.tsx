@@ -2,17 +2,20 @@ import type { Metadata } from "next";
 import { io } from "next/cache";
 import { Suspense } from "react";
 
+import { LockedModuleOverlay } from "@/components/locked-module";
 import { PageFrame } from "@/components/page-frame";
+import { ASSISTANT_PRO_LOCKED_FOR_ALL_TIERS } from "@/lib/assistant-pro";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { loadProactiveDesk } from "@/lib/proactive/load";
 
 import { TasksDesk } from "./tasks-desk";
 
-export const metadata: Metadata = { title: "Задачи ИИ" };
+export const metadata: Metadata = { title: "Ассистент Pro" };
 
 export default function AiTasksPage() {
+  if (ASSISTANT_PRO_LOCKED_FOR_ALL_TIERS) return <LockedModuleOverlay href="/billing" />;
   return (
-    <PageFrame eyebrow="Агенты" title="Задачи ИИ" description="Утверждение черновиков, очередь отправки и источники для проактивных кампаний.">
+    <PageFrame eyebrow="Агенты" title="Ассистент Pro" description="Утверждение черновиков, очередь отправки и источники для проактивных кампаний.">
       <Suspense fallback={<div className="h-64 rounded-2xl border border-zinc-800 bg-zinc-900" />}>
         <Desk />
       </Suspense>

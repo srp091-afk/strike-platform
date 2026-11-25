@@ -13,12 +13,12 @@ export type NavItem = {
 export const mainNav: readonly NavItem[] = [
   { href: "/dashboard", label: "Дашборд", icon: "dashboard" },
   { href: "/agents", label: "Агенты", icon: "agents" },
+  { href: "/leads", label: "Лидогенерация", icon: "outreach" },
+  { href: "/ai-tasks", label: "Ассистент Pro", icon: "tasks" },
   { href: "/funnels", label: "Сайты", icon: "sites", beta: true },
   { href: "/ads", label: "Ads & Креативы", icon: "ads" },
-  { href: "/leads", label: "Лидогенерация", icon: "outreach" },
   { href: "/smm", label: "SMM", icon: "smm", beta: true },
   { href: "/chats", label: "Чаты", icon: "chats" },
-  { href: "/ai-tasks", label: "Задачи ИИ", icon: "tasks" },
 ];
 
 /** Нижний блок сайдбара (над профилем). */

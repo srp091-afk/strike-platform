@@ -213,12 +213,12 @@ export function TasksDesk({
             </select>
             {selectedAgent?.followupEnabled ? (
               <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-                <span>У этого агента включены умные напоминания. Пока их цепочка не закончится, обычный дожим из «Задач ИИ» не создаётся. Запрос КП и оставленный контакт всё равно попадут в очередь, а встроенное напоминание по этому чату остановится.</span>
+                <span>У этого агента включены умные напоминания. Пока их цепочка не закончится, обычный дожим из «Ассистента Pro» не создаётся. Запрос КП и оставленный контакт всё равно попадут в очередь, а встроенное напоминание по этому чату остановится.</span>
               </p>
             ) : null}
             <select name="followup_conflict_mode" className={fieldClass} defaultValue="wait_builtin">
               <option value="wait_builtin">Ждать встроенный follow-up</option>
-              <option value="override_builtin">Задачи ИИ вместо таймера</option>
+              <option value="override_builtin">Ассистент Pro вместо таймера</option>
             </select>
             <select name="source_id" required className={fieldClass} defaultValue={sources[0]?.id ?? ""}>
               {sources.map((source) => (

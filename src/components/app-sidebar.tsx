@@ -7,8 +7,8 @@ import {
   LayoutDashboard,
   Megaphone,
   Send,
-  ListTodo,
   Lock,
+  Sparkles,
   Menu,
   MessagesSquare,
   PanelLeftClose,
@@ -43,7 +43,7 @@ const ICONS: Record<NavItem["icon"], LucideIcon> = {
   outreach: Send,
   smm: Share2,
   chats: MessagesSquare,
-  tasks: ListTodo,
+  tasks: Sparkles,
   billing: CreditCard,
   settings: Settings,
 };
@@ -77,7 +77,7 @@ function NavLink({
   const content = (
     <>
       {active ? <span aria-hidden className="absolute inset-y-2 left-0 w-0.5 rounded-full bg-strike" /> : null}
-      <Icon className="size-[18px] shrink-0" strokeWidth={1.75} />
+      <Icon className={cn("size-[18px] shrink-0", item.icon === "tasks" && !active && "text-strike")} strokeWidth={1.75} />
       {item.beta && collapsed && !locked ? <span aria-hidden className="absolute right-2 top-2 size-1.5 rounded-full bg-strike" /> : null}
       {badge > 0 && collapsed ? <span aria-hidden className="absolute right-1.5 top-1.5 size-2 rounded-full bg-strike" /> : null}
       {locked && collapsed ? <Lock aria-hidden className="absolute right-1.5 top-1.5 size-3" strokeWidth={2.25} /> : null}
@@ -218,7 +218,7 @@ function SidebarBody({
             pathname={pathname}
             collapsed={collapsed}
             locked={lockedHrefs.includes(item.href)}
-            badge={item.href === "/ai-tasks" ? taskCount : 0}
+            badge={item.href === "/ai-tasks" && !lockedHrefs.includes(item.href) ? taskCount : 0}
             onNavigate={onNavigate}
           />
         ))}
