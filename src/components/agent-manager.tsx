@@ -1550,12 +1550,12 @@ function OutboundWebhookCard({
         </Button>
         {result?.ok ? (
           <span className="inline-flex items-center rounded-full bg-emerald-500/15 px-2.5 py-1 text-xs font-medium text-emerald-400">
-            {result.status} OK — Доставлено
+            <span>{`${result.status} OK — Доставлено`}</span>
           </span>
         ) : result ? (
           <span className="inline-flex items-center rounded-full bg-red-500/15 px-2.5 py-1 text-xs font-medium text-red-400">
-            {result.status ? `${result.status} — ` : ""}
-            {result.error || "Ошибка"}
+            {result.status ? <span>{`${result.status} — `}</span> : null}
+            <span>{result.error || "Ошибка"}</span>
           </span>
         ) : null}
       </div>
@@ -4637,7 +4637,9 @@ function ChannelDelay({ value, onChange, max = MAX_CHANNEL_DELAY_SECONDS }: { va
         ))}
       </div>
       <p className="basis-full text-[11px] leading-4 text-zinc-400">
-        Пауза перед отправкой ответа{max < MAX_CHANNEL_DELAY_SECONDS ? ` (не больше ${max} с)` : ""}. На это время клиент видит, что агент печатает.
+        <span>Пауза перед отправкой ответа</span>
+        {max < MAX_CHANNEL_DELAY_SECONDS ? <span>{` (не больше ${max} с)`}</span> : null}
+        <span>. На это время клиент видит, что агент печатает.</span>
       </p>
     </div>
   );

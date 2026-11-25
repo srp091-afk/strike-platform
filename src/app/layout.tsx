@@ -3,6 +3,7 @@ import { Anton, Bebas_Neue, Inter, Montserrat, Plus_Jakarta_Sans } from "next/fo
 import { Suspense } from "react";
 
 import { AppShell } from "@/components/app-shell";
+import { GoogleTranslatePatch } from "@/components/google-translate-patch";
 import { AppSidebarSkeleton } from "@/components/app-sidebar";
 import { CookieConsent } from "@/components/CookieConsent";
 import { SiteFooter } from "@/components/site-footer";
@@ -92,6 +93,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       className={`${inter.variable} ${jakarta.variable} ${anton.variable} ${montserrat.variable} ${bebas.variable} h-full bg-black`}
     >
       <body className="flex min-h-full flex-col bg-black font-sans text-zinc-400">
+        <GoogleTranslatePatch />
         {/* AppShell читает usePathname (светлый портал vs тёмные публичные страницы): без Suspense пререндер роутов падает. */}
         <Suspense fallback={null}>
           <AppShell
