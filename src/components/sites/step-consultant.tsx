@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { Pause, Play, Volume2, VolumeX, X } from "lucide-react";
 
-import { findAvatar } from "@/lib/sites/ai-avatars";
+import { consultantPortrait, findAvatar } from "@/lib/sites/ai-avatars";
 import type { ConsultantMode, QuizConsultant, QuizStep, StepHelper } from "@/lib/sites/quiz-schema";
 import type { QuizPalette } from "@/lib/sites/theme";
 
@@ -15,12 +15,13 @@ export type ResolvedConsultant = {
   text: string;
   videoUrl: string;
   poster: string | null;
+  placeholder: boolean;
 };
 
 export function resolveConsultant(consultant: QuizConsultant, step: QuizStep, allowEmpty = false): ResolvedConsultant | null {
   if (!consultant.enabled || !step.helper.enabled) return null;
-  const mode = effectiveMode(consultant, step.helper);
-  const avatar = findAvatar(step.helper.aiAvatar.avatarId || consultant.aiAvatarId);
+  const mode = stepMode(step.helper);
+  const portrait = consultantPortrait(consultant) || (mode === "ai_avatar" ? findAvatar(step.helper.aiAvatar.avatarId)?.previewImageUrl ?? null : null);
   const script = step.helper.aiAvatar.script.trim() || step.helper.text.trim();
   const text = (mode === "ai_avatar" ? script : step.helper.text.trim()) || script;
   const generated = step.helper.aiAvatar.videoUrl;
@@ -31,10 +32,11 @@ export function resolveConsultant(consultant: QuizConsultant, step: QuizStep, al
       mode: "video",
       name: consultant.name,
       role: consultant.role,
-      portrait: consultant.avatarUrl || avatar?.previewImageUrl || null,
+      portrait,
       text,
       videoUrl: playable,
       poster: step.helper.customVideoPosterUrl,
+      placeholder: false,
     };
   }
   if (!text && !allowEmpty) return null;
@@ -42,10 +44,11 @@ export function resolveConsultant(consultant: QuizConsultant, step: QuizStep, al
     mode: "text",
     name: consultant.name,
     role: consultant.role,
-    portrait: mode === "ai_avatar" ? avatar?.previewImageUrl || consultant.avatarUrl : consultant.avatarUrl,
+    portrait,
     text,
     videoUrl: "",
     poster: null,
+    placeholder: !text,
   };
 }
 
@@ -119,7 +122,7 @@ export function ExpertSign({ consultant, palette }: { consultant: QuizConsultant
   if (!consultant.enabled || !consultant.showOnLeadScreen || !consultant.name.trim()) return null;
   return (
     <div className="mt-6 flex items-center gap-3">
-      <Face name={consultant.name} src={consultant.avatarUrl} size={32} palette={palette} />
+      <Face name={consultant.name} src={consultantPortrait(consultant)} size={32} palette={palette} />
       <p className="min-w-0 text-[13px] leading-4">
         <span className="block font-medium">{consultant.name}</span>
         <span className="block text-[11px]" style={{ color: palette.muted }}>{consultant.role}</span>
@@ -132,21 +135,21 @@ function TextCard({ resolved, palette, compact }: { resolved: ResolvedConsultant
   const [open, setOpen] = useState(false);
   const long = resolved.text.length > 90;
   return (
-    <aside className={compact ? "rounded-xl p-3" : "rounded-2xl p-4"} style={{ border: `1px solid ${palette.line}` }}>
+    <aside className={compact ? "rounded-2xl px-3.5 py-3" : "rounded-2xl px-5 py-5"} style={{ border: `1px solid ${palette.line}`, background: palette.card }}>
       <div className="flex items-center gap-3">
-        <Face name={resolved.name} src={resolved.portrait} size={compact ? 32 : 44} palette={palette} />
+        <Face name={resolved.name} src={resolved.portrait} size={compact ? 36 : 48} palette={palette} />
         <p className="min-w-0">
-          <span className="block text-[13px] font-medium leading-4">{resolved.name}</span>
-          <span className="mt-0.5 block text-[11px] leading-4" style={{ color: palette.muted }}>{resolved.role}</span>
+          <span className="block text-[13px] font-medium leading-4 tracking-tight">{resolved.name}</span>
+          <span className="mt-1 block text-[11px] leading-4" style={{ color: palette.muted }}>{resolved.role}</span>
         </p>
       </div>
       {resolved.text ? (
-        <p className={`text-sm leading-relaxed ${compact ? "mt-2" : "mt-4"} ${compact && long && !open ? "line-clamp-2" : ""}`} style={{ color: palette.fg }}>
+        <p className={`text-[14px] leading-6 ${compact ? "mt-3" : "mt-4"} ${compact && long && !open ? "line-clamp-2" : ""}`} style={{ color: palette.fg }}>
           <Rich text={resolved.text} />
         </p>
-      ) : (
-        <p className="mt-3 text-sm leading-relaxed" style={{ color: palette.muted }}><span>Подсказка эксперта появится здесь.</span></p>
-      )}
+      ) : resolved.placeholder ? (
+        <p className="mt-4 text-[13px] leading-5" style={{ color: palette.muted }}><span>Напишите подсказку справа.</span></p>
+      ) : null}
       {compact && long ? (
         <button type="button" className="mt-1 text-[11px]" style={{ color: palette.muted }} onClick={() => setOpen((value) => !value)}>
           <span>{open ? "Скрыть" : "Ещё"}</span>
@@ -328,8 +331,8 @@ function Rich({ text }: { text: string }) {
   );
 }
 
-function effectiveMode(consultant: QuizConsultant, helper: StepHelper): ConsultantMode {
-  return helper.mode === "inherit" ? consultant.defaultMode : helper.mode;
+function stepMode(helper: StepHelper): ConsultantMode {
+  return helper.mode === "ai_avatar" || helper.mode === "custom_video" ? helper.mode : "text";
 }
 
 function clock(total: number) {

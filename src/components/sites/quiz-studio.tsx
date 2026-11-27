@@ -70,7 +70,7 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
   const hostLabel = !subdomain.trim() ? "имя.strikeplatform.io" : liveHost.ok ? brandHost(liveHost.slug) : liveHost.reason;
 
   function updateStep(next: QuizSchema["steps"][number]) {
-    setDraft({ ...draft, steps: draft.steps.map((item) => (item.id === next.id ? next : item)) });
+    setDraft((current) => ({ ...current, steps: current.steps.map((item) => (item.id === next.id ? next : item)) }));
   }
 
   return (
@@ -128,7 +128,7 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
                 </button>
               </div>
             ) : null}
-            {panel === "design" ? <Design theme={theme} consultant={draft.consultant} siteId={site.id} onChange={setTheme} onConsultant={(consultant) => setDraft({ ...draft, consultant })} /> : null}
+            {panel === "design" ? <Design theme={theme} consultant={draft.consultant} siteId={site.id} onChange={setTheme} onConsultant={(consultant) => setDraft((current) => ({ ...current, consultant }))} /> : null}
             {panel === "settings" ? (
               <Settings
                 siteId={site.id}
@@ -173,7 +173,7 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
           </main>
           <aside className="overflow-y-auto border-l border-[#e4e4e7] bg-[#fff] p-4">
             {(screen === "start" || screen === "gifts") ? <StartInspector siteId={site.id} title={title} draft={draft} focus={screen === "gifts" ? "gifts" : "start"} onChange={setDraft} /> : null}
-            {step ? <StepInspector siteId={site.id} title={title} step={step} steps={draft.steps} consultant={draft.consultant} calculatorOpen={draft.resultPreview.enabled} onChange={updateStep} onConsultant={(consultant) => setDraft({ ...draft, consultant })} onDelete={() => { setDraft({ ...draft, steps: draft.steps.filter((item) => item.id !== step.id) }); setScreen("start"); }} /> : null}
+            {step ? <StepInspector siteId={site.id} title={title} step={step} steps={draft.steps} consultant={draft.consultant} calculatorOpen={draft.resultPreview.enabled} onChange={updateStep} onConsultant={(consultant) => setDraft((current) => ({ ...current, consultant }))} onDelete={() => { setDraft((current) => ({ ...current, steps: current.steps.filter((item) => item.id !== step.id) })); setScreen("start"); }} /> : null}
             {screen === "lead" ? <LeadInspector draft={draft} onChange={setDraft} /> : null}
             {screen === "thanks" ? <ThanksInspector draft={draft} onChange={setDraft} /> : null}
           </aside>
