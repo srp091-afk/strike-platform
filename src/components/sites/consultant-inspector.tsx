@@ -152,11 +152,16 @@ export function HelperInspector({
               </select>
             </label>
           </div>
-          <label className="grid gap-1 text-xs text-[#52525b]">
-            <span>Скрипт озвучки</span>
+          <div className="grid gap-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-xs text-[#52525b]"><span>Скрипт озвучки</span></span>
+              <button type="button" className="rounded-lg border border-[#e4e4e7] px-2.5 py-1.5 text-xs font-medium text-[#09090b]" disabled={busy === "script"} onClick={() => void writeScript()}>
+                <span>{busy === "script" ? "Пишем…" : "✨ Написать скрипт ИИ"}</span>
+              </button>
+            </div>
             <textarea className={`${field} h-24 py-2`} value={script} maxLength={500} onChange={(event) => patch({ ...helper, aiAvatar: { ...helper.aiAvatar, script: event.target.value } })} />
-            <span className="text-[11px] text-[#71717a]">{seconds <= 14 ? `~${seconds} сек · идеально для удержания` : `~${seconds} сек · лучше уложить в 12`}</span>
-          </label>
+            <span className="text-[11px] text-[#71717a]"><span>{seconds <= 14 ? `~${seconds} сек · идеально для удержания` : `~${seconds} сек · лучше уложить в 12`}</span></span>
+          </div>
           <button type="button" className="h-11 rounded-xl bg-[#09090b] text-sm font-semibold text-[#fff]" disabled={busy === "video-job"} onClick={() => void generateVideo()}>
             <span>{busy === "video-job" ? "Отправляем…" : "Сгенерировать видео"}</span>
           </button>
@@ -207,6 +212,35 @@ export function HelperInspector({
       return;
     }
     patch({ ...helper, enabled: true, mode: "text", text: payload.text, aiAvatar: { ...helper.aiAvatar, script: payload.text } });
+  }
+
+  async function writeScript() {
+    setBusy("script");
+    setError("");
+    const response = await fetch("/api/sites/generate-helper", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        action: "generate_step_helper",
+        title,
+        question: step.title,
+        subtitle: step.subtitle,
+        options: step.options.map((option) => option.label),
+      }),
+    });
+    const payload = (await response.json()) as { text?: string; error?: string };
+    setBusy("");
+    if (!response.ok || !payload.text) {
+      setError(payload.error || "Не удалось написать скрипт.");
+      return;
+    }
+    patch({
+      ...helper,
+      enabled: true,
+      mode: "ai_avatar",
+      text: helper.text || payload.text,
+      aiAvatar: { ...helper.aiAvatar, script: payload.text },
+    });
   }
 
   async function generateVideo() {
