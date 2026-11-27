@@ -17,6 +17,7 @@ const FILES = {
   avif: { group: "image", mime: "image/avif" },
   mp4: { group: "video", mime: "video/mp4" },
   webm: { group: "video", mime: "video/webm" },
+  mov: { group: "video", mime: "video/quicktime" },
   pdf: { group: "file", mime: "application/pdf" },
   docx: { group: "file", mime: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" },
   xlsx: { group: "file", mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" },
@@ -25,7 +26,7 @@ const FILES = {
 } as const;
 
 const LIMIT = { image: 8 * 1024 * 1024, video: 25 * 1024 * 1024, file: 20 * 1024 * 1024 };
-const KIND = new Set(["hero_media", "gift_cover", "gift_file", "logo", "option_image"]);
+const KIND = new Set(["hero_media", "gift_cover", "gift_file", "logo", "option_image", "consultant_avatar", "consultant_video"]);
 
 export async function POST(request: Request) {
   await connection();
@@ -43,9 +44,13 @@ export async function POST(request: Request) {
     const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
     const spec = FILES[extension as keyof typeof FILES];
     if (!spec) return Response.json({ error: "Этот формат не подходит." }, { status: 400 });
-    if ((kind === "gift_cover" || kind === "logo" || kind === "option_image") && spec.group !== "image") {
+    if ((kind === "gift_cover" || kind === "logo" || kind === "option_image" || kind === "consultant_avatar") && spec.group !== "image") {
       return Response.json({ error: "Нужно изображение." }, { status: 400 });
     }
+    if (kind === "consultant_avatar" && file.size > 5 * 1024 * 1024) {
+      return Response.json({ error: "Фото больше 5 МБ." }, { status: 400 });
+    }
+    if (kind === "consultant_video" && spec.group !== "video") return Response.json({ error: "Нужно видео mp4, webm или mov." }, { status: 400 });
     if (kind === "gift_file" && spec.group !== "file") return Response.json({ error: "Нужен PDF, DOCX, XLSX, PPTX или ZIP." }, { status: 400 });
     if (kind === "hero_media" && spec.group === "file") return Response.json({ error: "Для фона нужно фото или видео." }, { status: 400 });
     if (file.size <= 0 || file.size > LIMIT[spec.group]) {

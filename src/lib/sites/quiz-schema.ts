@@ -20,6 +20,38 @@ export type SliderConfig = {
 
 export type QuizStepType = "single_choice" | "multi_choice" | "image_cards" | "range_slider" | "text_input";
 
+export type ConsultantMode = "text" | "ai_avatar" | "custom_video";
+export type HelperMode = "inherit" | ConsultantMode;
+export type VoiceStyle = "calm" | "confident" | "friendly";
+export type AvatarJobStatus = "idle" | "queued" | "ready" | "provider_pending";
+export type VoiceLocale = "ru" | "en" | "es" | "de";
+
+export type QuizConsultant = {
+  enabled: boolean;
+  defaultMode: ConsultantMode;
+  name: string;
+  role: string;
+  avatarUrl: string | null;
+  aiAvatarId: string | null;
+  aiVoiceLocale: VoiceLocale;
+  showOnLeadScreen: boolean;
+};
+
+export type StepHelper = {
+  enabled: boolean;
+  mode: HelperMode;
+  text: string;
+  customVideoUrl: string | null;
+  customVideoPosterUrl: string | null;
+  aiAvatar: {
+    avatarId: string | null;
+    script: string;
+    voiceStyle: VoiceStyle;
+    status: AvatarJobStatus;
+    videoUrl: string | null;
+  };
+};
+
 export type QuizStep = {
   id: string;
   order: number;
@@ -31,6 +63,7 @@ export type QuizStep = {
   sliderConfig: SliderConfig;
   placeholder: string;
   expertTip: string;
+  helper: StepHelper;
   variableKey?: string;
   defaultNumericValue?: number;
 };
@@ -151,6 +184,7 @@ export type QuizSchema = {
     primaryAction: { label: string; url: string; type: "whatsapp" | "telegram" | "link" | "none" };
   };
   resultPreview: ResultPreview;
+  consultant: QuizConsultant;
   hideBranding: boolean;
 };
 
@@ -262,6 +296,7 @@ export function blankQuiz(title = "Новый квиз"): QuizSchema {
     },
     hideBranding: false,
     resultPreview: disabledResult(),
+    consultant: defaultConsultant(false),
   };
 }
 
@@ -277,6 +312,7 @@ function step(id: string, order: number, title: string, type: QuizStepType, labe
     sliderConfig: { min: 0, max: 100, step: 1, unit: "", defaultValue: 20 },
     placeholder: "",
     expertTip: "",
+    helper: emptyHelper(),
   };
 }
 
@@ -311,6 +347,7 @@ export function parseQuizSchema(value: unknown): QuizSchema {
     leadScreen: readLead(record.leadScreen, fallback.leadScreen),
     thankYouScreen: readThanks(record.thankYouScreen, fallback.thankYouScreen),
     resultPreview: readResult(record.resultPreview),
+    consultant: readConsultant(record.consultant),
     hideBranding: record.hideBranding === true,
   };
 }
@@ -469,6 +506,7 @@ function readStep(value: unknown): QuizStep | null {
     sliderConfig: readSlider(record.sliderConfig),
     placeholder: text(record.placeholder, "").slice(0, 80),
     expertTip: text(record.expertTip, "").slice(0, 180),
+    helper: readHelper(record.helper, text(record.expertTip, "")),
     ...optionalKey(text(record.variableKey, "")),
     ...optionalDefault(record.defaultNumericValue),
   };
@@ -557,6 +595,74 @@ function readThanks(value: unknown, fallback: QuizSchema["thankYouScreen"]): Qui
     subheadline: text(record.subheadline, fallback.subheadline).slice(0, 240),
     showSummary: record.showSummary !== false,
     primaryAction: { label: text(action.label, "").slice(0, 40), url: text(action.url, "").slice(0, 300), type },
+  };
+}
+
+export function defaultConsultant(enabled = false): QuizConsultant {
+  return {
+    enabled,
+    defaultMode: "text",
+    name: "Алексей Громов",
+    role: "Эксперт",
+    avatarUrl: null,
+    aiAvatarId: "alexei",
+    aiVoiceLocale: "ru",
+    showOnLeadScreen: false,
+  };
+}
+
+export function emptyHelper(): StepHelper {
+  return {
+    enabled: false,
+    mode: "inherit",
+    text: "",
+    customVideoUrl: null,
+    customVideoPosterUrl: null,
+    aiAvatar: { avatarId: null, script: "", voiceStyle: "confident", status: "idle", videoUrl: null },
+  };
+}
+
+function readConsultant(value: unknown): QuizConsultant {
+  const record = asRecord(value);
+  if (Object.keys(record).length === 0) return defaultConsultant(false);
+  const base = defaultConsultant(false);
+  const mode: ConsultantMode = record.defaultMode === "ai_avatar" || record.defaultMode === "custom_video" ? record.defaultMode : "text";
+  const locale: VoiceLocale = record.aiVoiceLocale === "en" || record.aiVoiceLocale === "es" || record.aiVoiceLocale === "de" ? record.aiVoiceLocale : "ru";
+  return {
+    enabled: record.enabled === true,
+    defaultMode: mode,
+    name: text(record.name, base.name).slice(0, 60),
+    role: text(record.role, base.role).slice(0, 80),
+    avatarUrl: text(record.avatarUrl, "") || null,
+    aiAvatarId: text(record.aiAvatarId, "") || null,
+    aiVoiceLocale: locale,
+    showOnLeadScreen: record.showOnLeadScreen === true,
+  };
+}
+
+function readHelper(value: unknown, expertTip: string): StepHelper {
+  const record = asRecord(value);
+  const missing = Object.keys(record).length === 0;
+  const tip = text(record.text, expertTip).slice(0, 220);
+  const avatar = asRecord(record.aiAvatar);
+  const style: VoiceStyle = avatar.voiceStyle === "calm" || avatar.voiceStyle === "friendly" ? avatar.voiceStyle : "confident";
+  const status: AvatarJobStatus = avatar.status === "queued" || avatar.status === "ready" || avatar.status === "provider_pending" ? avatar.status : "idle";
+  const mode: HelperMode = record.mode === "text" || record.mode === "ai_avatar" || record.mode === "custom_video" ? record.mode : "inherit";
+  const video = text(record.customVideoUrl, "") || null;
+  const generated = text(avatar.videoUrl, "") || null;
+  return {
+    enabled: missing ? Boolean(tip || video || generated) : record.enabled !== false,
+    mode,
+    text: tip,
+    customVideoUrl: video,
+    customVideoPosterUrl: text(record.customVideoPosterUrl, "") || null,
+    aiAvatar: {
+      avatarId: text(avatar.avatarId, "") || null,
+      script: text(avatar.script, tip).slice(0, 500),
+      voiceStyle: style,
+      status,
+      videoUrl: generated,
+    },
   };
 }
 

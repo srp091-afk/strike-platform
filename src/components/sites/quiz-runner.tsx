@@ -6,6 +6,7 @@ import { quizPalette } from "@/lib/sites/theme";
 import type { QuizSchema, QuizStep, ThemeConfig } from "@/lib/sites/quiz-schema";
 import { computeQuizResult } from "@/lib/sites/quiz-calculator";
 import { CalculationLoader, ResultPreviewCard } from "@/components/sites/result-preview";
+import { ConsultantHost, ExpertSign, resolveConsultant, useConsultantNarrow } from "@/components/sites/step-consultant";
 import { GiftProgress, StartScreen, UnlockedGifts } from "@/components/sites/start-screen";
 
 type Answer = { optionIds: string[]; text: string; value: number };
@@ -146,7 +147,9 @@ export function QuizRunner({
     setPhase("thanks");
   }
 
-  const shellClass = embedded ? "flex h-full min-h-0 flex-col" : "flex min-h-[100dvh] flex-col";
+  const narrow = useConsultantNarrow(compact);
+  const resolved = shownPhase === "step" && step ? resolveConsultant(schema.consultant, step, !live) : null;
+  const shellClass = embedded ? "relative flex h-full min-h-0 flex-col" : "relative flex min-h-[100dvh] flex-col";
   if (shownPhase === "start") {
     return (
       <div className={shellClass} style={{ background: palette.bg, color: palette.fg, fontFamily: palette.font }}>
@@ -162,7 +165,7 @@ export function QuizRunner({
       <div className="h-1 w-full" style={{ background: palette.line }}>
         <div className="h-full" style={{ width: `${Math.round(progress * 100)}%`, background: palette.accent }} />
       </div>
-      <div className={`mx-auto flex w-full max-w-xl flex-1 flex-col px-5 py-8 sm:py-14 ${embedded ? "min-h-0 overflow-y-auto" : ""}`}>
+      <div className={`mx-auto flex w-full flex-1 flex-col px-5 py-8 sm:py-14 ${resolved && !narrow ? "max-w-4xl" : "max-w-xl"} ${embedded ? "min-h-0 overflow-y-auto" : ""}`}>
         {theme.logoUrl ? <img src={theme.logoUrl} alt="" className="mb-8 h-8 w-auto object-contain" /> : null}
         {shownPhase === "step" && step ? (
           <Question
@@ -181,6 +184,10 @@ export function QuizRunner({
             onBack={() => { if (index === 0 && schema.startScreen.enabled) setPhase("start"); else setIndex(Math.max(0, index - 1)); }}
             onNext={() => goNext(answers[step.id]?.optionIds[0])}
             canBack={!forced && (index > 0 || schema.startScreen.enabled)}
+            narrow={narrow}
+            consultant={resolved}
+            framed={embedded}
+            stepId={step.id}
           />
         ) : null}
         {shownPhase === "lead" && calculating ? <CalculationLoader steps={schema.resultPreview.loader.steps} palette={palette} /> : null}
@@ -209,6 +216,7 @@ export function QuizRunner({
         ) : null}
         {shownPhase === "thanks" ? <Thanks schema={schema} theme={theme} palette={palette} result={computed} compact={compact} estimate={schema.calculator.enabled ? estimate : null} /> : null}
       </div>
+      {resolved && narrow && step ? <ConsultantHost resolved={resolved} palette={palette} compact framed={embedded} stepId={step.id} variant="bubble" /> : null}
       {schema.hideBranding ? null : (
         <p className="pb-6 text-center text-xs" style={{ color: palette.muted }}>
           <a href="https://strikeplatform.io" style={{ color: palette.muted }}>Powered by STRIKE</a>
@@ -235,15 +243,23 @@ function Question(props: {
   onBack: () => void;
   onNext: () => void;
   canBack: boolean;
+  narrow: boolean;
+  consultant: ReturnType<typeof resolveConsultant>;
+  framed: boolean;
+  stepId: string;
 }) {
   const { step, palette } = props;
   const selected = new Set(props.answer?.optionIds ?? []);
+  const aside = props.consultant && !props.narrow ? <ConsultantHost resolved={props.consultant} palette={palette} compact={false} framed={props.framed} stepId={props.stepId} variant="card" /> : null;
   return (
     <div className="flex flex-1 flex-col">
       <p className="text-xs font-medium" style={{ color: props.palette.muted }}><span>{`Шаг ${props.index + 1} из ${props.total}`}</span></p>
       {props.gift}
-      <h2 className="mt-3 text-3xl font-semibold tracking-tight"><span>{step.title}</span></h2>
+      <div className={aside ? "mt-3 grid grid-cols-[minmax(0,1fr)_280px] items-start gap-10" : "mt-3"}>
+      <div>
+      <h2 className="text-3xl font-semibold tracking-tight"><span>{step.title}</span></h2>
       {step.subtitle ? <p className="mt-3 leading-6" style={{ color: palette.muted }}><span>{step.subtitle}</span></p> : null}
+      {props.consultant && props.narrow && props.consultant.mode === "text" ? <div className="mt-4"><ConsultantHost resolved={props.consultant} palette={palette} compact framed={props.framed} stepId={props.stepId} variant="card" /></div> : null}
       <div className="mt-8 grid gap-3">
         {step.type === "text_input" ? (
           <input value={props.answer?.text ?? ""} placeholder={step.placeholder} onChange={(event) => props.onText(event.target.value)} className="h-12 border bg-transparent px-4 outline-none" style={{ borderColor: palette.line, borderRadius: palette.radius, color: palette.fg }} />
@@ -269,13 +285,16 @@ function Question(props: {
             })
           : null}
       </div>
-      {step.expertTip ? <p className="mt-6 text-sm" style={{ color: palette.muted }}><span>{step.expertTip}</span></p> : null}
+      {props.consultant ? null : step.expertTip ? <p className="mt-6 text-sm" style={{ color: palette.muted }}><span>{step.expertTip}</span></p> : null}
       {props.estimate != null ? <p className="mt-6 text-sm" style={{ color: palette.muted }}><span>{`${props.label}: ${props.estimate.toLocaleString("ru-RU")} ${props.currency}`}</span></p> : null}
       <div className="sticky bottom-0 mt-auto flex gap-3 pt-8">
         {props.canBack ? <button type="button" className="h-12 flex-1 border text-sm" style={{ borderColor: palette.line, borderRadius: palette.radius }} onClick={props.onBack}><span>Назад</span></button> : null}
         {step.type === "multi_choice" || step.type === "text_input" || step.type === "range_slider" ? (
           <button type="button" className="h-12 flex-1 text-sm font-semibold text-[#fff]" style={{ background: palette.accent, borderRadius: palette.radius }} onClick={props.onNext}><span>Далее</span></button>
         ) : null}
+      </div>
+      </div>
+      {aside}
       </div>
     </div>
   );
@@ -312,6 +331,7 @@ function Lead(props: {
       {props.gift}
       {preview ? <h3 className="mt-8 text-xl font-semibold tracking-tight"><span>{lead.headline}</span></h3> : null}
       {!preview && lead.subheadline ? <p className="mt-3 leading-6" style={{ color: props.palette.muted }}><span>{lead.subheadline}</span></p> : null}
+      <ExpertSign consultant={props.schema.consultant} palette={props.palette} />
       {props.estimate != null ? <p className="mt-4 text-sm"><span>{`${props.schema.calculator.label}: ${props.estimate.toLocaleString("ru-RU")} ${props.schema.calculator.currency}`}</span></p> : null}
       <div className="mt-4 grid gap-3">
         {lead.askName ? <input style={field} placeholder="Имя" value={props.name} onChange={(event) => props.onName(event.target.value)} /> : null}

@@ -3,7 +3,7 @@ import { connection } from "next/server";
 import { getEffectiveUserId } from "@/lib/account-context";
 import { getOpenAI } from "@/lib/openai";
 import { createQuizSite } from "@/lib/sites/store";
-import { parseQuizSchema, type ThemePreset } from "@/lib/sites/quiz-schema";
+import { defaultConsultant, parseQuizSchema, type QuizSchema, type ThemePreset } from "@/lib/sites/quiz-schema";
 import { repairGeneratedPreview } from "@/lib/sites/quiz-calculator";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
@@ -12,7 +12,7 @@ export const maxDuration = 60;
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "subtitle", "startScreen", "steps", "calculator", "leadScreen", "thankYouScreen", "giftsConfig", "resultPreview"],
+  required: ["title", "subtitle", "startScreen", "steps", "calculator", "leadScreen", "thankYouScreen", "giftsConfig", "resultPreview", "consultant"],
   properties: {
     title: { type: "string" },
     subtitle: { type: "string" },
@@ -23,6 +23,7 @@ const SCHEMA = {
     leadScreen: { type: "object", additionalProperties: true },
     thankYouScreen: { type: "object", additionalProperties: true },
     resultPreview: { type: "object", additionalProperties: true },
+    consultant: { type: "object", additionalProperties: true },
   },
 } as const;
 
@@ -64,6 +65,9 @@ export async function POST(request: Request) {
             "Собери 3 KPI с формулами от =переменная, таблицу или подборку из 3 строк: первая locked false, вторая и третья locked true. lockBadgeText вроде «Полный расчёт — в WhatsApp». 1–2 rules: если budget больше порога, смени headline и overrideVariables.",
             "Формулы только из чисел, скобок, + - * /, имён переменных и функций round floor ceil min max. Без текста внутри формулы.",
             "leadScreen.headline: «Куда прислать полный расчёт?». ctaText: «Получить расчёт в WhatsApp».",
+            "consultant.enabled true. defaultMode text. name — реалистичное имя эксперта ниши, role — конкретная должность, например «Руководитель отдела зарубежной недвижимости» или «Ведущий сметчик». aiAvatarId: alexei, mark, ivan, elena, anna или maria. showOnLeadScreen false.",
+            "У каждого шага helper: { enabled: true, mode: inherit, text, customVideoUrl: null }. helper.text — 110–180 символов, факт или снятие возражения, ключевую цифру оберни в **звёздочки**.",
+            "Запрещено: «ответьте, чтобы мы подобрали», «это поможет нам понять вас». На одном очевидном шаге допустима короткая строка.",
           ].join("\n"),
         },
         {
@@ -76,7 +80,7 @@ export async function POST(request: Request) {
     const raw = completion.choices[0]?.message?.content;
     if (!raw) return Response.json({ error: "Модель ничего не вернула." }, { status: 502 });
     const generated = JSON.parse(raw) as { title?: string; subtitle?: string };
-    const schema = repairGeneratedPreview(parseQuizSchema(JSON.parse(raw)), prompt);
+    const schema = repairGeneratedPreview(withConsultant(parseQuizSchema(JSON.parse(raw))), prompt);
     const site = await createQuizSite({
       title: generated.title?.trim() || "Квиз",
       subtitle: generated.subtitle?.trim() || "",
@@ -90,6 +94,28 @@ export async function POST(request: Request) {
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Не удалось собрать квиз." }, { status: 500 });
   }
+}
+
+function withConsultant(schema: QuizSchema): QuizSchema {
+  const consultant = { ...defaultConsultant(true), ...schema.consultant, enabled: true };
+  if (!consultant.name.trim()) consultant.name = "Алексей Громов";
+  return {
+    ...schema,
+    consultant,
+    steps: schema.steps.map((step) => {
+      const tip = step.helper.text.trim();
+      return {
+        ...step,
+        expertTip: tip.slice(0, 180) || step.expertTip,
+        helper: {
+          ...step.helper,
+          enabled: Boolean(tip),
+          text: tip,
+          aiAvatar: { ...step.helper.aiAvatar, script: step.helper.aiAvatar.script || tip },
+        },
+      };
+    }),
+  };
 }
 
 async function loadAgent(userId: string, agentId: string) {

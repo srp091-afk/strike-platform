@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { QuizRunner } from "@/components/sites/quiz-runner";
 import { StartInspector } from "@/components/sites/start-inspector";
 import { ResultInspector } from "@/components/sites/result-inspector";
+import { ConsultantSettings, HelperInspector } from "@/components/sites/consultant-inspector";
 import { listSubmissions, publishQuizSite, saveQuiz } from "@/app/funnels/site-actions";
 import { brandHost, normalizeCustomDomain, normalizeSubdomain, publicSiteUrl, fallbackSitePath } from "@/lib/sites/domains";
 import { newStep, type AnalyticsConfig, type QuizSchema, type SeoConfig, type ThemeConfig } from "@/lib/sites/quiz-schema";
@@ -127,7 +128,7 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
                 </button>
               </div>
             ) : null}
-            {panel === "design" ? <Design theme={theme} onChange={setTheme} /> : null}
+            {panel === "design" ? <Design theme={theme} consultant={draft.consultant} siteId={site.id} onChange={setTheme} onConsultant={(consultant) => setDraft({ ...draft, consultant })} /> : null}
             {panel === "settings" ? (
               <Settings
                 siteId={site.id}
@@ -172,7 +173,7 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
           </main>
           <aside className="overflow-y-auto border-l border-[#e4e4e7] bg-[#fff] p-4">
             {(screen === "start" || screen === "gifts") ? <StartInspector siteId={site.id} title={title} draft={draft} focus={screen === "gifts" ? "gifts" : "start"} onChange={setDraft} /> : null}
-            {step ? <StepInspector step={step} steps={draft.steps} calculatorOpen={draft.resultPreview.enabled} onChange={updateStep} onDelete={() => { setDraft({ ...draft, steps: draft.steps.filter((item) => item.id !== step.id) }); setScreen("start"); }} /> : null}
+            {step ? <StepInspector siteId={site.id} title={title} step={step} steps={draft.steps} consultant={draft.consultant} calculatorOpen={draft.resultPreview.enabled} onChange={updateStep} onConsultant={(consultant) => setDraft({ ...draft, consultant })} onDelete={() => { setDraft({ ...draft, steps: draft.steps.filter((item) => item.id !== step.id) }); setScreen("start"); }} /> : null}
             {screen === "lead" ? <LeadInspector draft={draft} onChange={setDraft} /> : null}
             {screen === "thanks" ? <ThanksInspector draft={draft} onChange={setDraft} /> : null}
           </aside>
@@ -200,7 +201,7 @@ function FlowButton({ active, label, onClick }: { active: boolean; label: string
   );
 }
 
-function Design({ theme, onChange }: { theme: ThemeConfig; onChange: (theme: ThemeConfig) => void }) {
+function Design({ theme, consultant, siteId, onChange, onConsultant }: { theme: ThemeConfig; consultant: QuizSchema["consultant"]; siteId: string; onChange: (theme: ThemeConfig) => void; onConsultant: (consultant: QuizSchema["consultant"]) => void }) {
   return (
     <div className="mt-4 grid gap-3">
       {(Object.keys(THEME_LABEL) as Array<keyof typeof THEME_LABEL>).map((preset) => (
@@ -211,6 +212,7 @@ function Design({ theme, onChange }: { theme: ThemeConfig; onChange: (theme: The
       <label className="grid gap-1 text-xs text-[#52525b]"><span>Акцент</span><input className={field} value={theme.accentColor} onChange={(event) => onChange({ ...theme, accentColor: event.target.value })} /></label>
       <label className="grid gap-1 text-xs text-[#52525b]"><span>Скругление</span><input className={field} type="number" min={0} max={28} value={theme.borderRadius} onChange={(event) => onChange({ ...theme, borderRadius: Number(event.target.value) })} /></label>
       <label className="grid gap-1 text-xs text-[#52525b]"><span>Логотип, URL</span><input className={field} value={theme.logoUrl} onChange={(event) => onChange({ ...theme, logoUrl: event.target.value })} /></label>
+      <ConsultantSettings siteId={siteId} consultant={consultant} onChange={onConsultant} />
     </div>
   );
 }
@@ -277,7 +279,7 @@ function Settings(props: {
   );
 }
 
-function StepInspector({ step, steps, calculatorOpen, onChange, onDelete }: { step: QuizSchema["steps"][number]; steps: QuizSchema["steps"]; calculatorOpen: boolean; onChange: (step: QuizSchema["steps"][number]) => void; onDelete: () => void }) {
+function StepInspector({ siteId, title, step, steps, consultant, calculatorOpen, onChange, onConsultant, onDelete }: { siteId: string; title: string; step: QuizSchema["steps"][number]; steps: QuizSchema["steps"]; consultant: QuizSchema["consultant"]; calculatorOpen: boolean; onChange: (step: QuizSchema["steps"][number]) => void; onConsultant: (consultant: QuizSchema["consultant"]) => void; onDelete: () => void }) {
   const choice = step.type === "single_choice" || step.type === "multi_choice" || step.type === "image_cards";
   return (
     <div className="grid gap-3">
@@ -346,6 +348,7 @@ function StepInspector({ step, steps, calculatorOpen, onChange, onDelete }: { st
           </label>
         </div>
       </details>
+      <HelperInspector siteId={siteId} title={title} step={step} consultant={consultant} onChange={onChange} onConsultant={onConsultant} />
       {steps.length > 1 ? <button type="button" className="text-left text-sm text-[#cf0234]" onClick={onDelete}><span>Удалить вопрос</span></button> : null}
     </div>
   );
