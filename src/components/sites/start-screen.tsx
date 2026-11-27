@@ -1,6 +1,6 @@
 "use client";
 
-import { Check, Clock, Home, Lock, MapPin, Shield, Star, Unlock, Wallet } from "lucide-react";
+import { ArrowUpRight, Check, Clock, Download, Home, Lock, MapPin, Shield, Star, Unlock, Wallet } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
 import type { QuizGift, QuizSchema, StartBullet, ThemeConfig } from "@/lib/sites/quiz-schema";
@@ -271,7 +271,7 @@ function Copy({
           <span>{start.eyebrow.text}</span>
         </p>
       ) : null}
-      <h1 className={`font-semibold tracking-[-0.03em] ${compact ? "mt-3 text-[1.7rem]" : "mt-3 text-[clamp(1.75rem,3.4vw,3.5rem)]"} leading-[1.18]`} style={{ color: tone.headline }}>
+      <h1 className={`font-semibold tracking-[-0.03em] leading-[1.15] ${compact ? "mt-3 text-[1.7rem]" : "mt-3 text-[clamp(1.75rem,3.4vw,3.5rem)]"}`} style={{ color: tone.headline }}>
         <Headline text={tightenHeadline(start.headline)} style={start.highlightStyle} accent={palette.accent} ink={ink} />
       </h1>
       {start.subheadline.show && start.subheadline.text ? (
@@ -352,7 +352,7 @@ export function GiftCard({ gift, dark, locked, action, label }: { gift: QuizGift
         {gift.subtitle ? <p className="truncate text-[11px] opacity-70"><span>{gift.subtitle}</span></p> : null}
         {action ? <GiftAction gift={gift} /> : null}
       </div>
-      {locked ? <Lock size={13} strokeWidth={1.5} className="shrink-0 opacity-70" /> : <Unlock size={13} strokeWidth={1.5} className="shrink-0" />}
+      {locked ? <Lock size={13} strokeWidth={1.5} className="shrink-0 opacity-70" /> : <OpenGift gift={gift} />}
     </div>
   );
 }
@@ -416,6 +416,12 @@ export function UnlockedGifts({ schema, palette }: { schema: QuizSchema; palette
   );
 }
 
+function OpenGift({ gift }: { gift: QuizGift }) {
+  if (gift.type === "file") return <Download size={13} strokeWidth={1.5} className="shrink-0" />;
+  if (gift.type === "link") return <ArrowUpRight size={13} strokeWidth={1.5} className="shrink-0" />;
+  return <Unlock size={13} strokeWidth={1.5} className="shrink-0" />;
+}
+
 function BulletMark({ item, index, style, accent }: { item: StartBullet; index: number; style: QuizSchema["startScreen"]["bullets"]["iconStyle"]; accent: string }) {
   if (style === "number") return <span className="mt-0.5 w-4 shrink-0 text-xs font-semibold" style={{ color: accent }}>{index + 1}</span>;
   const Icon = style === "icon" ? ICONS[(item.icon as keyof typeof ICONS) ?? "check"] ?? Check : Check;
@@ -432,7 +438,15 @@ function Headline({ text, style, accent, ink }: { text: string; style: QuizSchem
         if (!marked) return <span key={index}>{value}</span>;
         if (style === "accent_text") return <span key={index} style={{ color: accent }}>{value}</span>;
         if (style === "underline") return <span key={index} style={{ boxShadow: `inset 0 -0.12em 0 ${accent}` }}>{value}</span>;
-        return <span key={index} className="box-decoration-clone inline rounded-lg px-2.5 py-0.5" style={{ background: accent, color: ink, boxDecorationBreak: "clone", WebkitBoxDecorationBreak: "clone" }}>{value}</span>;
+        return (
+          <span
+            key={index}
+            className="box-decoration-clone inline rounded-lg px-[0.28em] py-[0.08em] leading-[1.15]"
+            style={{ background: accent, color: ink, lineHeight: 1.15, paddingBlock: "0.08em", paddingInline: "0.28em", boxDecorationBreak: "clone", WebkitBoxDecorationBreak: "clone" }}
+          >
+            {value}
+          </span>
+        );
       })}
     </>
   );

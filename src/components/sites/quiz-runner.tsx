@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
 import { quizPalette } from "@/lib/sites/theme";
 import type { QuizSchema, QuizStep, ThemeConfig } from "@/lib/sites/quiz-schema";
@@ -148,11 +148,13 @@ export function QuizRunner({
   }
 
   const narrow = useConsultantNarrow(compact);
-  const resolved = shownPhase === "step" && step ? resolveConsultant(schema.consultant, step, !live) : null;
-  const shellClass = embedded ? "relative flex h-full min-h-0 flex-col" : "relative flex min-h-[100dvh] flex-col";
+  const resolved = shownPhase === "step" && step ? resolveConsultant(schema.consultant, step) : null;
+  const shellClass = `${embedded ? "relative flex h-full min-h-0 flex-col" : "relative flex min-h-[100dvh] flex-col"} quiz-canvas`;
+  const canvas = canvasStyle(theme, palette);
+  const runningTotal = schema.calculator.enabled && estimate > 0 ? `${schema.calculator.label}: ${formatAmount(schema, estimate)}` : null;
   if (shownPhase === "start") {
     return (
-      <div className={shellClass} style={{ background: palette.bg, color: palette.fg, fontFamily: palette.font }}>
+      <div className={shellClass} style={canvas}>
         <div className={embedded ? "min-h-0 flex-1" : "h-[100dvh] overflow-hidden"}>
           <StartScreen schema={schema} theme={theme} siteTitle={siteTitle} compact={compact} onStart={() => { setPhase("step"); if (live && siteId) void sendEvent(siteId, "quiz_start"); }} />
         </div>
@@ -161,7 +163,7 @@ export function QuizRunner({
   }
 
   const shell = (
-    <div className={shellClass} style={{ background: palette.bg, color: palette.fg, fontFamily: palette.font }}>
+    <div className={shellClass} style={canvas}>
       <div className="h-1 w-full" style={{ background: palette.line }}>
         <div className="h-full" style={{ width: `${Math.round(progress * 100)}%`, background: palette.accent }} />
       </div>
@@ -174,9 +176,7 @@ export function QuizRunner({
             total={total}
             answer={answers[step.id]}
             palette={palette}
-            estimate={schema.calculator.enabled ? estimate : null}
-            currency={schema.calculator.currency}
-            label={schema.calculator.label}
+            estimateText={runningTotal}
             gift={<GiftProgress schema={schema} remaining={Math.max(1, total - schema.steps.findIndex((item) => item.id === step.id))} palette={palette} />}
             onChoose={choose}
             onText={(value) => setAnswers((current) => ({ ...current, [step.id]: { optionIds: [], text: value, value: 0 } }))}
@@ -204,7 +204,7 @@ export function QuizRunner({
             messenger={messenger}
             error={error}
             sending={sending}
-            estimate={schema.calculator.enabled && !schema.resultPreview.enabled ? estimate : null}
+            estimateText={!schema.resultPreview.enabled ? runningTotal : null}
             onName={setName}
             onPhone={setPhone}
             onEmail={setEmail}
@@ -214,7 +214,7 @@ export function QuizRunner({
             gift={<GiftProgress schema={schema} remaining={1} lead palette={palette} />}
           />
         ) : null}
-        {shownPhase === "thanks" ? <Thanks schema={schema} theme={theme} palette={palette} result={computed} compact={compact} estimate={schema.calculator.enabled ? estimate : null} /> : null}
+        {shownPhase === "thanks" ? <Thanks schema={schema} theme={theme} palette={palette} result={computed} compact={compact} estimateText={runningTotal} /> : null}
       </div>
       {resolved && narrow && step ? <ConsultantHost resolved={resolved} palette={palette} compact framed={embedded} stepId={step.id} variant="bubble" /> : null}
       {schema.hideBranding ? null : (
@@ -233,9 +233,7 @@ function Question(props: {
   total: number;
   answer?: Answer;
   palette: ReturnType<typeof quizPalette>;
-  estimate: number | null;
-  currency: string;
-  label: string;
+  estimateText: string | null;
   gift?: ReactNode;
   onChoose: (id: string, advance: boolean) => void;
   onText: (value: string) => void;
@@ -286,7 +284,7 @@ function Question(props: {
           : null}
       </div>
       {props.consultant ? null : step.expertTip ? <p className="mt-6 text-sm" style={{ color: palette.muted }}><span>{step.expertTip}</span></p> : null}
-      {props.estimate != null ? <p className="mt-6 text-sm" style={{ color: palette.muted }}><span>{`${props.label}: ${props.estimate.toLocaleString("ru-RU")} ${props.currency}`}</span></p> : null}
+      {props.estimateText ? <p className="mt-6 text-sm" style={{ color: palette.muted }}><span>{props.estimateText}</span></p> : null}
       <div className="sticky bottom-0 mt-auto flex gap-3 pt-8">
         {props.canBack ? <button type="button" className="h-12 flex-1 border text-sm" style={{ borderColor: palette.line, borderRadius: palette.radius }} onClick={props.onBack}><span>Назад</span></button> : null}
         {step.type === "multi_choice" || step.type === "text_input" || step.type === "range_slider" ? (
@@ -311,7 +309,7 @@ function Lead(props: {
   messenger: string;
   error: string;
   sending: boolean;
-  estimate: number | null;
+  estimateText: string | null;
   compact?: boolean;
   onName: (value: string) => void;
   onPhone: (value: string) => void;
@@ -332,7 +330,7 @@ function Lead(props: {
       {preview ? <h3 className="mt-8 text-xl font-semibold tracking-tight"><span>{lead.headline}</span></h3> : null}
       {!preview && lead.subheadline ? <p className="mt-3 leading-6" style={{ color: props.palette.muted }}><span>{lead.subheadline}</span></p> : null}
       <ExpertSign consultant={props.schema.consultant} palette={props.palette} />
-      {props.estimate != null ? <p className="mt-4 text-sm"><span>{`${props.schema.calculator.label}: ${props.estimate.toLocaleString("ru-RU")} ${props.schema.calculator.currency}`}</span></p> : null}
+      {props.estimateText ? <p className="mt-4 text-sm" style={{ color: props.palette.fg }}><span>{props.estimateText}</span></p> : null}
       <div className="mt-4 grid gap-3">
         {lead.askName ? <input style={field} placeholder="Имя" value={props.name} onChange={(event) => props.onName(event.target.value)} /> : null}
         {lead.askPhone ? <input style={field} placeholder="Телефон" value={props.phone} onChange={(event) => props.onPhone(event.target.value)} /> : null}
@@ -359,7 +357,7 @@ function Lead(props: {
   );
 }
 
-function Thanks({ schema, theme, palette, result, compact = false, estimate }: { schema: QuizSchema; theme: ThemeConfig; palette: ReturnType<typeof quizPalette>; result: ReturnType<typeof computeQuizResult>; compact?: boolean; estimate: number | null }) {
+function Thanks({ schema, theme, palette, result, compact = false, estimateText }: { schema: QuizSchema; theme: ThemeConfig; palette: ReturnType<typeof quizPalette>; result: ReturnType<typeof computeQuizResult>; compact?: boolean; estimateText: string | null }) {
   const action = schema.thankYouScreen.primaryAction;
   const reveal = schema.resultPreview.enabled && schema.resultPreview.revealFullResultOnThankYou;
   return (
@@ -370,7 +368,7 @@ function Thanks({ schema, theme, palette, result, compact = false, estimate }: {
       ) : null}
       <h2 className={`${reveal || schema.resultPreview.enabled ? "mt-6" : ""} text-4xl font-semibold tracking-tight`}><span>{schema.thankYouScreen.headline}</span></h2>
       <p className="mt-4 text-lg leading-7" style={{ color: palette.muted }}><span>{schema.thankYouScreen.subheadline}</span></p>
-      {schema.thankYouScreen.showSummary && estimate != null && !schema.resultPreview.enabled ? <p className="mt-6 text-sm"><span>{`${schema.calculator.label}: ${estimate.toLocaleString("ru-RU")} ${schema.calculator.currency}`}</span></p> : null}
+      {schema.thankYouScreen.showSummary && estimateText && !schema.resultPreview.enabled ? <p className="mt-6 text-sm" style={{ color: palette.fg }}><span>{estimateText}</span></p> : null}
       <UnlockedGifts schema={schema} palette={palette} />
       {action.type !== "none" && action.url ? (
         <a href={action.url} className="mt-8 inline-flex h-12 items-center justify-center px-6 text-sm font-semibold text-[#fff]" style={{ background: palette.accent, borderRadius: palette.radius }}>
@@ -379,6 +377,24 @@ function Thanks({ schema, theme, palette, result, compact = false, estimate }: {
       ) : null}
     </div>
   );
+}
+
+function formatAmount(schema: QuizSchema, amount: number) {
+  if (schema.resultPreview.enabled) {
+    const money = schema.resultPreview.currency;
+    const text = amount.toLocaleString("ru-RU", { minimumFractionDigits: money.decimals, maximumFractionDigits: money.decimals });
+    return money.position === "before" ? `${money.symbol}${text}` : `${text} ${money.symbol}`;
+  }
+  return `${amount.toLocaleString("ru-RU")} ${schema.calculator.currency.trim() || "₽"}`;
+}
+
+function canvasStyle(theme: ThemeConfig, palette: ReturnType<typeof quizPalette>): CSSProperties {
+  return {
+    background: palette.bg,
+    color: palette.fg,
+    fontFamily: palette.font,
+    ["--quiz-title" as string]: theme.preset === "dark_premium" ? "#FFFFFF" : palette.fg,
+  };
 }
 
 function priceOf(schema: QuizSchema, answers: Record<string, Answer>) {

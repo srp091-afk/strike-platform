@@ -18,7 +18,7 @@ export type ResolvedConsultant = {
   placeholder: boolean;
 };
 
-export function resolveConsultant(consultant: QuizConsultant, step: QuizStep, allowEmpty = false): ResolvedConsultant | null {
+export function resolveConsultant(consultant: QuizConsultant, step: QuizStep): ResolvedConsultant | null {
   if (!consultant.enabled || !step.helper.enabled) return null;
   const mode = stepMode(step.helper);
   const portrait = consultantPortrait(consultant) || (mode === "ai_avatar" ? findAvatar(step.helper.aiAvatar.avatarId)?.previewImageUrl ?? null : null);
@@ -39,7 +39,7 @@ export function resolveConsultant(consultant: QuizConsultant, step: QuizStep, al
       placeholder: false,
     };
   }
-  if (!text && !allowEmpty) return null;
+  if (!text) return null;
   return {
     mode: "text",
     name: consultant.name,
@@ -48,7 +48,7 @@ export function resolveConsultant(consultant: QuizConsultant, step: QuizStep, al
     text,
     videoUrl: "",
     poster: null,
-    placeholder: !text,
+    placeholder: false,
   };
 }
 
@@ -147,8 +147,6 @@ function TextCard({ resolved, palette, compact }: { resolved: ResolvedConsultant
         <p className={`text-[14px] leading-6 ${compact ? "mt-3" : "mt-4"} ${compact && long && !open ? "line-clamp-2" : ""}`} style={{ color: palette.fg }}>
           <Rich text={resolved.text} />
         </p>
-      ) : resolved.placeholder ? (
-        <p className="mt-4 text-[13px] leading-5" style={{ color: palette.muted }}><span>Напишите подсказку справа.</span></p>
       ) : null}
       {compact && long ? (
         <button type="button" className="mt-1 text-[11px]" style={{ color: palette.muted }} onClick={() => setOpen((value) => !value)}>

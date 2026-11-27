@@ -296,6 +296,14 @@ body:has(.portal) .theme-dark {
   --color-strike-soft: #ff5c80;
 }
 
+/* Заголовки квиза не наследуют перевёрнутый text-white портала. */
+.quiz-canvas h1,
+.quiz-canvas h2,
+.quiz-canvas h3,
+.quiz-canvas h4 {
+  color: var(--quiz-title, inherit);
+}
+
 /* Бегунок тумблера студии. Внутри .portal --color-white тёмный, а стили кнопок
    не должны красить или растягивать внутренний span. */
 button[role="switch"] > span[aria-hidden="true"] {

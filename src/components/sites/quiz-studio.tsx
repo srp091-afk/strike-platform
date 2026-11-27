@@ -121,7 +121,6 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
             {panel === "flow" ? (
               <div className="mt-4 grid gap-2">
                 <FlowButton active={screen === "start"} label="Старт" onClick={() => setScreen("start")} />
-                <FlowButton active={screen === "gifts"} label="Подарки" onClick={() => setScreen("gifts")} />
                 {draft.steps.map((item, index) => (
                   <div key={item.id} className="flex min-w-0 gap-1">
                     <FlowButton active={screen === item.id} label={`${String(index + 1).padStart(2, "0")} ${item.title}`} onClick={() => setScreen(item.id)} />
@@ -129,11 +128,11 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
                     <button type="button" className="text-xs text-[#71717a]" onClick={() => move(index, 1)}><span>↓</span></button>
                   </div>
                 ))}
-                <FlowButton active={screen === "lead"} label="Контакт" onClick={() => setScreen("lead")} />
-                <FlowButton active={screen === "thanks"} label="Спасибо" onClick={() => setScreen("thanks")} />
-                <button type="button" className="mt-2 text-left text-sm text-[#cf0234]" onClick={() => { const created = newStep(draft.steps.length); setDraft({ ...draft, steps: [...draft.steps, created] }); setScreen(created.id); }}>
+                <button type="button" className="text-left text-sm text-[#cf0234]" onClick={() => { const created = newStep(draft.steps.length); setDraft({ ...draft, steps: [...draft.steps, created] }); setScreen(created.id); }}>
                   <span>+ Добавить вопрос</span>
                 </button>
+                <FlowButton active={screen === "lead"} label="Контакт" onClick={() => setScreen("lead")} />
+                <FlowButton active={screen === "thanks"} label="Спасибо" onClick={() => setScreen("thanks")} />
               </div>
             ) : null}
             {panel === "design" ? <Design theme={theme} consultant={draft.consultant} siteId={site.id} onChange={setTheme} onConsultant={(consultant) => setDraft((current) => ({ ...current, consultant }))} /> : null}
@@ -175,12 +174,12 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
                 <span>{liveHost.ok ? publicSiteUrl(liveHost.slug) : "https://имя.strikeplatform.io"}</span>
               </div>
               <div className="min-h-0 flex-1">
-                <QuizRunner schema={draft} theme={theme} siteTitle={title} live={false} screen={walk ? undefined : screen === "gifts" ? "start" : screen} compact={device === "mobile"} embedded previewOverrides={testVars} />
+                <QuizRunner schema={draft} theme={theme} siteTitle={title} live={false} screen={walk ? undefined : screen} compact={device === "mobile"} embedded previewOverrides={testVars} />
               </div>
             </div>
           </main>
           <aside className="overflow-y-auto border-l border-[#e4e4e7] bg-[#fff] p-4">
-            {(screen === "start" || screen === "gifts") ? <StartInspector siteId={site.id} title={title} preset={theme.preset} draft={draft} focus={screen === "gifts" ? "gifts" : "start"} onChange={setDraft} /> : null}
+            {screen === "start" ? <StartInspector siteId={site.id} title={title} preset={theme.preset} draft={draft} onChange={setDraft} /> : null}
             {step ? <StepInspector siteId={site.id} title={title} step={step} steps={draft.steps} consultant={draft.consultant} calculatorOpen={draft.resultPreview.enabled} onChange={updateStep} onConsultant={(consultant) => setDraft((current) => ({ ...current, consultant }))} onDelete={() => { setDraft((current) => ({ ...current, steps: current.steps.filter((item) => item.id !== step.id) })); setScreen("start"); }} /> : null}
             {screen === "lead" ? <LeadInspector draft={draft} onChange={setDraft} /> : null}
             {screen === "thanks" ? <ThanksInspector draft={draft} onChange={setDraft} /> : null}
