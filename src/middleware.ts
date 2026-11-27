@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-import { hostName, isAppHost, isCustomSiteHost, subdomainFromHost } from "@/lib/sites/domains";
+import { apexSiteSlug, hostName, internalSitePath, isAppHost, isCustomSiteHost, subdomainFromHost } from "@/lib/sites/domains";
 
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
@@ -25,6 +25,15 @@ export async function middleware(request: NextRequest) {
       const url = request.nextUrl.clone();
       const suffix = pathname === "/" ? "" : pathname;
       url.pathname = `/s-host/${host}${suffix}`;
+      return NextResponse.rewrite(url);
+    }
+  }
+
+  if (isAppHost(host)) {
+    const site = apexSiteSlug(pathname);
+    if (site) {
+      const url = request.nextUrl.clone();
+      url.pathname = internalSitePath(site.slug, site.path);
       return NextResponse.rewrite(url);
     }
   }

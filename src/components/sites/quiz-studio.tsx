@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { QuizRunner } from "@/components/sites/quiz-runner";
 import { listSubmissions, publishQuizSite, saveQuiz } from "@/app/funnels/site-actions";
-import { fallbackSitePath, normalizeCustomDomain, normalizeSubdomain } from "@/lib/sites/domains";
+import { brandHost, normalizeCustomDomain, normalizeSubdomain, publicSiteUrl, fallbackSitePath } from "@/lib/sites/domains";
 import { newStep, type AnalyticsConfig, type QuizSchema, type SeoConfig, type ThemeConfig } from "@/lib/sites/quiz-schema";
 import { THEME_LABEL } from "@/lib/sites/theme";
 
@@ -61,7 +61,8 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
   }, [snapshot, site.id, title, subdomain, customDomain, theme, draft, analytics, seo, agentId]);
 
   const step = draft.steps.find((item) => item.id === screen) ?? null;
-  const host = subdomain ? `${subdomain}.strikeplatform.io` : "субдомен не задан";
+  const liveHost = normalizeSubdomain(subdomain);
+  const hostLabel = !subdomain.trim() ? "имя.strikeplatform.io" : liveHost.ok ? brandHost(liveHost.slug) : liveHost.reason;
 
   function updateStep(next: QuizSchema["steps"][number]) {
     setDraft({ ...draft, steps: draft.steps.map((item) => (item.id === next.id ? next : item)) });
@@ -72,9 +73,14 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-[#e4e4e7] bg-[#fff] px-4">
         <Link href="/funnels" className="text-sm text-[#52525b]"><span>← Сайты</span></Link>
         <input value={title} onChange={(event) => setTitle(event.target.value)} className="h-9 min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none" />
-        <button type="button" className="hidden rounded-full border border-[#e4e4e7] px-3 py-1 text-xs sm:inline" onClick={() => { setPanel("settings"); setScreen("start"); }}>
-          <span>{host}</span>
+        <button type="button" className="hidden items-center gap-2 rounded-full border border-[#e4e4e7] px-3 py-1 text-xs sm:inline-flex" onClick={() => { setPanel("settings"); }}>
+          <span>{hostLabel}</span>
         </button>
+        {liveHost.ok ? (
+          <button type="button" className="text-xs text-[#cf0234]" onClick={() => void navigator.clipboard.writeText(publicSiteUrl(liveHost.slug))}>
+            <span>Скопировать ссылку</span>
+          </button>
+        ) : null}
         <button type="button" className="text-xs text-[#52525b]" onClick={() => setDevice(device === "desktop" ? "mobile" : "desktop")}>
           <span>{device === "desktop" ? "Desktop" : "Mobile"}</span>
         </button>
@@ -143,6 +149,9 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
               </button>
             </div>
             <div className={`mx-auto overflow-hidden border border-[#e4e4e7] bg-[#fff] ${device === "mobile" ? "w-[390px]" : "w-full max-w-3xl"}`}>
+              <div className="border-b border-[#e4e4e7] bg-[#fafafa] px-4 py-2 text-center text-xs text-[#71717a]">
+                <span>{liveHost.ok ? publicSiteUrl(liveHost.slug) : "https://имя.strikeplatform.io"}</span>
+              </div>
               <QuizRunner schema={draft} theme={theme} live={false} screen={walk ? undefined : screen} />
             </div>
           </main>
@@ -215,9 +224,12 @@ function Settings(props: {
         <span>Субдомен</span>
         <input className={field} value={props.subdomain} onChange={(event) => props.onSubdomain(event.target.value)} />
       </label>
-      <p className="text-xs text-[#71717a]"><span>{check.ok ? `${check.slug}.strikeplatform.io` : check.reason}</span></p>
+      <p className="text-xs text-[#71717a]"><span>{check.ok ? brandHost(check.slug) : check.reason}</span></p>
       {check.ok ? (
-        <a className="text-xs text-[#cf0234]" href={fallbackSitePath(check.slug)} target="_blank" rel="noreferrer"><span>Открыть /s/{check.slug}</span></a>
+        <div className="flex flex-wrap gap-3 text-xs">
+          <button type="button" className="text-[#cf0234]" onClick={() => void navigator.clipboard.writeText(publicSiteUrl(check.slug))}><span>Скопировать ссылку</span></button>
+          <a className="text-[#52525b]" href={fallbackSitePath(check.slug)} target="_blank" rel="noreferrer"><span>Открыть</span></a>
+        </div>
       ) : null}
       <label className="grid gap-1 text-xs text-[#52525b]">
         <span>Свой домен</span>

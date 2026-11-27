@@ -6,7 +6,7 @@ import useSWR from "swr";
 
 import { createManualQuiz, deleteSite, duplicateSite } from "@/app/funnels/site-actions";
 import type { LandingListItem } from "@/lib/landing-types";
-import { fallbackSitePath, publicSiteUrl } from "@/lib/sites/domains";
+import { brandHost, fallbackSitePath, normalizeSubdomain, publicSiteUrl } from "@/lib/sites/domains";
 import type { ThemePreset } from "@/lib/sites/quiz-schema";
 import { THEME_LABEL } from "@/lib/sites/theme";
 import { jsonFetcher } from "@/lib/swr";
@@ -42,6 +42,8 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
   const [agentId, setAgentId] = useState("");
   const [preset, setPreset] = useState<ThemePreset>("dark_premium");
   const [subdomain, setSubdomain] = useState("");
+  const nameCheck = normalizeSubdomain(subdomain);
+  const namePreview = !subdomain.trim() ? "имя.strikeplatform.io" : nameCheck.ok ? brandHost(nameCheck.slug) : nameCheck.reason;
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
@@ -102,7 +104,10 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
           <select className="h-11 rounded-xl border border-[#e4e4e7] bg-[#fff] px-3 text-sm" value={preset} onChange={(event) => setPreset(event.target.value as ThemePreset)}>
             {(Object.keys(THEME_LABEL) as ThemePreset[]).map((item) => <option key={item} value={item}>{THEME_LABEL[item]}</option>)}
           </select>
-          <input value={subdomain} placeholder="Субдомен, необязательно" className="h-11 rounded-xl border border-[#e4e4e7] px-3 text-sm outline-none" onChange={(event) => setSubdomain(event.target.value)} />
+          <label className="grid gap-1">
+            <input value={subdomain} placeholder="Имя, например legiontraffic" className="h-11 rounded-xl border border-[#e4e4e7] px-3 text-sm outline-none" onChange={(event) => setSubdomain(event.target.value)} />
+            <span className="px-1 text-xs text-[#71717a]"><span>{namePreview}</span></span>
+          </label>
         </div>
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <button type="button" className="text-sm text-[#52525b]" disabled={busy} onClick={() => void createManualQuiz("Новый квиз").then((result) => router.push(`/funnels/${result.id}`))}>
@@ -139,7 +144,7 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
         {visible.length === 0 ? <p className="mt-6 rounded-2xl border border-dashed border-[#e4e4e7] px-6 py-12 text-center text-sm text-[#71717a]"><span>Сайтов пока нет.</span></p> : (
           <ul className="mt-6 grid gap-4 sm:grid-cols-2">
             {visible.map((site) => {
-              const address = site.subdomain ? `${site.subdomain}.strikeplatform.io` : site.slug;
+              const address = site.subdomain ? brandHost(site.subdomain) : "";
               const conversion = site.views > 0 ? Math.round((site.leads / site.views) * 1000) / 10 : 0;
               return (
                 <li key={site.id} className="rounded-2xl border border-[#e4e4e7] bg-[#fff] p-5">
@@ -150,9 +155,9 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
                   <button type="button" className="mt-4 text-left text-xl font-semibold" onClick={() => router.push(site.siteType === "quiz" ? `/funnels/${site.id}` : `/funnels/builder?id=${site.id}`)}>
                     <span>{site.title}</span>
                   </button>
-                  <p className="mt-2 flex items-center gap-2 text-sm text-[#52525b]">
-                    <span>{address}</span>
-                    {site.subdomain ? <button type="button" className="text-[#cf0234]" onClick={() => void navigator.clipboard.writeText(publicSiteUrl(site.subdomain!))}><span>Копировать</span></button> : null}
+                  <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#52525b]">
+                    {address ? <a href={fallbackSitePath(site.subdomain!)} target="_blank" rel="noreferrer"><span>{address}</span></a> : <span>Адрес появится после публикации</span>}
+                    {site.subdomain ? <button type="button" className="text-[#cf0234]" onClick={() => void navigator.clipboard.writeText(publicSiteUrl(site.subdomain!))}><span>Скопировать ссылку</span></button> : null}
                   </p>
                   <p className="mt-4 text-sm text-[#71717a]"><span>{`${site.views} просмотров · ${site.leads} лидов · ${conversion}%`}</span></p>
                   <p className="mt-2 text-sm"><span>{site.agentName ?? "Агент не выбран"}</span></p>
@@ -161,7 +166,6 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
                     {site.siteType === "quiz" ? <button type="button" onClick={() => router.push(`/funnels/${site.id}`)}><span>Заявки</span></button> : null}
                     {site.siteType === "quiz" ? <button type="button" onClick={() => void duplicateSite(site.id).then((result) => { if (result.id) router.push(`/funnels/${result.id}`); })}><span>Дублировать</span></button> : null}
                     <button type="button" onClick={() => void deleteSite(site.id).then(() => router.refresh())}><span>Удалить</span></button>
-                    {site.subdomain ? <a href={fallbackSitePath(site.subdomain)} target="_blank" rel="noreferrer"><span>Открыть</span></a> : null}
                   </div>
                 </li>
               );

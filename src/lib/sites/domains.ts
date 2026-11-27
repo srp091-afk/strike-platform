@@ -84,10 +84,74 @@ export function normalizeCustomDomain(raw: string): { ok: true; domain: string }
   return { ok: true, domain };
 }
 
-export function publicSiteUrl(subdomain: string) {
-  return `https://${subdomain}.strikeplatform.io`;
+export function brandHost(subdomain: string) {
+  return `${subdomain}.strikeplatform.io`;
 }
 
-export function fallbackSitePath(subdomain: string) {
-  return `/s/${subdomain}`;
+export function publicSiteUrl(subdomain: string, path = "") {
+  const suffix = path.replace(/^\/+|\/+$/g, "");
+  const host = `https://${brandHost(subdomain)}`;
+  return suffix ? `${host}/${suffix}` : host;
+}
+
+/** Запасной адрес на основном домене, пока wildcard DNS не разъехался. */
+export function fallbackSitePath(subdomain: string, path = "") {
+  const suffix = path.replace(/^\/+|\/+$/g, "");
+  return suffix ? `/${subdomain}/${suffix}` : `/${subdomain}`;
+}
+
+export function internalSitePath(subdomain: string, path = "") {
+  const suffix = path.replace(/^\/+|\/+$/g, "");
+  return suffix ? `/s/${subdomain}/${suffix}` : `/s/${subdomain}`;
+}
+
+const PLATFORM_SEGMENTS = new Set([
+  "dashboard",
+  "billing",
+  "agents",
+  "funnels",
+  "sites",
+  "ads",
+  "leads",
+  "chats",
+  "ai-tasks",
+  "settings",
+  "playground",
+  "test-creatives",
+  "smm",
+  "login",
+  "pricing",
+  "privacy",
+  "terms",
+  "refund",
+  "demo",
+  "widget",
+  "auth",
+  "actions",
+  "api",
+  "l",
+  "f",
+  "s",
+  "s-host",
+  "favicon.ico",
+  "robots.txt",
+  "manifest.webmanifest",
+]);
+
+function decodeSegment(value: string) {
+  try {
+    return decodeURIComponent(value).toLowerCase();
+  } catch {
+    return value.toLowerCase();
+  }
+}
+
+/** Путь вида /<компания> или /<компания>/<страница> на основном домене, если имя не занято кабинетом. */
+export function apexSiteSlug(pathname: string) {
+  const parts = pathname.split("/").filter(Boolean);
+  if (parts.length === 0) return null;
+  const raw = decodeSegment(parts[0] ?? "");
+  if (!raw || raw.includes(".") || PLATFORM_SEGMENTS.has(raw)) return null;
+  if (!SUBDOMAIN.test(raw) || RESERVED.has(raw)) return null;
+  return { slug: raw, path: parts.slice(1).map(decodeSegment).join("/") };
 }
