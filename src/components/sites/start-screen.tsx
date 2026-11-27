@@ -271,7 +271,7 @@ function Copy({
           <span>{start.eyebrow.text}</span>
         </p>
       ) : null}
-      <h1 className={`font-semibold tracking-[-0.03em] leading-[1.12] ${compact ? "mt-3 text-[1.7rem]" : "mt-3 text-[clamp(1.75rem,3.4vw,3.5rem)]"}`} style={{ color: tone.headline }}>
+      <h1 className={`font-semibold tracking-[-0.03em] leading-[1.15] ${compact ? "mt-3 text-[1.7rem]" : "mt-3 text-[clamp(1.75rem,3.4vw,3.5rem)]"}`} style={{ color: tone.headline }}>
         <Headline text={tightenHeadline(start.headline)} style={start.highlightStyle} accent={palette.accent} ink={ink} />
       </h1>
       {start.subheadline.show && start.subheadline.text ? (
@@ -474,8 +474,16 @@ function Headline({ text, style, accent, ink }: { text: string; style: QuizSchem
         return (
           <span
             key={index}
-            className="inline-flex items-center whitespace-nowrap rounded-lg leading-none"
-            style={{ background: accent, color: ink, lineHeight: 1, padding: "0.235em 0.34em 0.205em", verticalAlign: "0.08em" }}
+            className="rounded-lg"
+            style={{
+              background: accent,
+              color: ink,
+              boxDecorationBreak: "clone",
+              WebkitBoxDecorationBreak: "clone",
+              padding: "0.08em 0.28em",
+              lineHeight: "inherit",
+              borderRadius: "0.28em",
+            }}
           >
             {value}
           </span>
