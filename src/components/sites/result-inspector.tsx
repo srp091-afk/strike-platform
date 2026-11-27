@@ -1,10 +1,11 @@
 "use client";
 
-import { useState, type ChangeEvent } from "react";
+import { useRef, useState, type ChangeEvent } from "react";
+import { Loader2, Trash2 } from "lucide-react";
 
 import { StudioSelect, StudioToggle } from "@/components/sites/studio-controls";
 import { disabledResult, type QuizSchema, type ResultPreview, type ResultTemplate, type ValueFormat } from "@/lib/sites/quiz-schema";
-import { RESULT_PRESETS, resultPreset, presetForTemplate, type ResultPresetId } from "@/lib/sites/result-presets";
+import { RESULT_PRESETS, neutralForTemplate, resultPreset, type ResultPresetId } from "@/lib/sites/result-presets";
 
 const field = "h-11 w-full rounded-xl border border-[#e4e4e7] bg-[#fff] px-3 text-sm text-[#09090b] outline-none";
 const TEMPLATES: Array<{ id: ResultTemplate; label: string }> = [
@@ -14,10 +15,14 @@ const TEMPLATES: Array<{ id: ResultTemplate; label: string }> = [
   { id: "diagnostic_audit", label: "Аудит / Индекс" },
 ];
 
-export function ResultInspector({ draft, onChange }: { draft: QuizSchema; onChange: (draft: QuizSchema) => void }) {
+export function ResultInspector({ siteId, title, draft, onChange }: { siteId: string; title: string; draft: QuizSchema; onChange: (draft: QuizSchema) => void }) {
   const preview = draft.resultPreview ?? disabledResult();
   const [slot, setSlot] = useState<{ value: string; commit: (value: string) => void; formula: boolean } | null>(null);
+  const [adapting, setAdapting] = useState(false);
+  const [adaptError, setAdaptError] = useState("");
+  const memory = useRef<Partial<Record<ResultTemplate, ResultPreview>>>({});
   const keys = [...new Set([...draft.steps.map((step) => step.variableKey).filter((item): item is string => Boolean(item)), ...Object.keys(preview.sampleDefaults ?? {})])];
+  const primaryKey = draft.steps.find((step) => step.variableKey)?.variableKey || "budget";
 
   function commit(next: ResultPreview, leadHeadline?: string) {
     const lead = leadHeadline ? { ...draft.leadScreen, headline: leadHeadline } : draft.leadScreen;
@@ -30,14 +35,49 @@ export function ResultInspector({ draft, onChange }: { draft: QuizSchema; onChan
       return;
     }
     const empty = preview.kpis.length === 0 && !preview.table && !preview.matches && !preview.audit;
-    const next = empty ? { ...resultPreset("real_estate_yield"), enabled: true } : { ...preview, enabled: true };
+    const next = empty ? { ...neutralForTemplate(preview.template, primaryKey, preview.currency), enabled: true } : { ...preview, enabled: true };
     const headline = draft.leadScreen.headline === "Куда отправить результат?" ? "Куда прислать полный расчёт?" : undefined;
     commit(next, headline);
   }
 
   function chooseTemplate(template: ResultTemplate) {
-    const next = presetForTemplate(template);
+    if (template === preview.template) return;
+    memory.current[preview.template] = preview;
+    const saved = memory.current[template];
+    const next = saved ?? neutralForTemplate(template, primaryKey, preview.currency);
     commit({ ...next, enabled: true, currency: preview.currency, revealFullResultOnThankYou: preview.revealFullResultOnThankYou, loader: preview.loader });
+  }
+
+  async function adapt() {
+    setAdapting(true);
+    setAdaptError("");
+    try {
+      const response = await fetch("/api/sites/adapt-result-preview", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          siteId,
+          template: preview.template,
+          title,
+          nicheContext: `${title}. ${draft.startScreen.subheadline.text}`,
+          questions: draft.steps.map((step) => ({
+            title: step.title,
+            variableKey: step.variableKey,
+            options: step.options.map((option) => ({ label: option.label, numericValue: option.numericValue })),
+          })),
+          currency: preview.currency,
+        }),
+      });
+      const body = (await response.json()) as { resultPreview?: ResultPreview; error?: string };
+      if (!response.ok || !body.resultPreview) throw new Error(body.error || "Не удалось адаптировать превью.");
+      const next = { ...body.resultPreview, enabled: true, revealFullResultOnThankYou: preview.revealFullResultOnThankYou };
+      memory.current[next.template] = next;
+      commit(next);
+    } catch (error) {
+      setAdaptError(error instanceof Error ? error.message : "Не удалось адаптировать превью.");
+    } finally {
+      setAdapting(false);
+    }
   }
 
   function applyPreset(id: ResultPresetId) {
@@ -69,6 +109,11 @@ export function ResultInspector({ draft, onChange }: { draft: QuizSchema; onChan
               </button>
             ))}
           </div>
+          <button type="button" disabled={adapting} className="inline-flex h-10 items-center justify-center gap-2 rounded-xl bg-[#09090b] px-3 text-sm font-medium text-[#fff] disabled:opacity-60" onClick={() => void adapt()}>
+            {adapting ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            <span>{adapting ? "Адаптируем…" : "✨ Адаптировать под нишу с ИИ"}</span>
+          </button>
+          {adaptError ? <p className="text-xs text-[#b91c1c]"><span>{adaptError}</span></p> : null}
           <label className="grid gap-1 text-xs text-[#52525b]">
             <span>Быстрый пресет ниши</span>
             <StudioSelect ariaLabel="Пресет ниши" value="" onChange={(value) => { if (value) applyPreset(value as ResultPresetId); }} options={[{ value: "", label: "Выбрать пресет" }, ...RESULT_PRESETS.map((item) => ({ value: item.id, label: item.label }))]} />
@@ -100,7 +145,7 @@ export function ResultInspector({ draft, onChange }: { draft: QuizSchema; onChan
           {preview.table && (preview.template === "financial_forecast" || preview.template === "estimate_breakdown") ? (
             <RowsEditor preview={preview} onChange={commit} bind={bind} />
           ) : null}
-          {preview.matches && preview.template === "curated_match" ? <MatchEditor preview={preview} onChange={commit} bind={bind} /> : null}
+          {preview.matches && preview.template === "curated_match" ? <MatchEditor siteId={siteId} preview={preview} onChange={commit} bind={bind} /> : null}
           {preview.audit && preview.template === "diagnostic_audit" ? <AuditEditor preview={preview} onChange={commit} bind={bind} /> : null}
           <details className="rounded-xl border border-[#e4e4e7] p-3">
             <summary className="cursor-pointer text-sm"><span>Менять заголовок и ставки по ответам</span></summary>
@@ -123,7 +168,9 @@ export function ResultInspector({ draft, onChange }: { draft: QuizSchema; onChan
 function Chips({ keys, slot }: { keys: string[]; slot: { value: string; commit: (value: string) => void; formula: boolean } | null }) {
   if (keys.length === 0) return <p className="text-[11px] text-[#71717a]"><span>Задайте ключ переменной в вопросе, например budget.</span></p>;
   return (
-    <div className="flex flex-wrap gap-1.5">
+    <div className="grid gap-1.5">
+      <p className="text-[11px] text-[#71717a]"><span>Переменные из вопросов (клик — вставить):</span></p>
+      <div className="flex flex-wrap gap-1.5">
       {keys.map((key) => (
         <button key={key} type="button" className="rounded-full border border-[#e4e4e7] px-2 py-1 text-[11px]" onClick={() => {
           if (!slot) return;
@@ -134,6 +181,7 @@ function Chips({ keys, slot }: { keys: string[]; slot: { value: string; commit: 
           <span>{key}</span>
         </button>
       ))}
+      </div>
     </div>
   );
 }
@@ -147,8 +195,8 @@ function KpiEditor({ preview, onChange, bind }: { preview: ResultPreview; onChan
       </div>
       {preview.kpis.map((item, index) => (
         <div key={item.id} className="grid gap-2 rounded-xl border border-[#e4e4e7] p-2">
-          <input className={field} {...bind(item.valueExpr, (valueExpr) => updateKpi(preview, onChange, index, { valueExpr }), true)} />
-          <input className={field} {...bind(item.label, (label) => updateKpi(preview, onChange, index, { label }))} />
+          <Field label="Формула" {...bind(item.valueExpr, (valueExpr) => updateKpi(preview, onChange, index, { valueExpr }), true)} />
+          <Field label="Подпись" {...bind(item.label, (label) => updateKpi(preview, onChange, index, { label }))} />
           <div className="flex gap-2">
             <StudioSelect ariaLabel="Формат KPI" value={item.format} onChange={(format) => updateKpi(preview, onChange, index, { format: format as ValueFormat })} options={[{ value: "currency", label: "Валюта" }, { value: "percent", label: "Процент" }, { value: "number", label: "Число" }, { value: "text", label: "Текст" }]} />
             <button type="button" className="text-xs text-[#cf0234]" onClick={() => onChange({ ...preview, kpis: preview.kpis.filter((_, itemIndex) => itemIndex !== index) })}><span>Удалить</span></button>
@@ -168,7 +216,21 @@ function RowsEditor({ preview, onChange, bind }: { preview: ResultPreview; onCha
   if (!table) return null;
   return (
     <div className="grid gap-2">
-      <p className="text-xs font-medium text-[#52525b]"><span>Строки таблицы</span></p>
+      <div className="flex items-center justify-between">
+        <p className="text-xs font-medium text-[#52525b]"><span>Строки таблицы</span></p>
+        <button type="button" className="text-xs text-[#cf0234]" onClick={() => {
+          const cells = Object.fromEntries(table.columns.map((column) => [column.key, column.format === "text" ? "Новая строка" : "=budget"]));
+          onChange({ ...preview, table: { ...table, rows: [...table.rows, { id: `row-${Date.now()}`, cells, locked: true }] } });
+        }}><span>+ Строка</span></button>
+      </div>
+      <div className="grid gap-2">
+        {table.columns.map((column, index) => (
+          <Field key={column.key} label={`Колонка ${index + 1}`} value={column.label} onChange={(event) => {
+            const columns = table.columns.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item);
+            onChange({ ...preview, table: { ...table, columns } });
+          }} />
+        ))}
+      </div>
       {table.rows.map((row, index) => (
         <div key={row.id} className="grid gap-2 rounded-xl border border-[#e4e4e7] p-2">
           {table.columns.map((column) => (
@@ -180,31 +242,78 @@ function RowsEditor({ preview, onChange, bind }: { preview: ResultPreview; onCha
               }, column.format !== "text")} />
             </label>
           ))}
-          <StudioToggle label="Скрыть под блюром" checked={row.locked} onChange={(locked) => {
-            const rows = table.rows.map((item, itemIndex) => itemIndex === index ? { ...item, locked } : item);
-            onChange({ ...preview, table: { ...table, rows } });
-          }} />
+          <div className="flex items-center justify-between">
+            <StudioToggle label="Скрыть под блюром" checked={row.locked} onChange={(locked) => {
+              const rows = table.rows.map((item, itemIndex) => itemIndex === index ? { ...item, locked } : item);
+              onChange({ ...preview, table: { ...table, rows } });
+            }} />
+            <button type="button" aria-label="Удалить строку" className="text-[#71717a]" onClick={() => onChange({ ...preview, table: { ...table, rows: table.rows.filter((_, itemIndex) => itemIndex !== index) } })}>
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       ))}
     </div>
   );
 }
 
-function MatchEditor({ preview, onChange, bind }: { preview: ResultPreview; onChange: (next: ResultPreview) => void; bind: (value: string, commit: (value: string) => void, formula?: boolean) => { value: string; onFocus: () => void; onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void } }) {
+function MatchEditor({ siteId, preview, onChange, bind }: { siteId: string; preview: ResultPreview; onChange: (next: ResultPreview) => void; bind: (value: string, commit: (value: string) => void, formula?: boolean) => { value: string; onFocus: () => void; onChange: (event: ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => void } }) {
   const matches = preview.matches;
+  const [uploadError, setUploadError] = useState("");
   if (!matches) return null;
   return (
     <div className="grid gap-2">
       <Field label="Бейдж подборки" {...bind(matches.badgeText, (badgeText) => onChange({ ...preview, matches: { ...matches, badgeText } }))} />
       {matches.items.map((item, index) => (
         <div key={item.id} className="grid gap-2 rounded-xl border border-[#e4e4e7] p-2">
-          <input className={field} {...bind(item.title, (title) => updateMatch(preview, onChange, index, { title }))} />
-          <input className={field} {...bind(item.priceExpr, (priceExpr) => updateMatch(preview, onChange, index, { priceExpr }), true)} />
+          <div className="flex items-center justify-between">
+            <p className="text-[11px] text-[#71717a]"><span>{`Вариант ${String(index + 1).padStart(2, "0")}`}</span></p>
+            <button type="button" aria-label="Удалить вариант" className="text-[#71717a]" onClick={() => onChange({ ...preview, matches: { ...matches, items: matches.items.filter((_, itemIndex) => itemIndex !== index) } })}>
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
+          <Field label="Название" {...bind(item.title, (title) => updateMatch(preview, onChange, index, { title }))} />
+          <Field label="Подзаголовок / параметры" {...bind(item.subtitle, (subtitle) => updateMatch(preview, onChange, index, { subtitle }))} />
+          <Field label="Цена / формула" {...bind(item.priceExpr, (priceExpr) => updateMatch(preview, onChange, index, { priceExpr }), true)} />
+          <label className="grid gap-1 text-xs text-[#52525b]">
+            <span>Фото</span>
+            <input className={field} type="file" accept="image/*" onChange={(event) => {
+              const file = event.target.files?.[0];
+              event.target.value = "";
+              if (!file) return;
+              void uploadMatch(siteId, file, setUploadError, (url) => updateMatch(preview, onChange, index, { imageUrl: url }));
+            }} />
+          </label>
+          {item.imageUrl ? (
+            <button type="button" className="text-left text-xs text-[#cf0234]" onClick={() => updateMatch(preview, onChange, index, { imageUrl: null })}><span>Удалить фото</span></button>
+          ) : null}
           <StudioToggle label="Скрыть под блюром" checked={item.locked} onChange={(locked) => updateMatch(preview, onChange, index, { locked })} />
         </div>
       ))}
+      {matches.items.length < 4 ? (
+        <button type="button" className="text-left text-xs text-[#cf0234]" onClick={() => onChange({
+          ...preview,
+          matches: { ...matches, items: [...matches.items, { id: `m-${Date.now()}`, title: "Новый вариант", subtitle: "Параметры", priceExpr: "=budget", metricText: "", imageUrl: null, locked: true }] },
+        })}><span>+ Добавить вариант</span></button>
+      ) : null}
+      {uploadError ? <p className="text-xs text-[#b91c1c]"><span>{uploadError}</span></p> : null}
     </div>
   );
+}
+
+async function uploadMatch(siteId: string, file: File, setError: (value: string) => void, apply: (url: string) => void) {
+  setError("");
+  const body = new FormData();
+  body.set("file", file);
+  body.set("siteId", siteId);
+  body.set("kind", "match_image");
+  const response = await fetch("/api/sites/upload-asset", { method: "POST", body });
+  const payload = (await response.json()) as { url?: string; error?: string };
+  if (!response.ok || !payload.url) {
+    setError(payload.error || "Не удалось загрузить фото.");
+    return;
+  }
+  apply(payload.url);
 }
 
 function updateMatch(preview: ResultPreview, onChange: (next: ResultPreview) => void, index: number, patch: Partial<NonNullable<ResultPreview["matches"]>["items"][number]>) {
@@ -218,19 +327,34 @@ function AuditEditor({ preview, onChange, bind }: { preview: ResultPreview; onCh
   return (
     <div className="grid gap-2">
       <Field label="Формула индекса" {...bind(audit.scoreExpr, (scoreExpr) => onChange({ ...preview, audit: { ...audit, scoreExpr } }), true)} />
+      <Field label="Подпись индекса" {...bind(audit.scoreLabel, (scoreLabel) => onChange({ ...preview, audit: { ...audit, scoreLabel } }))} />
       <Field label="Эффект" {...bind(audit.impactExpr, (impactExpr) => onChange({ ...preview, audit: { ...audit, impactExpr } }))} />
       {audit.insights.map((item, index) => (
         <div key={item.id} className="grid gap-2 rounded-xl border border-[#e4e4e7] p-2">
-          <input className={field} {...bind(item.title, (title) => {
+          <Field label="Пункт" {...bind(item.title, (title) => {
             const insights = audit.insights.map((entry, entryIndex) => entryIndex === index ? { ...entry, title } : entry);
             onChange({ ...preview, audit: { ...audit, insights } });
           })} />
-          <StudioToggle label="Скрыть под блюром" checked={item.locked} onChange={(locked) => {
-            const insights = audit.insights.map((entry, entryIndex) => entryIndex === index ? { ...entry, locked } : entry);
+          <Field label="Пояснение" {...bind(item.detail, (detail) => {
+            const insights = audit.insights.map((entry, entryIndex) => entryIndex === index ? { ...entry, detail } : entry);
             onChange({ ...preview, audit: { ...audit, insights } });
-          }} />
+          })} />
+          <div className="flex items-center justify-between">
+            <StudioToggle label="Скрыть под блюром" checked={item.locked} onChange={(locked) => {
+              const insights = audit.insights.map((entry, entryIndex) => entryIndex === index ? { ...entry, locked } : entry);
+              onChange({ ...preview, audit: { ...audit, insights } });
+            }} />
+            <button type="button" aria-label="Удалить пункт" className="text-[#71717a]" onClick={() => onChange({ ...preview, audit: { ...audit, insights: audit.insights.filter((_, entryIndex) => entryIndex !== index) } })}>
+              <Trash2 className="h-4 w-4" />
+            </button>
+          </div>
         </div>
       ))}
+      {audit.insights.length < 5 ? (
+        <button type="button" className="text-left text-xs text-[#cf0234]" onClick={() => onChange({ ...preview, audit: { ...audit, insights: [...audit.insights, { id: `i-${Date.now()}`, title: "Новый пункт", detail: "", locked: true }] } })}>
+          <span>+ Пункт аудита</span>
+        </button>
+      ) : null}
     </div>
   );
 }

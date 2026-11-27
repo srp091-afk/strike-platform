@@ -69,6 +69,8 @@ export async function POST(request: Request) {
             "У single_choice и image_cards поле options: { id, label, description, imageUrl, nextStepId, priceImpact, numericValue }.",
             "Для бюджета, площади, срока и масштаба задай step.variableKey латиницей (budget, area, ad_spend) и numericValue или defaultNumericValue в валюте ниши.",
             "resultPreview.enabled true. template: financial_forecast для инвестиций, недвижимости и маркетинга; estimate_breakdown для ремонта, стройки и клиник; curated_match для подбора авто и жилья; diagnostic_audit для B2B-аудита и консалтинга.",
+            "Валюта строго по нише: $ и position before для USD, Бали, Дубая и США; ₸ after для тенге, Алматы и Астаны; € after для евро и Европы; ₽ after для русскоязычных сумм в млн или тыс без иностранной валюты. Не ставь $ в квиз про авто или ремонт в России.",
+            "kpis, table.rows, matches.items (title, subtitle, priceExpr) и audit.insights заполняй только фактами этой ниши. Для авто: лот, год, пробег, кузов, доставка. Запрещено подставлять «2 спальни», «вид на район», «60 м²» и «черновые работы», если ниша не про жильё или ремонт. badgeText подборки: «Подобрано {{match_count}} вариантов».",
             "Собери 3 KPI с формулами от =переменная, таблицу или подборку из 3 строк: первая locked false, вторая и третья locked true. lockBadgeText вроде «Полный расчёт — в WhatsApp». 1–2 rules: если budget больше порога, смени headline и overrideVariables.",
             "Формулы только из чисел, скобок, + - * /, имён переменных и функций round floor ceil min max. Без текста внутри формулы.",
             "leadScreen.headline: «Куда прислать полный расчёт?». ctaText: «Получить расчёт в WhatsApp».",

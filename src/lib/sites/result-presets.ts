@@ -32,11 +32,116 @@ export function templateFromHint(hint: string): ResultPreview["template"] {
 
 export function presetForTemplate(template: ResultPreview["template"], hint = ""): ResultPreview {
   const text = hint.toLowerCase();
-  if (template === "estimate_breakdown") return renovation(/₸|тенге|казах/.test(text) ? "₸" : /₽|руб/.test(text) ? "₽" : "$");
-  if (template === "curated_match") return property(/₸|тенге/.test(text) ? "₸" : /₽|руб/.test(text) ? "₽" : "$");
+  const symbol = /₸|тенге|казах|алматы|астан/.test(text) ? "₸" : /€|евро/.test(text) ? "€" : /₽|руб|млн|тыс/.test(text) && !/\$|usd|бали|дуба/.test(text) ? "₽" : "$";
+  if (template === "estimate_breakdown") return renovation(symbol);
+  if (template === "curated_match") return property(symbol);
   if (template === "diagnostic_audit") return audit();
-  if (/маркетинг|трафик|лид|реклам|cpl|roas/.test(text)) return marketing(/₸|тенге/.test(text) ? "₸" : /₽|руб/.test(text) ? "₽" : "$");
-  return realEstate(/₸|тенге/.test(text) ? "₸" : /₽|руб/.test(text) ? "₽" : "$");
+  if (/маркетинг|трафик|лид|реклам|cpl|roas/.test(text)) return marketing(symbol);
+  return realEstate(symbol);
+}
+
+/** Чистый каркас без чужой ниши. Формулы ссылаются только на переменную текущего квиза. */
+export function neutralForTemplate(template: ResultPreview["template"], variableKey: string, currency: ResultPreview["currency"]): ResultPreview {
+  const key = /^[a-z][a-z0-9_]{0,31}$/.test(variableKey) ? variableKey : "budget";
+  const sample = /area|score|count/.test(key) ? 60 : 1_500_000;
+  const shared = {
+    currency,
+    eyebrow: "Ваш результат",
+    footnote: "Предварительный расчёт. Точные условия зафиксируем после заявки.",
+    lockBadgeText: "Полный расчёт — после заявки",
+    rules: [],
+    sampleDefaults: { [key]: sample, match_count: 6 },
+  };
+  if (template === "estimate_breakdown") {
+    return base({
+      ...shared,
+      template,
+      defaultHeadline: "Ориентир по вашим ответам",
+      defaultDescription: "Основной блок уже виден. Остальные части откроются после заявки.",
+      kpis: [
+        { id: "total", valueExpr: `=${key}`, label: "Ориентир", format: "currency", accent: true },
+        { id: "share", valueExpr: `=round(${key} * 0.2)`, label: "Дополнительно", format: "currency" },
+      ],
+      table: {
+        columns: [
+          { key: "stage", label: "Блок", format: "text", align: "left" },
+          { key: "sum", label: "Сумма", format: "currency", align: "right" },
+        ],
+        rows: [
+          { id: "main", cells: { stage: "Основной блок", sum: `=${key}` }, locked: false },
+          { id: "extra", cells: { stage: "Дополнительно", sum: `=${key} * 0.35` }, locked: true },
+          { id: "reserve", cells: { stage: "Резерв", sum: `=${key} * 0.15` }, locked: true },
+        ],
+      },
+      matches: null,
+      audit: null,
+    });
+  }
+  if (template === "curated_match") {
+    return base({
+      ...shared,
+      template,
+      defaultHeadline: "Подборка под ваш запрос",
+      defaultDescription: "Первый вариант уже совпал с ответами. Остальные откроем после заявки.",
+      kpis: [],
+      table: null,
+      matches: {
+        badgeText: "Подобрано {{match_count}} вариантов",
+        items: [
+          { id: "a", title: "Вариант в вашем диапазоне", subtitle: "Параметры под ваш запрос", priceExpr: `=${key}`, metricText: "ближе всего", locked: false },
+          { id: "b", title: "Вариант с запасом", subtitle: "Чуть шире по параметрам", priceExpr: `=${key} * 1.12`, metricText: "запас", locked: true },
+          { id: "c", title: "Вариант максимальной комплектации", subtitle: "Верхняя граница подбора", priceExpr: `=${key} * 1.28`, metricText: "максимум", locked: true },
+        ],
+      },
+      audit: null,
+    });
+  }
+  if (template === "diagnostic_audit") {
+    return base({
+      ...shared,
+      template,
+      currency: { symbol: "%", position: "after", decimals: 0 },
+      defaultHeadline: "Индекс уже посчитан",
+      defaultDescription: "Один вывод открыт. Остальной план отправим после заявки.",
+      kpis: [],
+      table: null,
+      matches: null,
+      audit: {
+        scoreExpr: "72",
+        scoreLabel: "Индекс совпадения",
+        impactExpr: "Следующий шаг откроется после заявки",
+        insights: [
+          { id: "open", title: "Что уже видно", detail: "Первый вывод по вашим ответам.", locked: false },
+          { id: "next", title: "Что сделать дальше", detail: "Короткий следующий шаг.", locked: true },
+          { id: "plan", title: "Как усилить результат", detail: "План после заявки.", locked: true },
+        ],
+      },
+    });
+  }
+  return base({
+    ...shared,
+    template: "financial_forecast",
+    defaultHeadline: `Ориентир по {{${key}}}`,
+    defaultDescription: "Базовый сценарий уже посчитан. Остальные откроем после заявки.",
+    kpis: [
+      { id: "base", valueExpr: `=${key}`, label: "База", format: "currency", accent: true },
+      { id: "mid", valueExpr: `=round(${key} * 1.2)`, label: "Усиленный", format: "currency" },
+      { id: "top", valueExpr: `=round(${key} * 1.5)`, label: "Максимум", format: "currency" },
+    ],
+    table: {
+      columns: [
+        { key: "name", label: "Сценарий", format: "text", align: "left" },
+        { key: "amount", label: "Сумма", format: "currency", align: "right" },
+      ],
+      rows: [
+        { id: "base", cells: { name: "Базовый", amount: `=${key}` }, locked: false },
+        { id: "mid", cells: { name: "Усиленный", amount: `=${key} * 1.2` }, locked: true },
+        { id: "max", cells: { name: "Максимум", amount: `=${key} * 1.5` }, locked: true },
+      ],
+    },
+    matches: null,
+    audit: null,
+  });
 }
 
 function money(symbol: string): ResultPreview["currency"] {

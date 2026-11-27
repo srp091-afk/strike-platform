@@ -1,5 +1,6 @@
 import type { CompareOp, QuizSchema, ResultPreview, ValueFormat } from "@/lib/sites/quiz-schema";
-import { presetForTemplate, templateFromHint } from "@/lib/sites/result-presets";
+import { detectCurrency } from "@/lib/sites/currency";
+import { neutralForTemplate, templateFromHint } from "@/lib/sites/result-presets";
 
 export type QuizAnswerInput = { optionIds?: string[]; text?: string; value?: number };
 
@@ -249,6 +250,10 @@ export function extractQuizVariables(
       if (variables[key] === undefined) variables[key] = value;
     }
   }
+  const owned = new Set(schema.steps.map((step) => step.variableKey).filter((item): item is string => Boolean(item)));
+  if (!owned.has("match_count")) {
+    variables.match_count = Math.max((schema.resultPreview.matches?.items.length ?? 0) + 3, 6);
+  }
   for (const [key, value] of Object.entries(labels)) labels[`${key}_label`] = value;
   return { variables, labels };
 }
@@ -478,9 +483,15 @@ export function repairGeneratedPreview(schema: QuizSchema, hint: string): QuizSc
     ? { ...turnedOn.leadScreen, headline: "Куда прислать полный расчёт?" }
     : turnedOn.leadScreen;
   if (hasBody && previewFormulasOk(turnedOn)) return { ...turnedOn, leadScreen: lead };
+  const key = schema.steps.find((step) => step.variableKey)?.variableKey || "budget";
+  const money = detectCurrency(hint);
   return {
     ...turnedOn,
     leadScreen: lead,
-    resultPreview: { ...presetForTemplate(template, hint), enabled: true },
+    resultPreview: {
+      ...neutralForTemplate(template, key, { symbol: money.symbol, position: money.position, decimals: 0 }),
+      enabled: true,
+      loader: schema.resultPreview.loader,
+    },
   };
 }

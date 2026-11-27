@@ -265,7 +265,7 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
           <aside className="overflow-y-auto border-l border-[#e4e4e7] bg-[#fff] p-4">
             {screen === "start" ? <StartInspector siteId={site.id} title={title} preset={theme.preset} draft={draft} onChange={setDraft} /> : null}
             {step ? <StepInspector siteId={site.id} title={title} step={step} steps={draft.steps} consultant={draft.consultant} calculatorOpen={draft.resultPreview.enabled} onChange={updateStep} onConsultant={(consultant) => setDraft((current) => ({ ...current, consultant }))} onDelete={() => { setDraft((current) => ({ ...current, steps: current.steps.filter((item) => item.id !== step.id) })); setScreen("start"); }} /> : null}
-            {screen === "lead" ? <LeadInspector draft={draft} onChange={setDraft} /> : null}
+            {screen === "lead" ? <LeadInspector siteId={site.id} title={title} draft={draft} onChange={setDraft} /> : null}
             {screen === "thanks" ? <ThanksInspector draft={draft} onChange={setDraft} /> : null}
           </aside>
         </div>
@@ -441,14 +441,27 @@ function StepInspector({ siteId, title, step, steps, consultant, calculatorOpen,
   );
 }
 
-function LeadInspector({ draft, onChange }: { draft: QuizSchema; onChange: (draft: QuizSchema) => void }) {
+function LeadInspector({ siteId, title, draft, onChange }: { siteId: string; title: string; draft: QuizSchema; onChange: (draft: QuizSchema) => void }) {
   const lead = draft.leadScreen;
+  function patch(next: Partial<QuizSchema["leadScreen"]>) {
+    onChange({ ...draft, leadScreen: { ...lead, ...next } });
+  }
   return (
     <div className="grid gap-3">
       <p className="text-sm font-semibold"><span>Контакт</span></p>
-      <Text label="Заголовок" value={lead.headline} onChange={(headline) => onChange({ ...draft, leadScreen: { ...lead, headline } })} />
-      <Text label="Кнопка" value={lead.ctaText} onChange={(ctaText) => onChange({ ...draft, leadScreen: { ...lead, ctaText } })} />
-      <ResultInspector draft={draft} onChange={onChange} />
+      <Text label="Заголовок" value={lead.headline} onChange={(headline) => patch({ headline })} />
+      <Text label="Кнопка" value={lead.ctaText} onChange={(ctaText) => patch({ ctaText })} />
+      <div className="grid gap-2 rounded-xl border border-[#e4e4e7] p-3">
+        <p className="text-xs font-medium text-[#52525b]"><span>Поля формы контакта</span></p>
+        <StudioToggle label="Имя" checked={lead.askName} onChange={(askName) => patch({ askName })} />
+        {lead.askName ? <StudioToggle label="Имя обязательно" checked={lead.nameRequired} onChange={(nameRequired) => patch({ nameRequired })} /> : null}
+        <StudioToggle label="Телефон" checked={lead.askPhone} onChange={(askPhone) => patch({ askPhone })} />
+        {lead.askPhone ? <StudioToggle label="Телефон обязательно" checked={lead.phoneRequired} onChange={(phoneRequired) => patch({ phoneRequired })} /> : null}
+        <StudioToggle label="Email" checked={lead.askEmail} onChange={(askEmail) => patch({ askEmail })} />
+        {lead.askEmail ? <StudioToggle label="Email обязательно" checked={lead.emailRequired} onChange={(emailRequired) => patch({ emailRequired })} /> : null}
+        <StudioToggle label="Выбор мессенджера (WhatsApp / Telegram / Звонок)" checked={lead.askMessenger} onChange={(askMessenger) => patch({ askMessenger })} />
+      </div>
+      <ResultInspector siteId={siteId} title={title} draft={draft} onChange={onChange} />
     </div>
   );
 }

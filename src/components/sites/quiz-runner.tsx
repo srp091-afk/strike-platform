@@ -7,6 +7,8 @@ import type { QuizSchema, QuizStep, ThemeConfig } from "@/lib/sites/quiz-schema"
 import { computeQuizResult } from "@/lib/sites/quiz-calculator";
 import { CalculationLoader, ResultPreviewCard } from "@/components/sites/result-preview";
 import { ConsultantHost, ExpertSign, resolveConsultant, useConsultantNarrow } from "@/components/sites/step-consultant";
+import { Gift } from "lucide-react";
+
 import { GiftProgress, StartScreen, UnlockedGifts } from "@/components/sites/start-screen";
 
 type Answer = { optionIds: string[]; text: string; value: number };
@@ -108,8 +110,17 @@ export function QuizRunner({
   }
 
   async function submit() {
-    if (schema.leadScreen.askPhone && phone.trim().length < 6) {
+    const lead = schema.leadScreen;
+    if (lead.askName && lead.nameRequired && name.trim().length < 2) {
+      setError("Укажите имя.");
+      return;
+    }
+    if (lead.askPhone && lead.phoneRequired && phone.trim().length < 6) {
       setError("Укажите телефон.");
+      return;
+    }
+    if (lead.askEmail && lead.emailRequired && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      setError("Укажите email.");
       return;
     }
     if (!live || !siteId) {
@@ -211,17 +222,11 @@ export function QuizRunner({
             onMessenger={setMessenger}
             onBack={() => { setCalculating(false); setPhase("step"); setIndex(Math.max(0, schema.steps.length - 1)); }}
             onSubmit={() => void submit()}
-            gift={<GiftProgress schema={schema} remaining={1} lead palette={palette} />}
           />
         ) : null}
         {shownPhase === "thanks" ? <Thanks schema={schema} theme={theme} palette={palette} result={computed} compact={compact} estimateText={runningTotal} /> : null}
       </div>
       {resolved && narrow && step ? <ConsultantHost resolved={resolved} palette={palette} compact framed={embedded} stepId={step.id} variant="bubble" /> : null}
-      {schema.hideBranding ? null : (
-        <p className="pb-6 text-center text-xs" style={{ color: palette.muted }}>
-          <a href="https://strikeplatform.io" style={{ color: palette.muted }}>Powered by STRIKE</a>
-        </p>
-      )}
     </div>
   );
   return shell;
@@ -317,17 +322,26 @@ function Lead(props: {
   onMessenger: (value: "whatsapp" | "telegram" | "phone") => void;
   onBack: () => void;
   onSubmit: () => void;
-  gift?: ReactNode;
 }) {
   const lead = props.schema.leadScreen;
   const preview = props.schema.resultPreview.enabled;
+  const dark = props.theme.preset === "dark_premium";
+  const bonus = props.schema.giftsConfig.showInProgress ? props.schema.giftsConfig.items.map((item) => item.title).filter(Boolean).join(", ") : "";
+  const cta = lead.askMessenger ? adaptCta(lead.ctaText, props.messenger) : lead.ctaText;
   const field = { height: 48, border: `1px solid ${props.palette.line}`, borderRadius: props.palette.radius, background: "transparent", color: props.palette.fg, padding: "0 16px", width: "100%" };
   return (
     <form className="flex flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); props.onSubmit(); }}>
       {preview ? <ResultPreviewCard result={props.result} theme={props.theme} palette={props.palette} compact={props.compact} onBack={props.onBack} /> : null}
+      <div className={preview ? `mt-7 border-t pt-7 ${dark ? "border-white/10" : "border-black/[0.08]"}` : ""}>
       {preview ? null : <h2 className="text-3xl font-semibold tracking-tight"><span>{lead.headline}</span></h2>}
-      {props.gift}
-      {preview ? <h3 className="mt-8 text-xl font-semibold tracking-tight"><span>{lead.headline}</span></h3> : null}
+      {preview ? <h3 className="text-xl font-semibold tracking-tight"><span>{lead.headline}</span></h3> : null}
+      {bonus ? (
+        <p className="mb-5 mt-1.5 flex items-center gap-1.5 text-[13px] leading-5" style={{ color: props.palette.muted }}>
+          <Gift size={14} color={props.palette.accent} />
+          <span>Вместе с расчётом откроется: </span>
+          <span className="font-medium" style={{ color: dark ? "#FFFFFF" : "#18181B" }}>{bonus}</span>
+        </p>
+      ) : null}
       {!preview && lead.subheadline ? <p className="mt-3 leading-6" style={{ color: props.palette.muted }}><span>{lead.subheadline}</span></p> : null}
       <ExpertSign consultant={props.schema.consultant} palette={props.palette} />
       {props.estimateText ? <p className="mt-4 text-sm" style={{ color: props.palette.fg }}><span>{props.estimateText}</span></p> : null}
@@ -349,12 +363,20 @@ function Lead(props: {
       <div className={`mt-auto flex gap-3 pt-8 ${preview ? "" : ""}`}>
         {preview ? null : <button type="button" className="h-12 flex-1 border text-sm" style={{ borderColor: props.palette.line, borderRadius: props.palette.radius }} onClick={props.onBack}><span>Назад</span></button>}
         <button type="submit" disabled={props.sending} className={`h-12 text-sm font-semibold text-[#fff] ${preview ? "w-full" : "flex-1"}`} style={{ background: props.palette.accent, borderRadius: props.palette.radius }}>
-          <span>{props.sending ? "Отправка" : lead.ctaText}</span>
+          <span>{props.sending ? "Отправка" : cta}</span>
         </button>
       </div>
-      <p className="mt-3 text-xs" style={{ color: props.palette.muted }}><span>{lead.privacyText}</span></p>
+      <p className="mt-3 text-[12px] leading-relaxed" style={{ color: props.palette.muted }}><span>{lead.privacyText}</span></p>
+      </div>
     </form>
   );
+}
+
+function adaptCta(cta: string, channel: string) {
+  if (!/whatsapp|telegram|звонк/i.test(cta)) return cta;
+  if (channel === "phone") return cta.replace(/\s+(в|по)\s+(whatsapp|telegram|звонку)/i, " по звонку");
+  const label = channel === "telegram" ? "Telegram" : "WhatsApp";
+  return cta.replace(/\s+по\s+звонку/i, ` в ${label}`).replace(/whatsapp/gi, label).replace(/telegram/gi, label);
 }
 
 function Thanks({ schema, theme, palette, result, compact = false, estimateText }: { schema: QuizSchema; theme: ThemeConfig; palette: ReturnType<typeof quizPalette>; result: ReturnType<typeof computeQuizResult>; compact?: boolean; estimateText: string | null }) {

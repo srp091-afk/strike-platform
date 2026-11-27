@@ -176,8 +176,11 @@ export type QuizSchema = {
     bonusText: string;
     ctaText: string;
     askName: boolean;
+    nameRequired: boolean;
     askPhone: boolean;
+    phoneRequired: boolean;
     askEmail: boolean;
+    emailRequired: boolean;
     askMessenger: boolean;
     messengers: Array<"whatsapp" | "telegram" | "phone">;
     privacyText: string;
@@ -290,8 +293,11 @@ export function blankQuiz(title = "Новый квиз"): QuizSchema {
       bonusText: "",
       ctaText: "Получить расчёт",
       askName: true,
+      nameRequired: false,
       askPhone: true,
+      phoneRequired: true,
       askEmail: false,
+      emailRequired: false,
       askMessenger: true,
       messengers: ["whatsapp", "telegram", "phone"],
       privacyText: "Нажимая кнопку, вы соглашаетесь на обработку контакта.",
@@ -595,8 +601,11 @@ function readLead(value: unknown, fallback: QuizSchema["leadScreen"]): QuizSchem
     bonusText: text(record.bonusText, "").slice(0, 140),
     ctaText: text(record.ctaText, fallback.ctaText).slice(0, 40),
     askName: record.askName !== false,
+    nameRequired: record.nameRequired === true,
     askPhone: record.askPhone !== false,
+    phoneRequired: record.phoneRequired !== false,
     askEmail: record.askEmail === true,
+    emailRequired: record.emailRequired === true,
     askMessenger: record.askMessenger !== false,
     messengers: messengers.length > 0 ? messengers : fallback.messengers,
     privacyText: text(record.privacyText, fallback.privacyText).slice(0, 220),

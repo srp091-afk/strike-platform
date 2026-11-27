@@ -1,3 +1,4 @@
+import { detectCurrency } from "@/lib/sites/currency";
 import { emptyHelper, type QuizSchema, type QuizStep, type StartBullet } from "@/lib/sites/quiz-schema";
 
 const GENERIC_TITLES = new Set([
@@ -9,6 +10,8 @@ const GENERIC_TITLES = new Set([
 export function stripMarkers(value: string) {
   return value.replace(/==/g, "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
 }
+
+export { detectCurrency } from "@/lib/sites/currency";
 
 const ACCENT_WORDS = 3;
 const ACCENT_CHARS = 24;
@@ -70,6 +73,7 @@ export function polishGeneratedQuiz(schema: QuizSchema, prompt: string, rawTitle
   const weakSub = !sub.trim() || /ответьте на несколько вопросов/i.test(sub);
   const brand = shortBrand(schema.startScreen.brand.name, headline, niche.brand);
   const cleanTitle = stripMarkers(rawTitle).split(/\s+/).filter(Boolean).slice(0, 4).join(" ") || niche.title;
+  const money = detectCurrency(`${prompt}\n${steps.map((step) => `${step.title} ${step.options.map((option) => option.label).join(" ")}`).join("\n")}`);
   return {
     replacedSteps,
     title: cleanTitle.slice(0, 80),
@@ -86,6 +90,11 @@ export function polishGeneratedQuiz(schema: QuizSchema, prompt: string, rawTitle
         subheadline: { show: true, text: weakSub ? niche.subheadline : sub },
         bullets: { ...schema.startScreen.bullets, show: true, layout: "auto", items: bullets },
         ctaMicroText: { show: true, text: `${questionPhrase(steps.length)} · займёт 45 сек` },
+      },
+      calculator: { ...schema.calculator, currency: money.symbol },
+      resultPreview: {
+        ...schema.resultPreview,
+        currency: { ...schema.resultPreview.currency, symbol: money.symbol, position: money.position },
       },
     },
   };

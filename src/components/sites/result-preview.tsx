@@ -88,7 +88,7 @@ export function ResultPreviewCard({
         </div>
       ) : null}
       {result.table ? <ResultTable result={result} theme={theme} palette={palette} unlocked={unlocked} compact={compact} /> : null}
-      {result.footnote ? <p className="text-[11px] leading-4" style={{ color: palette.muted }}><span>{result.footnote}</span></p> : null}
+      {result.footnote ? <p className="mt-3 text-[12px] leading-relaxed opacity-45"><span>{result.footnote}</span></p> : null}
     </section>
   );
 }
@@ -146,11 +146,15 @@ function MatchBlock({ result, theme, palette, unlocked }: { result: ComputedQuiz
     <div className="grid gap-3">
       <p className="text-xs font-medium" style={{ color: palette.muted }}><span>{result.matches?.badgeText}</span></p>
       <div className="relative grid gap-2">
-        {items.map((item) => (
+        {items.map((item, index) => (
           <article key={item.id} className={`flex gap-3 rounded-2xl border p-3 ${item.locked && !unlocked ? "blur-[5px] select-none pointer-events-none" : ""}`} style={{ borderColor: palette.line, background: palette.card }}>
-            <div className="h-16 w-16 shrink-0 overflow-hidden rounded-xl" style={{ background: palette.line }}>
-              {item.imageUrl ? <img src={item.imageUrl} alt="" className="h-full w-full object-cover" /> : null}
-            </div>
+            {item.imageUrl ? (
+              <img src={item.imageUrl} alt="" className="h-16 w-16 shrink-0 rounded-xl object-cover" />
+            ) : (
+              <span className="grid h-10 w-10 shrink-0 place-items-center text-xs font-semibold tabular-nums" style={{ color: palette.muted }}>
+                <span>{String(index + 1).padStart(2, "0")}</span>
+              </span>
+            )}
             <div className="min-w-0 flex-1">
               <p className="text-sm font-semibold"><span>{item.title}</span></p>
               <p className="mt-1 text-xs" style={{ color: palette.muted }}><span>{item.subtitle}</span></p>
