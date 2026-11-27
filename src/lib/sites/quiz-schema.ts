@@ -127,6 +127,7 @@ export type ResultRule = {
   value: number;
   headline: string;
   description: string;
+  eyebrow?: string;
   overrideVariables?: Record<string, number>;
 };
 
@@ -755,6 +756,7 @@ function readRule(value: unknown): ResultRule | null {
     value: number(record.value, 0),
     headline: text(record.headline, "").slice(0, 180),
     description: text(record.description, "").slice(0, 280),
+    ...(text(record.eyebrow, "") ? { eyebrow: text(record.eyebrow, "").slice(0, 40) } : {}),
     ...(Object.keys(overrideVariables).length > 0 ? { overrideVariables } : {}),
   };
 }

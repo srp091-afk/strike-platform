@@ -279,6 +279,7 @@ function RulesEditor({ preview, onChange, keys }: { preview: ResultPreview; onCh
             </select>
             <input className={field} value={String(rule.value)} onChange={(event) => updateRule(preview, onChange, index, { value: Number(event.target.value) || 0 })} />
           </div>
+          <input className={field} value={rule.eyebrow ?? ""} placeholder="Надзаголовок программы" onChange={(event) => updateRule(preview, onChange, index, { eyebrow: event.target.value })} />
           <input className={field} value={rule.headline} placeholder="Заголовок программы" onChange={(event) => updateRule(preview, onChange, index, { headline: event.target.value })} />
           <input className={field} value={rule.description} placeholder="Описание" onChange={(event) => updateRule(preview, onChange, index, { description: event.target.value })} />
           <input className={field} value={Object.entries(rule.overrideVariables ?? {}).map(([key, value]) => `${key}=${value}`).join(", ")} placeholder="rate=25.2" onChange={(event) => updateRule(preview, onChange, index, { overrideVariables: parseOverrides(event.target.value) })} />

@@ -373,6 +373,7 @@ export function computeQuizResult(
     matchedRuleName = rule.headline || rule.id;
     if (rule.headline) headline = rule.headline;
     if (rule.description) description = rule.description;
+    if (rule.eyebrow) eyebrow = rule.eyebrow;
     if (rule.overrideVariables) variables = { ...variables, ...rule.overrideVariables };
     break;
   }
@@ -436,7 +437,7 @@ export function computeQuizResult(
     enabled: preview.enabled === true,
     template: preview.template,
     matchedRuleName,
-    eyebrow,
+    eyebrow: fill(eyebrow, "text").text,
     headline: headlineText,
     description: descriptionText,
     kpis,
