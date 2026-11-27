@@ -32,18 +32,57 @@ export type QuizStep = {
   expertTip: string;
 };
 
-export type QuizSchema = {
-  startScreen: {
-    enabled: boolean;
-    layout: "centered" | "split_image";
-    eyebrow: string;
-    headline: string;
-    subheadline: string;
-    ctaText: string;
-    bonusBadge: string;
-    trustLine: string;
-    imageUrl: string;
+export type StartLayout = "cinematic_hero" | "editorial_split" | "spotlight_center" | "swiss_minimal";
+export type HighlightStyle = "badge" | "accent_text" | "underline";
+export type BulletIconStyle = "check" | "icon" | "number";
+export type BulletLayout = "auto" | "grid_2" | "stack";
+export type GiftType = "file" | "link" | "discount";
+
+export type StartBullet = { id: string; text: string; icon?: string };
+
+export type QuizGift = {
+  id: string;
+  type: GiftType;
+  title: string;
+  subtitle: string;
+  coverUrl: string | null;
+  fileUrl: string | null;
+  fileName: string | null;
+  actionUrl: string | null;
+  actionLabel: string;
+};
+
+export type GiftsConfig = {
+  showOnStart: boolean;
+  showInProgress: boolean;
+  showOnThankYou: boolean;
+  sectionLabel: string;
+  items: QuizGift[];
+};
+
+export type StartScreen = {
+  enabled: boolean;
+  layout: StartLayout;
+  brand: { show: boolean; name?: string; logoUrl?: string };
+  eyebrow: { show: boolean; text: string };
+  trustBadge: { show: boolean; primaryText: string; secondaryText?: string };
+  headline: string;
+  highlightStyle: HighlightStyle;
+  subheadline: { show: boolean; text: string };
+  bullets: { show: boolean; iconStyle: BulletIconStyle; layout: BulletLayout; items: StartBullet[] };
+  ctaText: string;
+  ctaMicroText: { show: boolean; text: string };
+  media: {
+    type: "none" | "image" | "video";
+    url: string | null;
+    overlayOpacity: number;
+    focalPoint: "center" | "right" | "left" | "top";
   };
+};
+
+export type QuizSchema = {
+  startScreen: StartScreen;
+  giftsConfig: GiftsConfig;
   steps: QuizStep[];
   calculator: { enabled: boolean; basePrice: number; currency: string; label: string };
   leadScreen: {
@@ -120,14 +159,34 @@ export function blankQuiz(title = "Новый квиз"): QuizSchema {
   return {
     startScreen: {
       enabled: true,
-      layout: "centered",
-      eyebrow: "2 минуты",
+      layout: "cinematic_hero",
+      brand: { show: true, name: "", logoUrl: "" },
+      eyebrow: { show: true, text: "2 минуты" },
+      trustBadge: { show: true, primaryText: "Без обязательств", secondaryText: "" },
       headline: title,
-      subheadline: "Ответьте на несколько вопросов. Мы посчитаем ориентир и свяжемся с вами.",
+      highlightStyle: "badge",
+      subheadline: { show: true, text: "Ответьте на несколько вопросов. Мы посчитаем ориентир и свяжемся с вами." },
+      bullets: {
+        show: true,
+        iconStyle: "check",
+        layout: "auto",
+        items: [
+          bullet("b1", "Ориентир **за 2 минуты**"),
+          bullet("b2", "Без созвона, пока сами не попросите"),
+          bullet("b3", "Цифра в ответе, не презентация"),
+          bullet("b4", "Дальше пишет живой менеджер"),
+        ],
+      },
       ctaText: "Начать",
-      bonusBadge: "",
-      trustLine: "Без обязательств",
-      imageUrl: "",
+      ctaMicroText: { show: true, text: "3 вопроса · займёт 45 сек" },
+      media: { type: "none", url: null, overlayOpacity: 60, focalPoint: "center" },
+    },
+    giftsConfig: {
+      showOnStart: true,
+      showInProgress: true,
+      showOnThankYou: true,
+      sectionLabel: "Бонус после прохождения",
+      items: [gift("gift-1", "file", "Чек-лист перед решением", "PDF · короткий разбор", "Скачать PDF")],
     },
     steps: [
       step("budget", 0, "Какой бюджет вы рассматриваете?", "single_choice", ["До 1 млн", "1–3 млн", "3–8 млн", "От 8 млн"]),
@@ -176,6 +235,14 @@ function option(id: string, label: string): QuizOption {
   return { id, label, description: "", imageUrl: "", nextStepId: null, priceImpact: 0 };
 }
 
+function bullet(id: string, textValue: string): StartBullet {
+  return { id, text: textValue, icon: "check" };
+}
+
+function gift(id: string, type: GiftType, title: string, subtitle: string, actionLabel: string): QuizGift {
+  return { id, type, title, subtitle, coverUrl: null, fileUrl: null, fileName: null, actionUrl: null, actionLabel };
+}
+
 export function newStep(order: number): QuizStep {
   const id = `q-${Math.random().toString(36).slice(2, 8)}`;
   return step(id, order, "Новый вопрос", "single_choice", ["Вариант 1", "Вариант 2", "Вариант 3"]);
@@ -186,8 +253,10 @@ export function parseQuizSchema(value: unknown): QuizSchema {
   if (!value || typeof value !== "object" || Array.isArray(value)) return fallback;
   const record = value as Record<string, unknown>;
   const steps = Array.isArray(record.steps) ? record.steps.map(readStep).filter((item): item is QuizStep => item !== null) : [];
+  const startScreen = readStart(record.startScreen, fallback.startScreen);
   return {
-    startScreen: readStart(record.startScreen, fallback.startScreen),
+    startScreen,
+    giftsConfig: readGifts(record.giftsConfig, legacyBonus(record.startScreen)),
     steps: (steps.length > 0 ? steps : fallback.steps).slice(0, 12).map((item, index) => ({ ...item, order: index })),
     calculator: readCalculator(record.calculator),
     leadScreen: readLead(record.leadScreen, fallback.leadScreen),
@@ -196,18 +265,139 @@ export function parseQuizSchema(value: unknown): QuizSchema {
   };
 }
 
-function readStart(value: unknown, fallback: QuizSchema["startScreen"]): QuizSchema["startScreen"] {
+function legacyBonus(value: unknown) {
+  return text(asRecord(value).bonusBadge, "");
+}
+
+function readStart(value: unknown, fallback: StartScreen): StartScreen {
   const record = asRecord(value);
+  const legacyImage = text(record.imageUrl, "");
   return {
     enabled: record.enabled !== false,
-    layout: record.layout === "split_image" ? "split_image" : "centered",
-    eyebrow: text(record.eyebrow, fallback.eyebrow),
-    headline: text(record.headline, fallback.headline),
-    subheadline: text(record.subheadline, fallback.subheadline),
-    ctaText: text(record.ctaText, fallback.ctaText),
-    bonusBadge: text(record.bonusBadge, ""),
-    trustLine: text(record.trustLine, ""),
-    imageUrl: text(record.imageUrl, ""),
+    layout: readLayout(record.layout),
+    brand: readBrand(record.brand),
+    eyebrow: readToggleText(record.eyebrow, fallback.eyebrow.text),
+    trustBadge: readTrust(record.trustBadge, text(record.trustLine, "")),
+    headline: text(record.headline, fallback.headline).slice(0, 180),
+    highlightStyle: readHighlight(record.highlightStyle),
+    subheadline: readToggleText(record.subheadline, fallback.subheadline.text),
+    bullets: readBullets(record.bullets),
+    ctaText: text(record.ctaText, fallback.ctaText).slice(0, 40),
+    ctaMicroText: readMicro(record.ctaMicroText),
+    media: readMedia(record.media, legacyImage),
+  };
+}
+
+function readLayout(value: unknown): StartLayout {
+  if (value === "editorial_split" || value === "split_image") return "editorial_split";
+  if (value === "spotlight_center") return "spotlight_center";
+  if (value === "swiss_minimal") return "swiss_minimal";
+  return "cinematic_hero";
+}
+
+function readHighlight(value: unknown): HighlightStyle {
+  if (value === "accent_text" || value === "underline") return value;
+  return "badge";
+}
+
+function readBrand(value: unknown): StartScreen["brand"] {
+  const record = asRecord(value);
+  const name = text(record.name, "");
+  const logoUrl = text(record.logoUrl, "");
+  return { show: record.show !== false, ...(name ? { name: name.slice(0, 60) } : {}), ...(logoUrl ? { logoUrl } : {}) };
+}
+
+function readToggleText(value: unknown, fallbackText: string): { show: boolean; text: string } {
+  if (typeof value === "string") {
+    const next = value.trim();
+    return { show: next.length > 0, text: (next || fallbackText).slice(0, 220) };
+  }
+  const record = asRecord(value);
+  const next = text(record.text, fallbackText).slice(0, 220);
+  return { show: record.show !== false && next.length > 0, text: next };
+}
+
+function readTrust(value: unknown, trustLine: string): StartScreen["trustBadge"] {
+  const record = asRecord(value);
+  const primary = text(record.primaryText, trustLine).slice(0, 48);
+  const secondary = text(record.secondaryText, "").slice(0, 48);
+  const hasObject = Object.keys(record).length > 0;
+  return {
+    show: hasObject ? record.show !== false && primary.length > 0 : primary.length > 0,
+    primaryText: primary,
+    ...(secondary ? { secondaryText: secondary } : {}),
+  };
+}
+
+function readMicro(value: unknown): StartScreen["ctaMicroText"] {
+  if (typeof value === "string") {
+    const next = value.trim().slice(0, 60);
+    return { show: next.length > 0, text: next };
+  }
+  const record = asRecord(value);
+  const next = text(record.text, "").slice(0, 60);
+  return { show: record.show === true && next.length > 0, text: next };
+}
+
+function readMedia(value: unknown, legacyImage: string): StartScreen["media"] {
+  const record = asRecord(value);
+  const url = text(record.url, legacyImage);
+  const focal = record.focalPoint === "left" || record.focalPoint === "right" || record.focalPoint === "top" ? record.focalPoint : "center";
+  const type = record.type === "video" || record.type === "image" || record.type === "none" ? record.type : url ? "image" : "none";
+  return {
+    type: url && type !== "none" ? type : "none",
+    url: url || null,
+    overlayOpacity: Math.min(85, Math.max(30, Math.round(number(record.overlayOpacity, 60)))),
+    focalPoint: focal,
+  };
+}
+
+function readBullets(value: unknown): StartScreen["bullets"] {
+  const record = asRecord(value);
+  const items = Array.isArray(record.items) ? record.items.map(readBullet).filter((item): item is StartBullet => item !== null).slice(0, 6) : [];
+  const iconStyle: BulletIconStyle = record.iconStyle === "icon" || record.iconStyle === "number" ? record.iconStyle : "check";
+  const layout: BulletLayout = record.layout === "grid_2" || record.layout === "stack" ? record.layout : "auto";
+  return { show: items.length > 0 && record.show !== false, iconStyle, layout, items };
+}
+
+function readBullet(value: unknown): StartBullet | null {
+  const record = asRecord(value);
+  const line = text(record.text, "");
+  if (!line) return null;
+  const icon = text(record.icon, "");
+  return { id: (text(record.id, "") || `b-${Math.random().toString(36).slice(2, 7)}`).slice(0, 40), text: line.slice(0, 120), ...(icon ? { icon: icon.slice(0, 20) } : {}) };
+}
+
+function readGifts(value: unknown, bonusBadge: string): GiftsConfig {
+  const record = asRecord(value);
+  const items = Array.isArray(record.items) ? record.items.map(readGift).filter((item): item is QuizGift => item !== null).slice(0, 3) : [];
+  if (items.length === 0 && bonusBadge.trim()) {
+    items.push(gift("legacy-bonus", "discount", bonusBadge.trim().slice(0, 120), "", "Открыть"));
+  }
+  return {
+    showOnStart: record.showOnStart !== false,
+    showInProgress: record.showInProgress !== false,
+    showOnThankYou: record.showOnThankYou !== false,
+    sectionLabel: text(record.sectionLabel, "Бонус после прохождения").slice(0, 60),
+    items,
+  };
+}
+
+function readGift(value: unknown): QuizGift | null {
+  const record = asRecord(value);
+  const title = text(record.title, "");
+  if (!title) return null;
+  const type: GiftType = record.type === "link" || record.type === "discount" ? record.type : "file";
+  return {
+    id: (text(record.id, "") || `g-${Math.random().toString(36).slice(2, 7)}`).slice(0, 40),
+    type,
+    title: title.slice(0, 120),
+    subtitle: text(record.subtitle, "").slice(0, 80),
+    coverUrl: text(record.coverUrl, "") || null,
+    fileUrl: text(record.fileUrl, "") || null,
+    fileName: text(record.fileName, "") || null,
+    actionUrl: text(record.actionUrl, "") || null,
+    actionLabel: text(record.actionLabel, type === "link" ? "Открыть каталог" : type === "file" ? "Скачать PDF" : "Открыть").slice(0, 40),
   };
 }
 

@@ -31,7 +31,7 @@ export function PublishedSite({ site, live }: { site: SiteRecord; live: boolean 
     return (
       <>
         <Pixels site={site} />
-        <QuizRunner schema={site.published} theme={site.theme} siteId={site.id} live />
+        <QuizRunner schema={site.published} theme={site.theme} siteId={site.id} siteTitle={site.title} live />
       </>
     );
   }

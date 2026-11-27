@@ -31,3 +31,13 @@ export function quizPalette(theme: ThemeConfig): QuizPalette {
     font: theme.fontFamily || "Inter",
   };
 }
+
+/** Тёмный текст на светлом акценте, белый — на тёмном. */
+export function contrastInk(hex: string) {
+  const raw = hex.replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(raw)) return "#FFFFFF";
+  const channel = (offset: number) => parseInt(raw.slice(offset, offset + 2), 16) / 255;
+  const [r, g, b] = [channel(0), channel(2), channel(4)].map((value) => (value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4));
+  const luminance = 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+  return luminance > 0.62 ? "#09090B" : "#FFFFFF";
+}

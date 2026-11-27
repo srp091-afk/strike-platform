@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { quizPalette } from "@/lib/sites/theme";
 import type { QuizSchema, QuizStep, ThemeConfig } from "@/lib/sites/quiz-schema";
+import { GiftProgress, StartScreen, UnlockedGifts } from "@/components/sites/start-screen";
 
 type Answer = { optionIds: string[]; text: string; value: number };
 
@@ -11,14 +12,20 @@ export function QuizRunner({
   schema,
   theme,
   siteId,
+  siteTitle = "",
   live = false,
   screen,
+  compact = false,
+  embedded = false,
 }: {
   schema: QuizSchema;
   theme: ThemeConfig;
   siteId?: string;
+  siteTitle?: string;
   live?: boolean;
   screen?: string;
+  compact?: boolean;
+  embedded?: boolean;
 }) {
   const palette = quizPalette(theme);
   const [phase, setPhase] = useState<"start" | "step" | "lead" | "thanks">(schema.startScreen.enabled ? "start" : "step");
@@ -123,16 +130,24 @@ export function QuizRunner({
     setPhase("thanks");
   }
 
+  const shellClass = embedded ? "flex h-full min-h-0 flex-col" : "flex min-h-[100dvh] flex-col";
+  if (shownPhase === "start") {
+    return (
+      <div className={shellClass} style={{ background: palette.bg, color: palette.fg, fontFamily: palette.font }}>
+        <div className={embedded ? "min-h-0 flex-1" : "min-h-[100dvh]"}>
+          <StartScreen schema={schema} theme={theme} siteTitle={siteTitle} compact={compact} onStart={() => { setPhase("step"); if (live && siteId) void sendEvent(siteId, "quiz_start"); }} />
+        </div>
+      </div>
+    );
+  }
+
   const shell = (
-    <div className="flex min-h-screen flex-col" style={{ background: palette.bg, color: palette.fg, fontFamily: palette.font }}>
+    <div className={shellClass} style={{ background: palette.bg, color: palette.fg, fontFamily: palette.font }}>
       <div className="h-1 w-full" style={{ background: palette.line }}>
         <div className="h-full" style={{ width: `${Math.round(progress * 100)}%`, background: palette.accent }} />
       </div>
-      <div className="mx-auto flex w-full max-w-xl flex-1 flex-col px-5 py-8 sm:py-14">
+      <div className={`mx-auto flex w-full max-w-xl flex-1 flex-col px-5 py-8 sm:py-14 ${embedded ? "min-h-0 overflow-y-auto" : ""}`}>
         {theme.logoUrl ? <img src={theme.logoUrl} alt="" className="mb-8 h-8 w-auto object-contain" /> : null}
-        {shownPhase === "start" ? (
-          <Start schema={schema} palette={palette} onStart={() => { setPhase("step"); if (live && siteId) void sendEvent(siteId, "quiz_start"); }} />
-        ) : null}
         {shownPhase === "step" && step ? (
           <Question
             step={step}
@@ -143,6 +158,7 @@ export function QuizRunner({
             estimate={schema.calculator.enabled ? estimate : null}
             currency={schema.calculator.currency}
             label={schema.calculator.label}
+            gift={<GiftProgress schema={schema} remaining={Math.max(1, total - schema.steps.findIndex((item) => item.id === step.id))} palette={palette} />}
             onChoose={choose}
             onText={(value) => setAnswers((current) => ({ ...current, [step.id]: { optionIds: [], text: value, value: 0 } }))}
             onSlide={(value) => setAnswers((current) => ({ ...current, [step.id]: { optionIds: [], text: "", value } }))}
@@ -168,6 +184,7 @@ export function QuizRunner({
             onMessenger={setMessenger}
             onBack={() => { setPhase("step"); setIndex(Math.max(0, schema.steps.length - 1)); }}
             onSubmit={() => void submit()}
+            gift={<GiftProgress schema={schema} remaining={1} lead palette={palette} />}
           />
         ) : null}
         {shownPhase === "thanks" ? <Thanks schema={schema} palette={palette} estimate={schema.calculator.enabled ? estimate : null} /> : null}
@@ -182,21 +199,6 @@ export function QuizRunner({
   return shell;
 }
 
-function Start({ schema, palette, onStart }: { schema: QuizSchema; palette: ReturnType<typeof quizPalette>; onStart: () => void }) {
-  return (
-    <div className="flex flex-1 flex-col justify-center">
-      {schema.startScreen.eyebrow ? <p className="text-xs font-semibold uppercase tracking-[0.18em]" style={{ color: palette.accent }}><span>{schema.startScreen.eyebrow}</span></p> : null}
-      <h1 className="mt-3 text-4xl font-semibold tracking-tight sm:text-5xl"><span>{schema.startScreen.headline}</span></h1>
-      <p className="mt-4 text-lg leading-7" style={{ color: palette.muted }}><span>{schema.startScreen.subheadline}</span></p>
-      {schema.startScreen.bonusBadge ? <p className="mt-6 text-sm" style={{ color: palette.fg }}><span>{schema.startScreen.bonusBadge}</span></p> : null}
-      <button type="button" className="mt-8 h-12 px-6 text-sm font-semibold text-[#fff]" style={{ background: palette.accent, borderRadius: palette.radius }} onClick={onStart}>
-        <span>{schema.startScreen.ctaText || "Начать"}</span>
-      </button>
-      {schema.startScreen.trustLine ? <p className="mt-4 text-sm" style={{ color: palette.muted }}><span>{schema.startScreen.trustLine}</span></p> : null}
-    </div>
-  );
-}
-
 function Question(props: {
   step: QuizStep;
   index: number;
@@ -206,6 +208,7 @@ function Question(props: {
   estimate: number | null;
   currency: string;
   label: string;
+  gift?: ReactNode;
   onChoose: (id: string, advance: boolean) => void;
   onText: (value: string) => void;
   onSlide: (value: number) => void;
@@ -218,6 +221,7 @@ function Question(props: {
   return (
     <div className="flex flex-1 flex-col">
       <p className="text-xs font-medium" style={{ color: props.palette.muted }}><span>{`Шаг ${props.index + 1} из ${props.total}`}</span></p>
+      {props.gift}
       <h2 className="mt-3 text-3xl font-semibold tracking-tight"><span>{step.title}</span></h2>
       {step.subtitle ? <p className="mt-3 leading-6" style={{ color: palette.muted }}><span>{step.subtitle}</span></p> : null}
       <div className="mt-8 grid gap-3">
@@ -273,12 +277,14 @@ function Lead(props: {
   onMessenger: (value: "whatsapp" | "telegram" | "phone") => void;
   onBack: () => void;
   onSubmit: () => void;
+  gift?: ReactNode;
 }) {
   const lead = props.schema.leadScreen;
   const field = { height: 48, border: `1px solid ${props.palette.line}`, borderRadius: props.palette.radius, background: "transparent", color: props.palette.fg, padding: "0 16px", width: "100%" };
   return (
     <form className="flex flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); props.onSubmit(); }}>
       <h2 className="text-3xl font-semibold tracking-tight"><span>{lead.headline}</span></h2>
+      {props.gift}
       <p className="mt-3 leading-6" style={{ color: props.palette.muted }}><span>{lead.subheadline}</span></p>
       {props.estimate != null ? <p className="mt-4 text-sm"><span>{`${props.schema.calculator.label}: ${props.estimate.toLocaleString("ru-RU")} ${props.schema.calculator.currency}`}</span></p> : null}
       <div className="mt-8 grid gap-3">
@@ -314,6 +320,7 @@ function Thanks({ schema, palette, estimate }: { schema: QuizSchema; palette: Re
       <h2 className="text-4xl font-semibold tracking-tight"><span>{schema.thankYouScreen.headline}</span></h2>
       <p className="mt-4 text-lg leading-7" style={{ color: palette.muted }}><span>{schema.thankYouScreen.subheadline}</span></p>
       {schema.thankYouScreen.showSummary && estimate != null ? <p className="mt-6 text-sm"><span>{`${schema.calculator.label}: ${estimate.toLocaleString("ru-RU")} ${schema.calculator.currency}`}</span></p> : null}
+      <UnlockedGifts schema={schema} palette={palette} />
       {action.type !== "none" && action.url ? (
         <a href={action.url} className="mt-8 inline-flex h-12 items-center justify-center px-6 text-sm font-semibold text-[#fff]" style={{ background: palette.accent, borderRadius: palette.radius }}>
           <span>{action.label || "Открыть"}</span>

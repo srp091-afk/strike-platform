@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 import { QuizRunner } from "@/components/sites/quiz-runner";
+import { StartInspector } from "@/components/sites/start-inspector";
 import { listSubmissions, publishQuizSite, saveQuiz } from "@/app/funnels/site-actions";
 import { brandHost, normalizeCustomDomain, normalizeSubdomain, publicSiteUrl, fallbackSitePath } from "@/lib/sites/domains";
 import { newStep, type AnalyticsConfig, type QuizSchema, type SeoConfig, type ThemeConfig } from "@/lib/sites/quiz-schema";
@@ -108,6 +109,7 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
             {panel === "flow" ? (
               <div className="mt-4 grid gap-2">
                 <FlowButton active={screen === "start"} label="Старт" onClick={() => setScreen("start")} />
+                <FlowButton active={screen === "gifts"} label="Подарки" onClick={() => setScreen("gifts")} />
                 {draft.steps.map((item, index) => (
                   <div key={item.id} className="flex gap-1">
                     <FlowButton active={screen === item.id} label={`${String(index + 1).padStart(2, "0")} ${item.title}`} onClick={() => setScreen(item.id)} />
@@ -148,15 +150,17 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
                 <span>{walk ? "Режим редактирования" : "Пройти как клиент"}</span>
               </button>
             </div>
-            <div className={`mx-auto overflow-hidden border border-[#e4e4e7] bg-[#fff] ${device === "mobile" ? "w-[390px]" : "w-full max-w-3xl"}`}>
+            <div className={`mx-auto flex h-[min(800px,calc(100dvh-8.5rem))] flex-col overflow-hidden border border-[#e4e4e7] bg-[#fff] ${device === "mobile" ? "w-[390px]" : "w-full max-w-5xl"}`}>
               <div className="border-b border-[#e4e4e7] bg-[#fafafa] px-4 py-2 text-center text-xs text-[#71717a]">
                 <span>{liveHost.ok ? publicSiteUrl(liveHost.slug) : "https://имя.strikeplatform.io"}</span>
               </div>
-              <QuizRunner schema={draft} theme={theme} live={false} screen={walk ? undefined : screen} />
+              <div className="min-h-0 flex-1">
+                <QuizRunner schema={draft} theme={theme} siteTitle={title} live={false} screen={walk ? undefined : screen === "gifts" ? "start" : screen} compact={device === "mobile"} embedded />
+              </div>
             </div>
           </main>
           <aside className="overflow-y-auto border-l border-[#e4e4e7] bg-[#fff] p-4">
-            {screen === "start" ? <StartInspector draft={draft} onChange={setDraft} /> : null}
+            {(screen === "start" || screen === "gifts") ? <StartInspector siteId={site.id} title={title} draft={draft} focus={screen === "gifts" ? "gifts" : "start"} onChange={setDraft} /> : null}
             {step ? <StepInspector step={step} steps={draft.steps} onChange={updateStep} onDelete={() => { setDraft({ ...draft, steps: draft.steps.filter((item) => item.id !== step.id) }); setScreen("start"); }} /> : null}
             {screen === "lead" ? <LeadInspector draft={draft} onChange={setDraft} /> : null}
             {screen === "thanks" ? <ThanksInspector draft={draft} onChange={setDraft} /> : null}
@@ -258,19 +262,6 @@ function Settings(props: {
       <label className="grid gap-1 text-xs text-[#52525b]"><span>Яндекс.Метрика</span><input className={field} value={props.analytics.yandexMetrikaId} onChange={(event) => props.onAnalytics({ ...props.analytics, yandexMetrikaId: event.target.value })} /></label>
       <label className="grid gap-1 text-xs text-[#52525b]"><span>SEO title</span><input className={field} value={props.seo.title} onChange={(event) => props.onSeo({ ...props.seo, title: event.target.value })} /></label>
       <label className="grid gap-1 text-xs text-[#52525b]"><span>SEO description</span><textarea className={`${field} h-20 py-2`} value={props.seo.description} onChange={(event) => props.onSeo({ ...props.seo, description: event.target.value })} /></label>
-    </div>
-  );
-}
-
-function StartInspector({ draft, onChange }: { draft: QuizSchema; onChange: (draft: QuizSchema) => void }) {
-  const start = draft.startScreen;
-  return (
-    <div className="grid gap-3">
-      <p className="text-sm font-semibold"><span>Стартовый экран</span></p>
-      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={start.enabled} onChange={(event) => onChange({ ...draft, startScreen: { ...start, enabled: event.target.checked } })} /><span>Показывать</span></label>
-      <Text label="Заголовок" value={start.headline} onChange={(headline) => onChange({ ...draft, startScreen: { ...start, headline } })} />
-      <Text label="Подзаголовок" value={start.subheadline} onChange={(subheadline) => onChange({ ...draft, startScreen: { ...start, subheadline } })} />
-      <Text label="Кнопка" value={start.ctaText} onChange={(ctaText) => onChange({ ...draft, startScreen: { ...start, ctaText } })} />
     </div>
   );
 }

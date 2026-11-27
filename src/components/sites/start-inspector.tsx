@@ -1,0 +1,303 @@
+"use client";
+
+import { useRef, useState, type ReactNode } from "react";
+import { Sparkles } from "lucide-react";
+
+import type { GiftType, QuizGift, QuizSchema, StartLayout } from "@/lib/sites/quiz-schema";
+
+const field = "h-10 w-full rounded-xl border border-[#e4e4e7] bg-[#fff] px-3 text-sm text-[#09090b] outline-none";
+
+const LAYOUTS: { id: StartLayout; label: string }[] = [
+  { id: "cinematic_hero", label: "Cinematic Hero" },
+  { id: "editorial_split", label: "Editorial Split" },
+  { id: "spotlight_center", label: "Spotlight Center" },
+  { id: "swiss_minimal", label: "Swiss Minimal" },
+];
+
+export function StartInspector({
+  siteId,
+  title,
+  draft,
+  focus,
+  onChange,
+}: {
+  siteId: string;
+  title: string;
+  draft: QuizSchema;
+  focus?: "gifts" | "start";
+  onChange: (draft: QuizSchema) => void;
+}) {
+  const start = draft.startScreen;
+  const headlineRef = useRef<HTMLTextAreaElement>(null);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+
+  function patch(next: Partial<QuizSchema["startScreen"]>) {
+    onChange({ ...draft, startScreen: { ...start, ...next } });
+  }
+
+  async function improve() {
+    setBusy("ai");
+    setError("");
+    const response = await fetch("/api/sites/improve-start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ title, startScreen: start, giftsConfig: draft.giftsConfig }),
+    });
+    const body = (await response.json()) as { startScreen?: QuizSchema["startScreen"]; giftsConfig?: QuizSchema["giftsConfig"]; error?: string };
+    setBusy("");
+    if (!response.ok || !body.startScreen || !body.giftsConfig) {
+      setError(body.error || "Не удалось улучшить текст.");
+      return;
+    }
+      onChange({
+        ...draft,
+        startScreen: { ...start, ...body.startScreen, media: start.media, brand: start.brand, layout: start.layout },
+        giftsConfig: {
+          ...body.giftsConfig,
+          items: body.giftsConfig.items.map((item, index) => ({
+            ...item,
+            fileUrl: draft.giftsConfig.items[index]?.fileUrl ?? null,
+            fileName: draft.giftsConfig.items[index]?.fileName ?? null,
+            coverUrl: draft.giftsConfig.items[index]?.coverUrl ?? null,
+            actionUrl: item.type === "link" ? item.actionUrl : draft.giftsConfig.items[index]?.actionUrl ?? null,
+          })),
+        },
+      });
+  }
+
+  return (
+    <div className="grid gap-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="text-sm font-semibold"><span>Стартовый экран</span></p>
+        <button type="button" className="inline-flex items-center gap-1 text-xs text-[#cf0234]" disabled={busy === "ai"} onClick={() => void improve()}>
+          <Sparkles size={12} />
+          <span>{busy === "ai" ? "Пишем" : "Улучшить с ИИ"}</span>
+        </button>
+      </div>
+      {error ? <p className="text-xs text-[#cf0234]"><span>{error}</span></p> : null}
+      <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={start.enabled} onChange={(event) => patch({ enabled: event.target.checked })} /><span>Показывать</span></label>
+
+      <Section title="Стиль" open={focus !== "gifts"}>
+        <div className="grid grid-cols-2 gap-2">
+          {LAYOUTS.map((item) => (
+            <button key={item.id} type="button" className={`rounded-xl border p-2 text-left ${start.layout === item.id ? "border-[#09090b]" : "border-[#e4e4e7]"}`} onClick={() => patch({ layout: item.id })}>
+              <LayoutGlyph layout={item.id} />
+              <span className="mt-1 block text-[10px]">{item.label}</span>
+            </button>
+          ))}
+        </div>
+      </Section>
+
+      <Section title="Фон">
+        <div className="flex flex-wrap gap-2">
+          <UploadButton label={busy === "hero_media" ? "Загрузка" : "Фото или видео"} busy={busy === "hero_media"} onFile={(file) => void upload(siteId, "hero_media", file, setBusy, setError, (asset) => patch({ media: { ...start.media, type: asset.mimeType.startsWith("video/") ? "video" : "image", url: asset.url } }))} />
+          {start.media.url ? <button type="button" className="text-xs text-[#cf0234]" onClick={() => patch({ media: { ...start.media, type: "none", url: null } })}><span>Убрать фон</span></button> : null}
+        </div>
+        <input className={field} placeholder="Или URL фото / видео" value={start.media.url ?? ""} onChange={(event) => {
+          const url = event.target.value.trim();
+          patch({ media: { ...start.media, url: url || null, type: !url ? "none" : /\.(mp4|webm)(\?|$)/i.test(url) ? "video" : "image" } });
+        }} />
+        <label className="grid gap-1 text-xs text-[#52525b]">
+          <span>{`Затемнение фона ${start.media.overlayOpacity}%`}</span>
+          <input type="range" min={30} max={85} value={start.media.overlayOpacity} onChange={(event) => patch({ media: { ...start.media, overlayOpacity: Number(event.target.value) } })} />
+        </label>
+        <select className={field} value={start.media.focalPoint} onChange={(event) => patch({ media: { ...start.media, focalPoint: event.target.value as QuizSchema["startScreen"]["media"]["focalPoint"] } })}>
+          <option value="center">Центр</option>
+          <option value="left">Лево</option>
+          <option value="right">Право</option>
+          <option value="top">Верх</option>
+        </select>
+      </Section>
+
+      <Section title="Текст" open={focus !== "gifts"}>
+        <label className="grid gap-1 text-xs text-[#52525b]">
+          <span>Заголовок</span>
+          <textarea ref={headlineRef} className={`${field} h-20 py-2`} value={start.headline} onChange={(event) => patch({ headline: event.target.value })} />
+        </label>
+        <div className="flex flex-wrap gap-2 text-xs">
+          <button type="button" className="text-[#cf0234]" onClick={() => patch({ headline: wrapAccent(start.headline, headlineRef.current) })}><span>Выделить акцент</span></button>
+          {(["badge", "accent_text", "underline"] as const).map((item) => (
+            <button key={item} type="button" className={start.highlightStyle === item ? "font-semibold" : "text-[#71717a]"} onClick={() => patch({ highlightStyle: item })}>
+              <span>{item === "badge" ? "Плашка" : item === "accent_text" ? "Цвет" : "Подчёркивание"}</span>
+            </button>
+          ))}
+        </div>
+        <ToggleText label="Подзаголовок" value={start.subheadline} onChange={(subheadline) => patch({ subheadline })} />
+        <ToggleText label="Надзаголовок" value={start.eyebrow} onChange={(eyebrow) => patch({ eyebrow })} />
+        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={start.trustBadge.show} onChange={(event) => patch({ trustBadge: { ...start.trustBadge, show: event.target.checked } })} /><span>Бейдж доверия</span></label>
+        {start.trustBadge.show ? (
+          <div className="grid gap-2">
+            <input className={field} placeholder="4.9 Google" value={start.trustBadge.primaryText} onChange={(event) => patch({ trustBadge: { ...start.trustBadge, primaryText: event.target.value } })} />
+            <input className={field} placeholder="Вторая строка" value={start.trustBadge.secondaryText ?? ""} onChange={(event) => patch({ trustBadge: { ...start.trustBadge, secondaryText: event.target.value } })} />
+          </div>
+        ) : null}
+      </Section>
+
+      <Section title="Буллиты">
+        <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={start.bullets.show} onChange={(event) => patch({ bullets: { ...start.bullets, show: event.target.checked } })} /><span>Показывать</span></label>
+        <div className="grid grid-cols-2 gap-2">
+          <select className={field} value={start.bullets.iconStyle} onChange={(event) => patch({ bullets: { ...start.bullets, iconStyle: event.target.value as QuizSchema["startScreen"]["bullets"]["iconStyle"] } })}>
+            <option value="check">Галочки</option>
+            <option value="icon">Иконки</option>
+            <option value="number">Цифры</option>
+          </select>
+          <select className={field} value={start.bullets.layout} onChange={(event) => patch({ bullets: { ...start.bullets, layout: event.target.value as QuizSchema["startScreen"]["bullets"]["layout"] } })}>
+            <option value="auto">Авто</option>
+            <option value="grid_2">2×2</option>
+            <option value="stack">Список</option>
+          </select>
+        </div>
+        <p className="text-[11px] text-[#71717a]"><span>**текст** делает цифры жирными.</span></p>
+        {start.bullets.items.map((item, index) => (
+          <div key={item.id} className="flex gap-2">
+            <input className={field} value={item.text} onChange={(event) => patch({ bullets: { ...start.bullets, items: start.bullets.items.map((entry, entryIndex) => entryIndex === index ? { ...entry, text: event.target.value } : entry) } })} />
+            <button type="button" className="text-xs text-[#cf0234]" onClick={() => patch({ bullets: { ...start.bullets, items: start.bullets.items.filter((entry) => entry.id !== item.id) } })}><span>Удалить</span></button>
+          </div>
+        ))}
+        {start.bullets.items.length < 6 ? (
+          <button type="button" className="text-left text-xs text-[#cf0234]" onClick={() => patch({ bullets: { ...start.bullets, show: true, items: [...start.bullets.items, { id: `b-${Math.random().toString(36).slice(2, 7)}`, text: "Новый пункт", icon: "check" }] } })}>
+            <span>+ Пункт</span>
+          </button>
+        ) : null}
+      </Section>
+
+      <Section title="Кнопка">
+        <input className={field} value={start.ctaText} onChange={(event) => patch({ ctaText: event.target.value })} />
+        <ToggleText label="Подпись под кнопкой" value={start.ctaMicroText} onChange={(ctaMicroText) => patch({ ctaMicroText })} />
+      </Section>
+
+      <Section title="Лид-магниты" open={focus === "gifts"}>
+        <GiftsEditor siteId={siteId} draft={draft} onChange={onChange} busy={busy} setBusy={setBusy} setError={setError} />
+      </Section>
+    </div>
+  );
+}
+
+function GiftsEditor({
+  siteId,
+  draft,
+  onChange,
+  busy,
+  setBusy,
+  setError,
+}: {
+  siteId: string;
+  draft: QuizSchema;
+  onChange: (draft: QuizSchema) => void;
+  busy: string;
+  setBusy: (value: string) => void;
+  setError: (value: string) => void;
+}) {
+  const gifts = draft.giftsConfig;
+  function patch(next: Partial<QuizSchema["giftsConfig"]>) {
+    onChange({ ...draft, giftsConfig: { ...gifts, ...next } });
+  }
+  function update(id: string, next: Partial<QuizGift>) {
+    patch({ items: gifts.items.map((item) => item.id === id ? { ...item, ...next } : item) });
+  }
+  return (
+    <div className="grid gap-3">
+      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={gifts.showOnStart} onChange={(event) => patch({ showOnStart: event.target.checked })} /><span>На старте</span></label>
+      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={gifts.showInProgress} onChange={(event) => patch({ showInProgress: event.target.checked })} /><span>Напоминать на шагах</span></label>
+      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={gifts.showOnThankYou} onChange={(event) => patch({ showOnThankYou: event.target.checked })} /><span>Выдавать на экране «Спасибо»</span></label>
+      <input className={field} value={gifts.sectionLabel} onChange={(event) => patch({ sectionLabel: event.target.value })} />
+      {gifts.items.map((item) => (
+        <div key={item.id} className="grid gap-2 rounded-xl border border-[#e4e4e7] p-3">
+          <select className={field} value={item.type} onChange={(event) => update(item.id, { type: event.target.value as GiftType })}>
+            <option value="file">Файл / PDF</option>
+            <option value="link">Ссылка / Каталог</option>
+            <option value="discount">Скидка / Расчёт</option>
+          </select>
+          <input className={field} placeholder="Название" value={item.title} onChange={(event) => update(item.id, { title: event.target.value })} />
+          <input className={field} placeholder="Короткое описание" value={item.subtitle} onChange={(event) => update(item.id, { subtitle: event.target.value })} />
+          {item.type === "link" ? <input className={field} placeholder="https://" value={item.actionUrl ?? ""} onChange={(event) => update(item.id, { actionUrl: event.target.value || null })} /> : null}
+          <input className={field} placeholder="Текст кнопки на экране «Спасибо»" value={item.actionLabel} onChange={(event) => update(item.id, { actionLabel: event.target.value })} />
+          {item.type === "file" ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <UploadButton label={busy === `file-${item.id}` ? "Загрузка" : "Файл"} busy={busy === `file-${item.id}`} onFile={(file) => void upload(siteId, "gift_file", file, setBusy, setError, (asset) => update(item.id, { fileUrl: asset.url, fileName: asset.fileName }), `file-${item.id}`)} />
+              {item.fileName ? <span>{item.fileName}</span> : null}
+              {item.fileUrl ? <button type="button" className="text-[#cf0234]" onClick={() => update(item.id, { fileUrl: null, fileName: null })}><span>Удалить файл</span></button> : null}
+            </div>
+          ) : null}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <UploadButton label={busy === `cover-${item.id}` ? "Загрузка" : "Обложка"} busy={busy === `cover-${item.id}`} onFile={(file) => void upload(siteId, "gift_cover", file, setBusy, setError, (asset) => update(item.id, { coverUrl: asset.url }), `cover-${item.id}`)} />
+            {item.coverUrl ? <button type="button" className="text-[#cf0234]" onClick={() => update(item.id, { coverUrl: null })}><span>Убрать обложку</span></button> : <span className="text-[#71717a]">Без обложки нарисуется карточка документа</span>}
+          </div>
+          <button type="button" className="text-left text-xs text-[#cf0234]" onClick={() => patch({ items: gifts.items.filter((entry) => entry.id !== item.id) })}><span>Удалить подарок</span></button>
+        </div>
+      ))}
+      {gifts.items.length < 3 ? (
+        <button type="button" className="text-left text-xs text-[#cf0234]" onClick={() => patch({ items: [...gifts.items, { id: `g-${Math.random().toString(36).slice(2, 7)}`, type: "file", title: "Новый подарок", subtitle: "", coverUrl: null, fileUrl: null, fileName: null, actionUrl: null, actionLabel: "Скачать PDF" }] })}>
+          <span>+ Добавить подарок</span>
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
+function Section({ title, open, children }: { title: string; open?: boolean; children: ReactNode }) {
+  return (
+    <details open={open} className="rounded-xl border border-[#e4e4e7] px-3 py-2">
+      <summary className="cursor-pointer text-xs font-semibold"><span>{title}</span></summary>
+      <div className="mt-3 grid gap-2">{children}</div>
+    </details>
+  );
+}
+
+function ToggleText({ label, value, onChange }: { label: string; value: { show: boolean; text: string }; onChange: (value: { show: boolean; text: string }) => void }) {
+  return (
+    <div className="grid gap-1">
+      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={value.show} onChange={(event) => onChange({ ...value, show: event.target.checked })} /><span>{label}</span></label>
+      {value.show ? <input className={field} value={value.text} onChange={(event) => onChange({ ...value, text: event.target.value })} /> : null}
+    </div>
+  );
+}
+
+function LayoutGlyph({ layout }: { layout: StartLayout }) {
+  if (layout === "editorial_split") return <span className="grid h-8 grid-cols-2 gap-0.5"><span className="bg-[#f4f4f5]" /><span className="bg-[#d4d4d8]" /></span>;
+  if (layout === "spotlight_center") return <span className="grid h-8 place-items-center bg-[#18181b]"><span className="h-1 w-6 bg-[#fff]" /></span>;
+  if (layout === "swiss_minimal") return <span className="grid h-8 content-center gap-1 bg-[#fafafa] px-1"><span className="h-px w-4 bg-[#09090b]" /><span className="h-1 w-8 bg-[#09090b]" /></span>;
+  return <span className="relative grid h-8 items-center bg-[#18181b] px-1"><span className="h-1 w-7 bg-[#fff]" /></span>;
+}
+
+function UploadButton({ label, busy, onFile }: { label: string; busy: boolean; onFile: (file: File) => void }) {
+  return (
+    <label className="inline-flex cursor-pointer text-xs text-[#cf0234]">
+      <span>{label}</span>
+      <input className="hidden" type="file" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) onFile(file); event.target.value = ""; }} />
+    </label>
+  );
+}
+
+function wrapAccent(value: string, input: HTMLTextAreaElement | null) {
+  const start = input?.selectionStart ?? value.length;
+  const end = input?.selectionEnd ?? value.length;
+  if (start === end) return `${value}${value ? " " : ""}==акцент==`;
+  return `${value.slice(0, start)}==${value.slice(start, end)}==${value.slice(end)}`;
+}
+
+async function upload(
+  siteId: string,
+  kind: string,
+  file: File,
+  setBusy: (value: string) => void,
+  setError: (value: string) => void,
+  apply: (asset: { url: string; fileName: string; mimeType: string }) => void,
+  key = kind,
+) {
+  setBusy(key);
+  setError("");
+  const body = new FormData();
+  body.set("file", file);
+  body.set("siteId", siteId);
+  body.set("kind", kind);
+  const response = await fetch("/api/sites/upload-asset", { method: "POST", body });
+  const payload = (await response.json()) as { url?: string; fileName?: string; mimeType?: string; error?: string };
+  setBusy("");
+  if (!response.ok || !payload.url || !payload.fileName || !payload.mimeType) {
+    setError(payload.error || "Не удалось загрузить файл.");
+    return;
+  }
+  apply({ url: payload.url, fileName: payload.fileName, mimeType: payload.mimeType });
+}
