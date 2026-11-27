@@ -3,19 +3,25 @@
 import { revalidatePath } from "next/cache";
 
 import { getEffectiveUserId } from "@/lib/account-context";
-import { blankQuiz, type AnalyticsConfig, type QuizSchema, type SeoConfig, type ThemeConfig } from "@/lib/sites/quiz-schema";
-import { createQuizSite, getOwnedSite, publishQuiz, saveQuizDraft } from "@/lib/sites/store";
+import { blankQuiz, type AnalyticsConfig, type QuizSchema, type SeoConfig, type ThemeConfig, type ThemePreset } from "@/lib/sites/quiz-schema";
+import { createBlankLanding, createQuizSite, getOwnedSite, publishQuiz, saveQuizDraft } from "@/lib/sites/store";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export async function createManualQuiz(title: string) {
+export async function createManualQuiz(title: string, preset: ThemePreset = "dark_premium") {
   const site = await createQuizSite({
     title: title.trim() || "Квиз",
     subtitle: "",
     prompt: "",
     schema: blankQuiz(title.trim() || "Квиз"),
-    preset: "dark_premium",
+    preset,
     agentId: null,
   });
+  revalidatePath("/funnels");
+  return { id: site.id };
+}
+
+export async function createManualLanding(title: string, preset: ThemePreset = "dark_premium") {
+  const site = await createBlankLanding({ title: title.trim() || "Новый лендинг", preset });
   revalidatePath("/funnels");
   return { id: site.id };
 }

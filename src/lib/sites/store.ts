@@ -85,6 +85,48 @@ export async function createQuizSite(input: {
   return mapSite(data);
 }
 
+export async function createBlankLanding(input: { title: string; preset: ThemePreset }) {
+  const userId = await getEffectiveUserId();
+  const admin = createSupabaseAdminClient();
+  const title = input.title.trim().slice(0, 160) || "Новый лендинг";
+  const subdomain = await claimSubdomain(admin, title);
+  const theme = defaultTheme(input.preset);
+  const surface = input.preset === "editorial_warm"
+    ? { accent: "#8C6239", background: "#F6F4F0", foreground: "#1C1917" }
+    : input.preset === "light_minimal"
+      ? { accent: "#09090B", background: "#FFFFFF", foreground: "#09090B" }
+      : { accent: theme.accentColor, background: "#0A0A0C", foreground: "#F4F4F5" };
+  const { data, error } = await admin
+    .from("landings")
+    .insert({
+      user_id: userId,
+      slug: subdomain,
+      title,
+      subtitle: "",
+      site_type: "landing",
+      subdomain,
+      status: "draft",
+      theme_config: theme,
+      bullets: {
+        prompt: "",
+        status: "draft",
+        theme: surface,
+        sections: [{
+          type: "hero",
+          content: { eyebrow: "", headline: title, text: "", primaryCta: "Написать", secondaryCta: "", items: [] },
+        }],
+      },
+      agent_id: null,
+      capture_mode: "chat",
+      welcome_message: "",
+      success_message: "",
+    })
+    .select("id")
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "Не удалось создать лендинг.");
+  return { id: String(data.id) };
+}
+
 export async function getOwnedSite(id: string) {
   const userId = await getEffectiveUserId();
   const admin = createSupabaseAdminClient();
