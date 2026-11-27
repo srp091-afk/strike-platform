@@ -19,7 +19,7 @@ export async function prepareHeroImage(input: {
   try {
     const remote = await generateFluxPhotograph(heroPrompt(input), "16:9");
     const response = await fetch(remote, {
-      signal: AbortSignal.timeout(20_000),
+      signal: AbortSignal.timeout(30_000),
       headers: { Accept: "image/*" },
     });
     if (!response.ok) return null;
@@ -73,7 +73,7 @@ export async function generateHeroImage(input: {
   timeoutMs?: number;
   prepared?: Promise<HeroFile | null>;
 }): Promise<string | null> {
-  const timeoutMs = input.timeoutMs ?? 45_000;
+  const timeoutMs = input.timeoutMs ?? 140_000;
   const prepared = input.prepared ?? prepareHeroImage(input);
   const file = await Promise.race([
     prepared,

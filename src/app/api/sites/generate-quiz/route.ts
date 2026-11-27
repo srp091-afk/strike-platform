@@ -9,7 +9,7 @@ import { prepareHeroImage, storeHeroImage } from "@/lib/sites/generate-hero-imag
 import { polishGeneratedQuiz, stripMarkers } from "@/lib/sites/quiz-polish";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export const maxDuration = 90;
+export const maxDuration = 180;
 
 const SCHEMA = {
   type: "object",
@@ -109,7 +109,7 @@ export async function POST(request: Request) {
     });
     const heroFile = await Promise.race([
       heroPromise,
-      new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 100_000)),
     ]);
     if (heroFile) {
       try {

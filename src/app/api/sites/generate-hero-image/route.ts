@@ -5,7 +5,7 @@ import { generateHeroImage } from "@/lib/sites/generate-hero-image";
 import type { StartLayout, ThemePreset } from "@/lib/sites/quiz-schema";
 import { getOwnedSite } from "@/lib/sites/store";
 
-export const maxDuration = 60;
+export const maxDuration = 180;
 
 const LAYOUTS = new Set<StartLayout>(["cinematic_hero", "editorial_split", "spotlight_center", "swiss_minimal"]);
 
@@ -37,7 +37,7 @@ export async function POST(request: Request) {
       theme,
       layout,
       wish: body.wish?.trim().slice(0, 140) ?? "",
-      timeoutMs: 50_000,
+      timeoutMs: 140_000,
     });
     if (!url) return Response.json({ error: "Не удалось сгенерировать фон. Попробуйте ещё раз." }, { status: 502 });
     return Response.json({ url });
