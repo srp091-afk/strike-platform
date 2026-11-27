@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { Monitor, Smartphone } from "lucide-react";
 
 import { QuizRunner } from "@/components/sites/quiz-runner";
-import { StartInspector } from "@/components/sites/start-inspector";
+import { DeliveryFields, StartInspector } from "@/components/sites/start-inspector";
 import { ResultInspector } from "@/components/sites/result-inspector";
 import { ConsultantSettings, HelperInspector } from "@/components/sites/consultant-inspector";
 import { listSubmissions, publishQuizSite, saveQuiz } from "@/app/funnels/site-actions";
@@ -374,6 +374,7 @@ function ThanksInspector({ draft, onChange }: { draft: QuizSchema; onChange: (dr
       <p className="text-sm font-semibold"><span>Спасибо</span></p>
       <Text label="Заголовок" value={thanks.headline} onChange={(headline) => onChange({ ...draft, thankYouScreen: { ...thanks, headline } })} />
       <Text label="Текст" value={thanks.subheadline} onChange={(subheadline) => onChange({ ...draft, thankYouScreen: { ...thanks, subheadline } })} />
+      <DeliveryFields gifts={draft.giftsConfig} onChange={(next) => onChange({ ...draft, giftsConfig: { ...draft.giftsConfig, ...next } })} />
     </div>
   );
 }

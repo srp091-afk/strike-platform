@@ -1,9 +1,9 @@
 "use client";
 
-import { ArrowUpRight, Check, Clock, Download, Home, Lock, MapPin, Shield, Star, Unlock, Wallet } from "lucide-react";
+import { ArrowUpRight, Check, CheckCircle2, Clock, Download, Home, Lock, Mail, MapPin, Shield, Star, Unlock, Wallet } from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
-import type { QuizGift, QuizSchema, StartBullet, ThemeConfig } from "@/lib/sites/quiz-schema";
+import type { DeliveryChannel, QuizGift, QuizSchema, StartBullet, ThemeConfig } from "@/lib/sites/quiz-schema";
 import { questionPhrase, stripMarkers, tightenHeadline } from "@/lib/sites/quiz-polish";
 import { contrastInk, quizPalette, type QuizPalette } from "@/lib/sites/theme";
 
@@ -271,7 +271,7 @@ function Copy({
           <span>{start.eyebrow.text}</span>
         </p>
       ) : null}
-      <h1 className={`font-semibold tracking-[-0.03em] leading-[1.15] ${compact ? "mt-3 text-[1.7rem]" : "mt-3 text-[clamp(1.75rem,3.4vw,3.5rem)]"}`} style={{ color: tone.headline }}>
+      <h1 className={`font-semibold tracking-[-0.03em] leading-[1.32] ${compact ? "mt-3 text-[1.7rem]" : "mt-3 text-[clamp(1.75rem,3.4vw,3.5rem)]"}`} style={{ color: tone.headline }}>
         <Headline text={tightenHeadline(start.headline)} style={start.highlightStyle} accent={palette.accent} ink={ink} />
       </h1>
       {start.subheadline.show && start.subheadline.text ? (
@@ -342,7 +342,8 @@ function Trust({ start, className, dark }: { start: QuizSchema["startScreen"]; c
   );
 }
 
-export function GiftCard({ gift, dark, locked, action, label }: { gift: QuizGift; dark: boolean; locked?: boolean; action?: boolean; label?: string }) {
+export function GiftCard({ gift, dark, locked, action, label, channel = "page" }: { gift: QuizGift; dark: boolean; locked?: boolean; action?: boolean; label?: string; channel?: DeliveryChannel }) {
+  const direct = action && channel === "page";
   return (
     <div className="flex min-w-0 items-center gap-3 rounded-2xl px-3 py-2 backdrop-blur-md" style={glass(dark)}>
       <Cover gift={gift} dark={dark} />
@@ -350,9 +351,9 @@ export function GiftCard({ gift, dark, locked, action, label }: { gift: QuizGift
         {label ? <p className="mb-1 text-[10px] uppercase tracking-[0.08em] opacity-55"><span>{label}</span></p> : null}
         <p className="truncate text-xs font-medium"><span>{gift.title}</span></p>
         {gift.subtitle ? <p className="truncate text-[11px] opacity-70"><span>{gift.subtitle}</span></p> : null}
-        {action ? <GiftAction gift={gift} /> : null}
+        {direct ? <GiftAction gift={gift} /> : null}
       </div>
-      {locked ? <Lock size={13} strokeWidth={1.5} className="shrink-0 opacity-70" /> : <OpenGift gift={gift} />}
+      {locked ? <Lock size={13} strokeWidth={1.5} className="shrink-0 opacity-70" /> : <GiftMark gift={gift} channel={channel} />}
     </div>
   );
 }
@@ -400,26 +401,58 @@ export function GiftProgress({ schema, remaining, lead, palette }: { schema: Qui
 }
 
 export function UnlockedGifts({ schema, palette }: { schema: QuizSchema; palette: QuizPalette }) {
-  const gifts = schema.giftsConfig.items;
-  if (!schema.giftsConfig.showOnThankYou || gifts.length === 0) return null;
+  const config = schema.giftsConfig;
+  const channel = config.deliveryChannel;
+  const gifts = config.showOnThankYou ? config.items : [];
+  const hasResult = schema.resultPreview.enabled;
+  if (gifts.length === 0 && channel === "page" && !hasResult) return null;
+  if (gifts.length === 0 && !hasResult) return null;
   const dark = palette.bg === "#0A0A0C";
+  const status = channel === "messenger" ? "Отправляем в мессенджер" : channel === "email" ? "Отправлено на email" : "Доступ открыт";
+  const StatusIcon = channel === "email" ? Mail : channel === "messenger" ? ArrowUpRight : CheckCircle2;
+  const messenger = httpUrl(config.messengerUrl);
   return (
     <div className="mt-8">
       <p className="mb-3 flex items-center gap-2 text-xs font-medium" style={{ color: palette.accent }}>
-        <Unlock size={14} strokeWidth={1.5} />
-        <span>Доступ открыт</span>
+        <StatusIcon size={14} strokeWidth={1.5} />
+        <span>{status}</span>
       </p>
-      <div className="grid gap-2">
-          {gifts.map((gift) => <GiftCard key={gift.id} gift={gift} dark={dark} action />)}
-      </div>
+      {channel === "email" ? (
+        <p className="mb-3 rounded-2xl px-3 py-3 text-sm leading-6" style={glass(dark)}>
+          <span>{config.emailNote?.trim() || "Проверьте «Входящие» или папку «Спам» — отправили расчёт и файл."}</span>
+        </p>
+      ) : null}
+      {channel === "messenger" && !messenger ? (
+        <p className="mb-3 text-sm leading-6" style={{ color: palette.muted }}>
+          <span>Материал направляется в мессенджер, в котором вы оставили контакт.</span>
+        </p>
+      ) : null}
+      {gifts.length > 0 ? (
+        <div className="grid gap-2">
+          {gifts.map((gift) => <GiftCard key={gift.id} gift={gift} dark={dark} channel={channel} action={channel === "page"} />)}
+        </div>
+      ) : null}
+      {channel === "messenger" && messenger ? (
+        <a className="mt-3 inline-flex h-11 items-center gap-2 rounded-xl px-4 text-sm font-semibold text-[#fff]" href={messenger} target="_blank" rel="noreferrer" style={{ background: palette.accent }}>
+          <span>Открыть мессенджер</span>
+          <ArrowUpRight size={16} strokeWidth={1.75} />
+        </a>
+      ) : null}
     </div>
   );
 }
 
-function OpenGift({ gift }: { gift: QuizGift }) {
+function GiftMark({ gift, channel }: { gift: QuizGift; channel: DeliveryChannel }) {
+  if (channel === "email") return <Mail size={13} strokeWidth={1.5} className="shrink-0" />;
+  if (channel === "messenger") return <ArrowUpRight size={13} strokeWidth={1.5} className="shrink-0" />;
   if (gift.type === "file") return <Download size={13} strokeWidth={1.5} className="shrink-0" />;
   if (gift.type === "link") return <ArrowUpRight size={13} strokeWidth={1.5} className="shrink-0" />;
   return <Unlock size={13} strokeWidth={1.5} className="shrink-0" />;
+}
+
+function httpUrl(value: string | null | undefined) {
+  const url = value?.trim() ?? "";
+  return /^https?:\/\//i.test(url) ? url : "";
 }
 
 function BulletMark({ item, index, style, accent }: { item: StartBullet; index: number; style: QuizSchema["startScreen"]["bullets"]["iconStyle"]; accent: string }) {
@@ -441,8 +474,8 @@ function Headline({ text, style, accent, ink }: { text: string; style: QuizSchem
         return (
           <span
             key={index}
-            className="box-decoration-clone inline rounded-lg px-[0.28em] py-[0.08em] leading-[1.15]"
-            style={{ background: accent, color: ink, lineHeight: 1.15, paddingBlock: "0.08em", paddingInline: "0.28em", boxDecorationBreak: "clone", WebkitBoxDecorationBreak: "clone" }}
+            className="box-decoration-clone inline rounded-lg leading-none"
+            style={{ background: accent, color: ink, lineHeight: 1, paddingBlock: "0.16em", paddingInline: "0.28em", boxDecorationBreak: "clone", WebkitBoxDecorationBreak: "clone" }}
           >
             {value}
           </span>

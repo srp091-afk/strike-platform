@@ -6,7 +6,7 @@ import { FileUp, ImagePlus, Loader2, Sparkles, Trash2, Upload } from "lucide-rea
 import { StudioSelect, StudioToggle } from "@/components/sites/studio-controls";
 import { stripMarkers } from "@/lib/sites/quiz-polish";
 
-import type { GiftType, QuizGift, QuizSchema, StartLayout, ThemePreset } from "@/lib/sites/quiz-schema";
+import type { DeliveryChannel, GiftType, QuizGift, QuizSchema, StartLayout, ThemePreset } from "@/lib/sites/quiz-schema";
 
 const field = "h-10 w-full rounded-xl border border-[#e4e4e7] bg-[#fff] px-3 text-sm text-[#09090b] outline-none";
 
@@ -71,6 +71,9 @@ export function StartInspector({
         startScreen: { ...start, ...body.startScreen, media: start.media, brand: start.brand, layout: start.layout },
         giftsConfig: {
           ...body.giftsConfig,
+          deliveryChannel: draft.giftsConfig.deliveryChannel,
+          messengerUrl: draft.giftsConfig.messengerUrl ?? null,
+          emailNote: draft.giftsConfig.emailNote ?? null,
           items: body.giftsConfig.items.map((item, index) => ({
             ...item,
             fileUrl: draft.giftsConfig.items[index]?.fileUrl ?? null,
@@ -253,6 +256,7 @@ function GiftsEditor({
       <StudioToggle label="На старте" checked={gifts.showOnStart} onChange={(showOnStart) => patch({ showOnStart })} />
       <StudioToggle label="Напоминать на шагах" checked={gifts.showInProgress} onChange={(showInProgress) => patch({ showInProgress })} />
       <StudioToggle label="Выдавать на экране «Спасибо»" checked={gifts.showOnThankYou} onChange={(showOnThankYou) => patch({ showOnThankYou })} />
+      <DeliveryFields gifts={gifts} onChange={patch} />
       <input className={field} value={gifts.sectionLabel} onChange={(event) => patch({ sectionLabel: event.target.value })} />
       {gifts.items.map((item) => (
         <div key={item.id} className="relative grid gap-2 rounded-xl border border-[#e4e4e7] p-3">
@@ -318,6 +322,33 @@ function UploadButton({ label, busy, onFile, icon }: { label: string; busy: bool
       <span>{label}</span>
       <input className="hidden" type="file" disabled={busy} onChange={(event) => { const file = event.target.files?.[0]; if (file) onFile(file); event.target.value = ""; }} />
     </label>
+  );
+}
+
+const DELIVERY: { id: DeliveryChannel; label: string }[] = [
+  { id: "page", label: "На странице" },
+  { id: "messenger", label: "В мессенджер" },
+  { id: "email", label: "На email" },
+];
+
+export function DeliveryFields({ gifts, onChange }: { gifts: QuizSchema["giftsConfig"]; onChange: (next: Partial<QuizSchema["giftsConfig"]>) => void }) {
+  return (
+    <div className="grid gap-2">
+      <p className="text-xs text-[#52525b]"><span>Способ выдачи</span></p>
+      <div className="grid grid-cols-3 gap-1 rounded-lg bg-[#f4f4f5] p-0.5 text-[11px]">
+        {DELIVERY.map((item) => (
+          <button key={item.id} type="button" className={`rounded-md px-1 py-1.5 ${gifts.deliveryChannel === item.id ? "bg-[#fff] font-medium text-[#09090b]" : "text-[#71717a]"}`} onClick={() => onChange({ deliveryChannel: item.id })}>
+            <span>{item.label}</span>
+          </button>
+        ))}
+      </div>
+      {gifts.deliveryChannel === "messenger" ? (
+        <input className={field} placeholder="https://wa.me/… или https://t.me/…" value={gifts.messengerUrl ?? ""} onChange={(event) => onChange({ messengerUrl: event.target.value.trim() || null })} />
+      ) : null}
+      {gifts.deliveryChannel === "email" ? (
+        <textarea className={`${field} h-20 py-2`} placeholder="Проверьте «Входящие» или папку «Спам» — отправили расчёт и файл." value={gifts.emailNote ?? ""} onChange={(event) => onChange({ emailNote: event.target.value.slice(0, 180) || null })} />
+      ) : null}
+    </div>
   );
 }
 

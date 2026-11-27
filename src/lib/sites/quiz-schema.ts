@@ -73,6 +73,7 @@ export type HighlightStyle = "badge" | "accent_text" | "underline";
 export type BulletIconStyle = "check" | "icon" | "number";
 export type BulletLayout = "auto" | "grid_2" | "stack";
 export type GiftType = "file" | "link" | "discount";
+export type DeliveryChannel = "page" | "messenger" | "email";
 
 export type StartBullet = { id: string; text: string; icon?: string };
 
@@ -94,6 +95,9 @@ export type GiftsConfig = {
   showOnThankYou: boolean;
   sectionLabel: string;
   items: QuizGift[];
+  deliveryChannel: DeliveryChannel;
+  messengerUrl?: string | null;
+  emailNote?: string | null;
 };
 
 export type StartScreen = {
@@ -269,6 +273,9 @@ export function blankQuiz(title = "Новый квиз"): QuizSchema {
       showInProgress: true,
       showOnThankYou: true,
       sectionLabel: "Бонус после прохождения",
+      deliveryChannel: "page",
+      messengerUrl: null,
+      emailNote: null,
       items: [gift("gift-1", "file", "Чек-лист перед решением", "PDF · короткий разбор", "Скачать PDF")],
     },
     steps: [
@@ -466,11 +473,15 @@ function readGifts(value: unknown, bonusBadge: string): GiftsConfig {
   if (items.length === 0 && bonusBadge.trim()) {
     items.push(gift("legacy-bonus", "discount", bonusBadge.trim().slice(0, 120), "", "Открыть"));
   }
+  const channel = record.deliveryChannel === "messenger" || record.deliveryChannel === "email" ? record.deliveryChannel : "page";
   return {
     showOnStart: record.showOnStart !== false,
     showInProgress: record.showInProgress !== false,
     showOnThankYou: record.showOnThankYou !== false,
     sectionLabel: text(record.sectionLabel, "Бонус после прохождения").slice(0, 60),
+    deliveryChannel: channel,
+    messengerUrl: text(record.messengerUrl, "").slice(0, 300) || null,
+    emailNote: text(record.emailNote, "").slice(0, 180) || null,
     items,
   };
 }

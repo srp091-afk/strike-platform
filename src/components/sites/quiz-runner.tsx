@@ -359,18 +359,24 @@ function Lead(props: {
 
 function Thanks({ schema, theme, palette, result, compact = false, estimateText }: { schema: QuizSchema; theme: ThemeConfig; palette: ReturnType<typeof quizPalette>; result: ReturnType<typeof computeQuizResult>; compact?: boolean; estimateText: string | null }) {
   const action = schema.thankYouScreen.primaryAction;
-  const reveal = schema.resultPreview.enabled && schema.resultPreview.revealFullResultOnThankYou;
+  const channel = schema.giftsConfig.deliveryChannel;
+  const reveal = channel === "page" && schema.resultPreview.enabled && schema.resultPreview.revealFullResultOnThankYou;
+  const held = schema.resultPreview.enabled && !reveal
+    ? channel === "messenger"
+      ? "Расчёт подготовлен для отправки в чат"
+      : channel === "email"
+        ? "Расчёт отправлен на email"
+        : "Полный расчёт зафиксирован и отправляется вам"
+    : "";
   return (
     <div className="flex flex-1 flex-col">
       {reveal ? <ResultPreviewCard result={result} theme={theme} palette={palette} compact={compact} unlocked /> : null}
-      {schema.resultPreview.enabled && !reveal ? (
-        <p className="text-sm font-medium"><span>Полный расчёт зафиксирован и отправляется вам</span></p>
-      ) : null}
+      {held ? <p className="text-sm font-medium" style={{ color: palette.fg }}><span>{held}</span></p> : null}
       <h2 className={`${reveal || schema.resultPreview.enabled ? "mt-6" : ""} text-4xl font-semibold tracking-tight`}><span>{schema.thankYouScreen.headline}</span></h2>
       <p className="mt-4 text-lg leading-7" style={{ color: palette.muted }}><span>{schema.thankYouScreen.subheadline}</span></p>
       {schema.thankYouScreen.showSummary && estimateText && !schema.resultPreview.enabled ? <p className="mt-6 text-sm" style={{ color: palette.fg }}><span>{estimateText}</span></p> : null}
       <UnlockedGifts schema={schema} palette={palette} />
-      {action.type !== "none" && action.url ? (
+      {channel === "page" && action.type !== "none" && action.url ? (
         <a href={action.url} className="mt-8 inline-flex h-12 items-center justify-center px-6 text-sm font-semibold text-[#fff]" style={{ background: palette.accent, borderRadius: palette.radius }}>
           <span>{action.label || "Открыть"}</span>
         </a>
