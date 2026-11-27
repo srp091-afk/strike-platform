@@ -1,11 +1,12 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
-import { FileUp, ImagePlus, Sparkles, Trash2, Upload } from "lucide-react";
+import { FileUp, ImagePlus, Loader2, Sparkles, Trash2, Upload } from "lucide-react";
 
 import { StudioSelect, StudioToggle } from "@/components/sites/studio-controls";
+import { stripMarkers } from "@/lib/sites/quiz-polish";
 
-import type { GiftType, QuizGift, QuizSchema, StartLayout } from "@/lib/sites/quiz-schema";
+import type { GiftType, QuizGift, QuizSchema, StartLayout, ThemePreset } from "@/lib/sites/quiz-schema";
 
 const field = "h-10 w-full rounded-xl border border-[#e4e4e7] bg-[#fff] px-3 text-sm text-[#09090b] outline-none";
 
@@ -29,12 +30,14 @@ const LAYOUTS: { id: StartLayout; label: string }[] = [
 export function StartInspector({
   siteId,
   title,
+  preset,
   draft,
   focus,
   onChange,
 }: {
   siteId: string;
   title: string;
+  preset: ThemePreset;
   draft: QuizSchema;
   focus?: "gifts" | "start";
   onChange: (draft: QuizSchema) => void;
@@ -43,6 +46,7 @@ export function StartInspector({
   const headlineRef = useRef<HTMLTextAreaElement>(null);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
+  const [wish, setWish] = useState("");
 
   function patch(next: Partial<QuizSchema["startScreen"]>) {
     onChange({ ...draft, startScreen: { ...start, ...next } });
@@ -78,6 +82,36 @@ export function StartInspector({
       });
   }
 
+  async function generateBackground() {
+    setBusy("hero_ai");
+    setError("");
+    const response = await fetch("/api/sites/generate-hero-image", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        siteId,
+        nichePrompt: `${title}. ${stripMarkers(start.headline)}`.trim(),
+        theme: preset,
+        layout: start.layout,
+        wish,
+      }),
+    });
+    const body = (await response.json()) as { url?: string; error?: string };
+    setBusy("");
+    if (!response.ok || !body.url) {
+      setError(body.error || "Не удалось сгенерировать фон.");
+      return;
+    }
+    patch({
+      media: {
+        ...start.media,
+        type: "image",
+        url: body.url,
+        focalPoint: start.layout === "cinematic_hero" ? "right" : start.media.focalPoint,
+      },
+    });
+  }
+
   return (
     <div className="grid gap-3">
       <div className="flex items-center justify-between gap-2">
@@ -101,8 +135,15 @@ export function StartInspector({
         </div>
       </Section>
 
-      <Section title="Фон">
-        <UploadButton icon="upload" label={busy === "hero_media" ? "Загрузка" : "Загрузить фото или видео"} busy={busy === "hero_media"} onFile={(file) => void upload(siteId, "hero_media", file, setBusy, setError, (asset) => patch({ media: { ...start.media, type: asset.mimeType.startsWith("video/") ? "video" : "image", url: asset.url } }))} />
+      <Section title="Фон" open={focus !== "gifts"}>
+        <div className="flex flex-wrap items-center gap-2">
+          <UploadButton icon="upload" label={busy === "hero_media" ? "Загрузка" : "Загрузить фото или видео"} busy={busy === "hero_media"} onFile={(file) => void upload(siteId, "hero_media", file, setBusy, setError, (asset) => patch({ media: { ...start.media, type: asset.mimeType.startsWith("video/") ? "video" : "image", url: asset.url } }))} />
+          <button type="button" className="inline-flex items-center gap-1.5 rounded-lg bg-[#09090b] px-2.5 py-1.5 text-xs font-medium text-[#fff] disabled:opacity-60" disabled={busy === "hero_ai" || busy === "hero_media"} onClick={() => void generateBackground()}>
+            {busy === "hero_ai" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            <span>{busy === "hero_ai" ? "Генерируем фон" : "✨ Сгенерировать фон с ИИ"}</span>
+          </button>
+        </div>
+        <input className={field} placeholder="Пожелание: тёмная минималистичная ванная комната" value={wish} onChange={(event) => setWish(event.target.value)} />
         {start.media.url ? <button type="button" className="text-left text-xs text-[#71717a]" onClick={() => patch({ media: { ...start.media, type: "none", url: null } })}><span>Убрать фон</span></button> : null}
         <input className={field} placeholder="Или URL фото / видео" value={start.media.url ?? ""} onChange={(event) => {
           const url = event.target.value.trim();

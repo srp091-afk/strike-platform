@@ -157,6 +157,38 @@ export async function generateImageWithFlux(
   }
 }
 
+/** Same Flux model as Ads & SMM, but throws instead of swapping in a placeholder. */
+export async function generateFluxPhotograph(prompt: string, aspectRatio: string): Promise<string> {
+  if (!process.env.REPLICATE_API_TOKEN?.trim()) {
+    throw new Error("REPLICATE_API_TOKEN is not set");
+  }
+  const safePrompt = prompt.startsWith("No text,") ? prompt : `${FLUX_NO_TEXT_PREFIX}${prompt}`;
+  let prediction = await replicate.predictions.create({
+    model: FLUX_MODEL,
+    input: {
+      prompt: safePrompt,
+      aspect_ratio: aspectRatio,
+      output_format: "webp",
+      output_quality: 90,
+      num_outputs: 1,
+      seed: Math.floor(Math.random() * 2_147_483_647),
+    },
+  });
+  if (!isTerminalStatus(prediction.status)) {
+    prediction = await replicate.wait(prediction, { interval: 1000 });
+  }
+  if (prediction.status !== "succeeded") {
+    throw new Error(`Flux ${String(prediction.status)}`);
+  }
+  const output = prediction.output;
+  const items = Array.isArray(output) ? output : output != null ? [output] : [];
+  const imageUrl = resolveOutputUrl(items[0]);
+  if (!imageUrl || /placehold\.co/i.test(imageUrl)) {
+    throw new Error("Flux returned no image");
+  }
+  return imageUrl;
+}
+
 function isTerminalStatus(status: unknown) {
   return status === "succeeded" || status === "failed" || status === "canceled";
 }

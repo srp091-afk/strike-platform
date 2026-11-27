@@ -2,13 +2,14 @@ import { connection } from "next/server";
 
 import { getEffectiveUserId } from "@/lib/account-context";
 import { getOpenAI } from "@/lib/openai";
-import { createQuizSite } from "@/lib/sites/store";
+import { createQuizSite, saveQuizDraft } from "@/lib/sites/store";
 import { defaultConsultant, parseQuizSchema, type QuizSchema, type ThemePreset } from "@/lib/sites/quiz-schema";
 import { repairGeneratedPreview } from "@/lib/sites/quiz-calculator";
+import { prepareHeroImage, storeHeroImage } from "@/lib/sites/generate-hero-image";
 import { polishGeneratedQuiz, stripMarkers } from "@/lib/sites/quiz-polish";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
-export const maxDuration = 60;
+export const maxDuration = 90;
 
 const SCHEMA = {
   type: "object",
@@ -42,6 +43,7 @@ export async function POST(request: Request) {
     const userId = await getEffectiveUserId();
     const agent = body.agentId ? await loadAgent(userId, body.agentId) : null;
     const preset = body.preset === "light_minimal" || body.preset === "editorial_warm" ? body.preset : "dark_premium";
+    const heroPromise = prepareHeroImage({ nichePrompt: prompt, theme: preset, layout: "cinematic_hero" });
     const completion = await getOpenAI().chat.completions.create({
       model: "gpt-4o-mini",
       temperature: 0.4,
@@ -52,9 +54,12 @@ export async function POST(request: Request) {
             "Ты проектируешь квиз для прямого отклика. Пиши коротко и конкретно, без фраз вроде «уникальные решения» и «лидеры рынка».",
             "4–6 вопросов. Каждый квалифицирует: бюджет, срок, параметры, цель. У варианта 3–5 конкретных ответов.",
             "Язык — русский. Верни JSON со startScreen, giftsConfig, steps, calculator, leadScreen, thankYouScreen, resultPreview, title, subtitle.",
-            "startScreen.layout: cinematic_hero. swiss_minimal только если это чистый B2B без визуального объекта.",
+            "startScreen.layout: всегда cinematic_hero, для любой ниши, включая B2B, маркетинг и аудит. swiss_minimal не выбирай.",
             "startScreen.eyebrow.text: точный нишевый тег из 3–5 слов. trustBadge.primaryText: короткий реалистичный факт-заглушка.",
-            "headline: конкретный заголовок. В ==двойные равенства== оборачивай только короткую концовку с цифрой или условием, 2–4 слова. Весь заголовок целиком оборачивать запрещено.",
+            "startScreen.headline — это оффер прямого отклика: обещание результата, расчёта или подборки. Это НЕ вопрос анкеты.",
+            "Запрещено заканчивать headline знаком ? и запрещено повторять формулировку первого вопроса.",
+            "Пример маркетинга: «Узнайте прогноз лидов и CPL для вашего бизнеса ==за 45 секунд==». Пример ремонта: «Рассчитайте точную смету ремонта под ключ ==за 1 минуту==».",
+            "В ==двойные равенства== оборачивай строго 1–3 коротких слова, не длиннее 24 символов, чтобы акцент встал в одну строку. Весь заголовок целиком оборачивать запрещено.",
             "title: короткое имя проекта, 2–4 слова, без == и без **. startScreen.brand.name: название студии из 2–3 слов, не копия заголовка.",
             "subheadline.text: 1–2 прямых предложения без фразы «ответьте на несколько вопросов». bullets.items: ровно 4 коротких пункта, цифры оберни в **двойные звёздочки**, bullets.show true, layout auto.",
             "ctaText: глагол результата. ctaMicroText: { show: true, text: «N вопросов · займёт 45 сек» }.",
@@ -102,6 +107,29 @@ export async function POST(request: Request) {
       agentId: agent?.id ?? null,
       subdomain: body.subdomain || polished.subdomainSeed,
     });
+    const heroFile = await Promise.race([
+      heroPromise,
+      new Promise<null>((resolve) => setTimeout(() => resolve(null), 15_000)),
+    ]);
+    if (heroFile) {
+      try {
+        const url = await storeHeroImage(userId, site.id, heroFile);
+        if (url) {
+          await saveQuizDraft(site.id, {
+            draft: {
+              ...polished.schema,
+              startScreen: {
+                ...polished.schema.startScreen,
+                layout: "cinematic_hero",
+                media: { type: "image", url, overlayOpacity: 62, focalPoint: "right" },
+              },
+            },
+          });
+        }
+      } catch (heroError) {
+        console.error("[generate-quiz] фон не сохранился", heroError instanceof Error ? heroError.message : heroError);
+      }
+    }
     return Response.json({ id: site.id });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "Не удалось собрать квиз." }, { status: 500 });

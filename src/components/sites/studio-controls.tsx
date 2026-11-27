@@ -1,14 +1,31 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type CSSProperties } from "react";
 import { ChevronDown } from "lucide-react";
+
+const realInk = {
+  "--color-white": "#ffffff",
+  "--color-zinc-200": "#e4e4e7",
+  "--color-zinc-950": "#09090b",
+} as CSSProperties;
 
 export function StudioToggle({ checked, onChange, label }: { checked: boolean; onChange: (value: boolean) => void; label: string }) {
   return (
     <label className="flex items-center justify-between gap-3 text-xs text-[#52525b]">
       <span>{label}</span>
-      <button type="button" role="switch" aria-checked={checked} className={`relative h-[18px] w-8 shrink-0 rounded-full transition-colors ${checked ? "bg-[#09090b]" : "bg-[#e4e4e7]"}`} onClick={() => onChange(!checked)}>
-        <span className={`absolute top-0.5 h-3.5 w-3.5 rounded-full bg-[#fff] transition-transform ${checked ? "translate-x-3.5" : "translate-x-0.5"}`} />
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        style={{ ...realInk, backgroundColor: checked ? "#09090b" : "#e4e4e7" }}
+        className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border-0 p-0 transition-colors ${checked ? "bg-zinc-950" : "bg-zinc-200"}`}
+        onClick={() => onChange(!checked)}
+      >
+        <span
+          aria-hidden="true"
+          style={{ backgroundColor: "#ffffff", width: "1rem", height: "1rem" }}
+          className={`pointer-events-none block h-4 w-4 rounded-full bg-white shadow-xs transition-transform ${checked ? "translate-x-4" : "translate-x-0.5"}`}
+        />
       </button>
     </label>
   );

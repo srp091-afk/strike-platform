@@ -180,7 +180,7 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
             </div>
           </main>
           <aside className="overflow-y-auto border-l border-[#e4e4e7] bg-[#fff] p-4">
-            {(screen === "start" || screen === "gifts") ? <StartInspector siteId={site.id} title={title} draft={draft} focus={screen === "gifts" ? "gifts" : "start"} onChange={setDraft} /> : null}
+            {(screen === "start" || screen === "gifts") ? <StartInspector siteId={site.id} title={title} preset={theme.preset} draft={draft} focus={screen === "gifts" ? "gifts" : "start"} onChange={setDraft} /> : null}
             {step ? <StepInspector siteId={site.id} title={title} step={step} steps={draft.steps} consultant={draft.consultant} calculatorOpen={draft.resultPreview.enabled} onChange={updateStep} onConsultant={(consultant) => setDraft((current) => ({ ...current, consultant }))} onDelete={() => { setDraft((current) => ({ ...current, steps: current.steps.filter((item) => item.id !== step.id) })); setScreen("start"); }} /> : null}
             {screen === "lead" ? <LeadInspector draft={draft} onChange={setDraft} /> : null}
             {screen === "thanks" ? <ThanksInspector draft={draft} onChange={setDraft} /> : null}

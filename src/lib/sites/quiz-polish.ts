@@ -10,15 +10,41 @@ export function stripMarkers(value: string) {
   return value.replace(/==/g, "").replace(/\*\*/g, "").replace(/\s+/g, " ").trim();
 }
 
+const ACCENT_WORDS = 3;
+const ACCENT_CHARS = 24;
+
 export function tightenHeadline(value: string) {
   const trimmed = value.trim();
-  if (trimmed.includes("==") && !/^==[\s\S]+==$/.test(trimmed)) return trimmed;
+  if (trimmed.includes("==") && !/^==[\s\S]+==$/.test(trimmed)) return clampAccent(trimmed);
   const inner = trimmed.replace(/^==/, "").replace(/==$/, "").trim();
   const words = inner.split(/\s+/).filter(Boolean);
   if (words.length <= 3) return words.join(" ");
   const digit = words.findIndex((word) => /\d/.test(word));
   const start = digit > 0 ? digit - 1 : Math.max(1, words.length - 3);
-  return `${words.slice(0, start).join(" ")} ==${words.slice(start).join(" ")}==`;
+  return clampAccent(`${words.slice(0, start).join(" ")} ==${words.slice(start).join(" ")}==`);
+}
+
+/** Акцент внутри == == — строго 1–3 слова и не длиннее 24 символов. */
+export function clampAccent(value: string) {
+  return value.replace(/==([^=]+)==/g, (_, raw: string) => {
+    const words = String(raw).replace(/\s+/g, " ").trim().split(" ").filter(Boolean).slice(0, ACCENT_WORDS);
+    if (words.length === 0) return "";
+    let accent = words.join(" ");
+    if (accent.length > ACCENT_CHARS) {
+      const cut = accent.slice(0, ACCENT_CHARS).replace(/\s+\S*$/, "").trim();
+      accent = cut || words[0]!.slice(0, ACCENT_CHARS);
+    }
+    return `==${accent}==`;
+  });
+}
+
+/** Заголовок старта — оффер, а не вопрос анкеты. */
+export function isQuestionHeadline(headline: string, firstQuestion = "") {
+  const plain = stripMarkers(headline).replace(/\s+/g, " ").trim();
+  if (!plain || /\?\s*$/.test(plain)) return true;
+  const offer = plain.toLowerCase().replace(/[?!.…]+$/g, "").trim();
+  const question = stripMarkers(firstQuestion).replace(/\s+/g, " ").trim().toLowerCase().replace(/[?!.…]+$/g, "").trim();
+  return Boolean(question) && offer === question;
 }
 
 export function questionPhrase(count: number) {
@@ -37,7 +63,7 @@ export function polishGeneratedQuiz(schema: QuizSchema, prompt: string, rawTitle
   const replacedSteps = isGenericQuiz(schema.steps);
   const steps = replacedSteps ? niche.steps : schema.steps;
   const sourceHeadline = schema.startScreen.headline.trim() ? schema.startScreen.headline : niche.headline;
-  const headline = tightenHeadline(sourceHeadline);
+  const headline = resolveOfferHeadline(sourceHeadline, steps, niche.headline);
   const richBullets = schema.startScreen.bullets.items.filter((item) => /\d|\*\*/.test(item.text)).length;
   const bullets = schema.startScreen.bullets.items.length >= 4 && richBullets >= 3 ? schema.startScreen.bullets.items.slice(0, 4) : niche.bullets;
   const sub = schema.startScreen.subheadline.text;
@@ -53,6 +79,7 @@ export function polishGeneratedQuiz(schema: QuizSchema, prompt: string, rawTitle
       steps,
       startScreen: {
         ...schema.startScreen,
+        layout: "cinematic_hero",
         headline,
         highlightStyle: "badge",
         brand: { ...schema.startScreen.brand, show: true, name: brand },
@@ -62,6 +89,12 @@ export function polishGeneratedQuiz(schema: QuizSchema, prompt: string, rawTitle
       },
     },
   };
+}
+
+function resolveOfferHeadline(raw: string, steps: QuizStep[], fallback: string) {
+  const first = steps[0]?.title ?? "";
+  if (isQuestionHeadline(raw, first)) return clampAccent(fallback);
+  return tightenHeadline(raw);
 }
 
 function shortBrand(name: string | undefined, headline: string, fallback: string) {
@@ -88,7 +121,7 @@ function renovation(): Pack {
     title: "Студия ремонта",
     slug: "remont-pod-klyuch",
     brand: "Студия ремонта",
-    headline: "Ремонт под ключ ==от 18 000 ₽/м²==",
+    headline: "Рассчитайте точную смету ремонта под ключ ==за 1 минуту==",
     subheadline: "Смета по этапам до звонка. Срок и состав работ видны сразу.",
     bullets: [
       bullet("b1", "Черновая смета за **1 день**"),
@@ -154,7 +187,7 @@ function clinic(): Pack {
     title: "Клиника",
     slug: "clinic-implant",
     brand: "Клиника",
-    headline: "Имплантация ==с планом и вилкой цены==",
+    headline: "Рассчитайте план имплантации ==за 1 визит==",
     subheadline: "Предварительный план лечения до визита. Диагностику не продаём вслепую.",
     bullets: [
       bullet("b1", "План за **1 визит**"),
@@ -176,7 +209,7 @@ function audit(): Pack {
     title: "Аудит заявок",
     slug: "audit-zayavok",
     brand: "Аудит заявок",
-    headline: "Прогноз заявок ==по вашему бюджету==",
+    headline: "Узнайте прогноз лидов и CPL для вашего бизнеса ==за 45 секунд==",
     subheadline: "Считаем лиды и CPL до созвона. План роста отдаём после контакта.",
     bullets: [
       bullet("b1", "Ориентир CPL сразу"),

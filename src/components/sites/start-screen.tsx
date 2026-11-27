@@ -32,10 +32,7 @@ export function StartScreen({
   const palette = quizPalette(theme);
   const start = schema.startScreen;
   const gifts = schema.giftsConfig.showOnStart ? schema.giftsConfig.items : [];
-  const overMedia = (start.layout === "cinematic_hero" || start.layout === "spotlight_center") && Boolean(start.media.url);
-  const tone = overMedia
-    ? { fg: "#F4F4F5", muted: "rgba(244,244,245,0.74)", line: "rgba(255,255,255,0.12)", dark: true }
-    : { fg: palette.fg, muted: palette.muted, line: palette.line, dark: theme.preset === "dark_premium" };
+  const tone = startInk(theme);
   const copy = (
     <Copy
       schema={schema}
@@ -55,7 +52,7 @@ export function StartScreen({
       theme={theme}
       siteTitle={siteTitle}
       palette={palette}
-      tone={{ fg: palette.fg, muted: palette.muted, line: palette.line, dark: theme.preset === "dark_premium" }}
+      tone={tone}
       gifts={gifts}
       compact={compact}
       align="left"
@@ -79,7 +76,7 @@ export function StartScreen({
                 theme={theme}
                 siteTitle={siteTitle}
                 palette={palette}
-                tone={{ fg: palette.fg, muted: palette.muted, line: palette.line, dark: theme.preset === "dark_premium" }}
+                tone={tone}
                 gifts={gifts}
                 compact
                 align="left"
@@ -98,15 +95,14 @@ export function StartScreen({
         <div className={`relative z-10 flex h-full flex-col justify-center ${compact ? "px-5 py-6" : "px-6 py-8"}`}>
           <div className="mx-auto w-full max-w-2xl">{copy}</div>
         </div>
-        <Trust start={start} className={compact ? "left-1/2 top-4 -translate-x-1/2" : "left-1/2 top-6 -translate-x-1/2"} dark={overMedia || theme.preset === "dark_premium"} />
+        <Trust start={start} className={compact ? "left-1/2 top-4 -translate-x-1/2" : "left-1/2 top-6 -translate-x-1/2"} dark={theme.preset === "dark_premium"} />
       </Stage>
     );
   }
   if (start.layout === "swiss_minimal") {
     return (
-      <div className="relative flex h-full min-h-0 flex-col justify-center overflow-hidden" style={{ background: palette.bg, color: palette.fg, fontFamily: palette.font }}>
+      <div className="relative flex h-full min-h-0 flex-col justify-center overflow-hidden" style={{ background: architectural(theme), color: tone.fg, fontFamily: palette.font }}>
         <div className={`mx-auto flex w-full max-w-3xl flex-col ${compact ? "px-5 py-6" : "px-10 py-8"}`}>
-          <div className="mb-5 h-px w-12" style={{ background: palette.fg }} />
           {copy}
         </div>
         <Trust start={start} className={compact ? "right-4 top-4" : "right-8 top-8"} dark={theme.preset === "dark_premium"} />
@@ -118,7 +114,7 @@ export function StartScreen({
       <div className={`relative z-10 flex h-full min-h-0 flex-col justify-center ${compact ? "px-5 py-6" : "px-8 py-8 md:px-12"}`}>
         <div className={compact ? "w-full" : "max-w-3xl"}>{copy}</div>
       </div>
-      <Trust start={start} className={compact ? "right-4 top-4" : "right-8 top-7"} dark={overMedia || theme.preset === "dark_premium"} />
+      <Trust start={start} className={compact ? "right-4 top-4" : "right-8 top-7"} dark={theme.preset === "dark_premium"} />
     </Stage>
   );
 }
@@ -137,7 +133,7 @@ function EditorialDesktop({
   content: ReactNode;
 }) {
   return (
-    <div className="grid h-full min-h-0 grid-cols-2 overflow-hidden" style={{ background: palette.bg, color: palette.fg, fontFamily: palette.font }}>
+    <div className="grid h-full min-h-0 grid-cols-2 overflow-hidden" style={{ background: architectural(theme), color: startInk(theme).fg, fontFamily: palette.font }}>
       <div className="flex min-h-0 flex-col justify-center px-10 py-8">{content}</div>
       <div className="relative min-h-0">
         <Media start={start} theme={theme} />
@@ -162,11 +158,11 @@ function EditorialMobile({
   content: ReactNode;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden" style={{ background: palette.bg, color: palette.fg, fontFamily: palette.font }}>
+    <div className="flex h-full min-h-0 flex-col overflow-hidden" style={{ background: architectural(theme), color: startInk(theme).fg, fontFamily: palette.font }}>
       <div className="relative h-[32%] min-h-[140px] shrink-0">
         <Media start={start} theme={theme} />
         <BrandMark start={start} theme={theme} siteTitle={siteTitle} className="left-4 top-4" light />
-        <div className="absolute inset-x-0 bottom-0 h-16" style={{ background: `linear-gradient(180deg, transparent, ${palette.bg})` }} />
+        <div className="absolute inset-x-0 bottom-0 h-16" style={{ background: `linear-gradient(180deg, transparent, ${surfaceBase(theme)})` }} />
       </div>
       <div className="flex min-h-0 flex-1 flex-col justify-center px-5 py-4">{content}</div>
     </div>
@@ -189,9 +185,9 @@ function Stage({
   children: ReactNode;
 }) {
   return (
-    <div className="relative h-full min-h-0 overflow-hidden" style={{ background: palette.bg, color: palette.fg, fontFamily: palette.font }}>
+    <div className="relative h-full min-h-0 overflow-hidden" style={{ background: architectural(theme), color: palette.fg, fontFamily: palette.font }}>
       <Media start={start} theme={theme} />
-      <Scrim start={start} compact={compact} vignette={vignette} fallback={!start.media.url} />
+      <Scrim start={start} theme={theme} compact={compact} vignette={vignette} fallback={!start.media.url} />
       {children}
     </div>
   );
@@ -210,20 +206,29 @@ function Media({ start, theme }: { start: QuizSchema["startScreen"]; theme: Them
 
 function Scrim({
   start,
+  theme,
   compact,
   vignette,
   fallback,
 }: {
   start: QuizSchema["startScreen"];
+  theme: ThemeConfig;
   compact: boolean;
   vignette?: boolean;
   fallback: boolean;
 }) {
   if (fallback || start.layout === "swiss_minimal") return null;
   const strength = start.media.overlayOpacity / 100;
-  const vertical = `linear-gradient(180deg, rgba(0,0,0,${(strength * 0.2).toFixed(2)}) 0%, rgba(0,0,0,${(strength * 0.55).toFixed(2)}) 42%, rgba(0,0,0,${Math.min(0.9, strength + 0.12).toFixed(2)}) 100%)`;
-  const horizontal = `linear-gradient(90deg, rgba(0,0,0,${strength.toFixed(2)}) 0%, rgba(0,0,0,${(strength * 0.62).toFixed(2)}) 42%, rgba(0,0,0,${(strength * 0.18).toFixed(2)}) 100%)`;
-  const radial = `radial-gradient(ellipse at center, rgba(0,0,0,${(strength * 0.35).toFixed(2)}) 0%, rgba(0,0,0,${strength.toFixed(2)}) 78%)`;
+  const wash = theme.preset === "dark_premium" ? null : theme.preset === "editorial_warm" ? "246,242,234" : "250,250,250";
+  const vertical = wash
+    ? `linear-gradient(180deg, rgba(${wash},0.2) 0%, rgba(${wash},0.62) 48%, rgba(${wash},0.94) 100%)`
+    : `linear-gradient(180deg, rgba(0,0,0,${(strength * 0.2).toFixed(2)}) 0%, rgba(0,0,0,${(strength * 0.55).toFixed(2)}) 42%, rgba(0,0,0,${Math.min(0.9, strength + 0.12).toFixed(2)}) 100%)`;
+  const horizontal = wash
+    ? `linear-gradient(90deg, rgba(${wash},0.94) 0%, rgba(${wash},0.72) 42%, rgba(${wash},0.08) 100%)`
+    : `linear-gradient(90deg, rgba(0,0,0,${strength.toFixed(2)}) 0%, rgba(0,0,0,${(strength * 0.62).toFixed(2)}) 42%, rgba(0,0,0,${(strength * 0.18).toFixed(2)}) 100%)`;
+  const radial = wash
+    ? `radial-gradient(ellipse at center, rgba(${wash},0.55) 0%, rgba(${wash},0.88) 78%)`
+    : `radial-gradient(ellipse at center, rgba(0,0,0,${(strength * 0.35).toFixed(2)}) 0%, rgba(0,0,0,${strength.toFixed(2)}) 78%)`;
   if (compact) return <div className="absolute inset-0" style={{ background: vertical }} aria-hidden />;
   return (
     <>
@@ -248,7 +253,7 @@ function Copy({
   theme: ThemeConfig;
   siteTitle: string;
   palette: QuizPalette;
-  tone: { fg: string; muted: string; line: string; dark: boolean };
+  tone: StartInk;
   gifts: QuizGift[];
   compact: boolean;
   align: "left" | "center";
@@ -266,7 +271,7 @@ function Copy({
           <span>{start.eyebrow.text}</span>
         </p>
       ) : null}
-      <h1 className={`font-semibold ${compact ? "mt-3 text-[1.7rem] leading-[1.08]" : "mt-3 text-[clamp(1.75rem,3.4vw,3.5rem)] leading-[1.06]"} tracking-[-0.03em]`}>
+      <h1 className={`font-semibold tracking-[-0.03em] ${compact ? "mt-3 text-[1.7rem]" : "mt-3 text-[clamp(1.75rem,3.4vw,3.5rem)]"} leading-[1.18]`} style={{ color: tone.headline }}>
         <Headline text={tightenHeadline(start.headline)} style={start.highlightStyle} accent={palette.accent} ink={ink} />
       </h1>
       {start.subheadline.show && start.subheadline.text ? (
@@ -427,7 +432,7 @@ function Headline({ text, style, accent, ink }: { text: string; style: QuizSchem
         if (!marked) return <span key={index}>{value}</span>;
         if (style === "accent_text") return <span key={index} style={{ color: accent }}>{value}</span>;
         if (style === "underline") return <span key={index} style={{ boxShadow: `inset 0 -0.12em 0 ${accent}` }}>{value}</span>;
-        return <span key={index} className="box-decoration-clone rounded-lg px-2.5 py-0.5" style={{ background: accent, color: ink, boxDecorationBreak: "clone", WebkitBoxDecorationBreak: "clone" }}>{value}</span>;
+        return <span key={index} className="box-decoration-clone inline rounded-lg px-2.5 py-0.5" style={{ background: accent, color: ink, boxDecorationBreak: "clone", WebkitBoxDecorationBreak: "clone" }}>{value}</span>;
       })}
     </>
   );
@@ -458,9 +463,34 @@ function liveMicro(text: string, count: number) {
   return text.replace(/\d+\s*вопрос(?:а|ов)?/i, questionPhrase(count));
 }
 
+type StartInk = { headline: string; fg: string; muted: string; line: string; dark: boolean };
+
+function startInk(theme: ThemeConfig): StartInk {
+  if (theme.preset === "dark_premium") {
+    return { headline: "#FFFFFF", fg: "#F4F4F5", muted: "rgba(255,255,255,0.72)", line: "rgba(255,255,255,0.12)", dark: true };
+  }
+  if (theme.preset === "editorial_warm") {
+    return { headline: "#1C1917", fg: "#1C1917", muted: "#57534E", line: "rgba(28,25,23,0.12)", dark: false };
+  }
+  return { headline: "#09090B", fg: "#09090B", muted: "#52525B", line: "rgba(9,9,11,0.08)", dark: false };
+}
+
+function surfaceBase(theme: ThemeConfig) {
+  if (theme.preset === "light_minimal") return "#FAFAFA";
+  if (theme.preset === "editorial_warm") return "#F6F2EA";
+  return "#0B0B0F";
+}
+
 function architectural(theme: ThemeConfig) {
-  const accent = theme.accentColor || "#cf0234";
-  if (theme.preset === "light_minimal") return `radial-gradient(ellipse at 78% 0%, ${accent}18, transparent 46%), #F7F7F8`;
-  if (theme.preset === "editorial_warm") return `radial-gradient(ellipse at 80% 0%, ${accent}24, transparent 42%), radial-gradient(ellipse at 50% 120%, rgba(28,25,23,0.05), transparent 50%), #F6F4F0`;
-  return `radial-gradient(ellipse at 82% 0%, ${accent}1A, transparent 42%), radial-gradient(ellipse at 50% 110%, rgba(255,255,255,0.05), transparent 48%), #0B0B0E`;
+  if (theme.preset === "light_minimal") return "#FAFAFA";
+  if (theme.preset === "editorial_warm") return "#F6F2EA";
+  const glow = accentGlow(theme.accentColor || "#cf0234", 0.16);
+  return `radial-gradient(ellipse at 88% 0%, ${glow}, transparent 46%), radial-gradient(ellipse at 50% 0%, rgba(255,255,255,0.05), transparent 36%), #0B0B0F`;
+}
+
+function accentGlow(hex: string, alpha: number) {
+  const raw = hex.replace("#", "");
+  if (!/^[0-9a-fA-F]{6}$/.test(raw)) return `rgba(207,2,52,${alpha})`;
+  const channel = (offset: number) => parseInt(raw.slice(offset, offset + 2), 16);
+  return `rgba(${channel(0)},${channel(2)},${channel(4)},${alpha})`;
 }
