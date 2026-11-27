@@ -80,12 +80,22 @@ export async function listSubmissions(id: string) {
   const site = await getOwnedSite(id);
   if (!site) return [];
   const admin = createSupabaseAdminClient();
-  const { data } = await admin
+  const { data, error } = await admin
     .from("site_submissions")
     .select("id, contact_name, contact_phone, contact_email, preferred_messenger, answers, calculated_result, created_at")
     .eq("site_id", id)
     .eq("user_id", site.userId)
     .order("created_at", { ascending: false })
     .limit(200);
+  if (error) {
+    const fallback = await admin
+      .from("site_submissions")
+      .select("id, contact_name, contact_phone, contact_email, preferred_messenger, answers, created_at")
+      .eq("site_id", id)
+      .eq("user_id", site.userId)
+      .order("created_at", { ascending: false })
+      .limit(200);
+    return (fallback.data ?? []).map((row) => ({ ...row, calculated_result: null }));
+  }
   return data ?? [];
 }

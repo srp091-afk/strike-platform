@@ -4,6 +4,7 @@ import { getEffectiveUserId } from "@/lib/account-context";
 import { getOpenAI } from "@/lib/openai";
 import { createQuizSite } from "@/lib/sites/store";
 import { parseQuizSchema, type ThemePreset } from "@/lib/sites/quiz-schema";
+import { repairGeneratedPreview } from "@/lib/sites/quiz-calculator";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 60;
@@ -11,7 +12,7 @@ export const maxDuration = 60;
 const SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["title", "subtitle", "startScreen", "steps", "calculator", "leadScreen", "thankYouScreen", "giftsConfig"],
+  required: ["title", "subtitle", "startScreen", "steps", "calculator", "leadScreen", "thankYouScreen", "giftsConfig", "resultPreview"],
   properties: {
     title: { type: "string" },
     subtitle: { type: "string" },
@@ -21,6 +22,7 @@ const SCHEMA = {
     calculator: { type: "object", additionalProperties: true },
     leadScreen: { type: "object", additionalProperties: true },
     thankYouScreen: { type: "object", additionalProperties: true },
+    resultPreview: { type: "object", additionalProperties: true },
   },
 } as const;
 
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
           content: [
             "Ты проектируешь квиз для прямого отклика. Пиши коротко и конкретно, без фраз вроде «уникальные решения» и «лидеры рынка».",
             "4–6 вопросов. Каждый квалифицирует: бюджет, срок, параметры, цель. У варианта 3–5 конкретных ответов.",
-            "Язык — русский. Верни JSON со startScreen, giftsConfig, steps, calculator, leadScreen, thankYouScreen, title, subtitle.",
+            "Язык — русский. Верни JSON со startScreen, giftsConfig, steps, calculator, leadScreen, thankYouScreen, resultPreview, title, subtitle.",
             "startScreen.layout: cinematic_hero. swiss_minimal только если это чистый B2B без визуального объекта.",
             "startScreen.eyebrow.text: точный нишевый тег из 3–5 слов. trustBadge.primaryText: короткий реалистичный факт-заглушка.",
             "headline: конкретный заголовок, главный результат или условие оберни в ==двойные равенства==.",
@@ -56,7 +58,12 @@ export async function POST(request: Request) {
             "media: { type: none, url: null, overlayOpacity: 60, focalPoint: center }. highlightStyle: badge.",
             "giftsConfig: showOnStart, showInProgress и showOnThankYou true, sectionLabel «Бонус после прохождения», один item type file без fileUrl. title — конкретный PDF или чек-лист под нишу.",
             "step.type: single_choice | multi_choice | image_cards | range_slider | text_input.",
-            "У single_choice и image_cards поле options: { id, label, description, imageUrl, nextStepId, priceImpact }.",
+            "У single_choice и image_cards поле options: { id, label, description, imageUrl, nextStepId, priceImpact, numericValue }.",
+            "Для бюджета, площади, срока и масштаба задай step.variableKey латиницей (budget, area, ad_spend) и numericValue или defaultNumericValue в валюте ниши.",
+            "resultPreview.enabled true. template: financial_forecast для инвестиций, недвижимости и маркетинга; estimate_breakdown для ремонта, стройки и клиник; curated_match для подбора авто и жилья; diagnostic_audit для B2B-аудита и консалтинга.",
+            "Собери 3 KPI с формулами от =переменная, таблицу или подборку из 3 строк: первая locked false, вторая и третья locked true. lockBadgeText вроде «Полный расчёт — в WhatsApp». 1–2 rules: если budget больше порога, смени headline и overrideVariables.",
+            "Формулы только из чисел, скобок, + - * /, имён переменных и функций round floor ceil min max. Без текста внутри формулы.",
+            "leadScreen.headline: «Куда прислать полный расчёт?». ctaText: «Получить расчёт в WhatsApp».",
           ].join("\n"),
         },
         {
@@ -69,7 +76,7 @@ export async function POST(request: Request) {
     const raw = completion.choices[0]?.message?.content;
     if (!raw) return Response.json({ error: "Модель ничего не вернула." }, { status: 502 });
     const generated = JSON.parse(raw) as { title?: string; subtitle?: string };
-    const schema = parseQuizSchema(JSON.parse(raw));
+    const schema = repairGeneratedPreview(parseQuizSchema(JSON.parse(raw)), prompt);
     const site = await createQuizSite({
       title: generated.title?.trim() || "Квиз",
       subtitle: generated.subtitle?.trim() || "",

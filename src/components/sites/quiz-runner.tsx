@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 
 import { quizPalette } from "@/lib/sites/theme";
 import type { QuizSchema, QuizStep, ThemeConfig } from "@/lib/sites/quiz-schema";
+import { computeQuizResult } from "@/lib/sites/quiz-calculator";
+import { CalculationLoader, ResultPreviewCard } from "@/components/sites/result-preview";
 import { GiftProgress, StartScreen, UnlockedGifts } from "@/components/sites/start-screen";
 
 type Answer = { optionIds: string[]; text: string; value: number };
@@ -17,6 +19,7 @@ export function QuizRunner({
   screen,
   compact = false,
   embedded = false,
+  previewOverrides,
 }: {
   schema: QuizSchema;
   theme: ThemeConfig;
@@ -26,6 +29,7 @@ export function QuizRunner({
   screen?: string;
   compact?: boolean;
   embedded?: boolean;
+  previewOverrides?: Record<string, number>;
 }) {
   const palette = quizPalette(theme);
   const [phase, setPhase] = useState<"start" | "step" | "lead" | "thanks">(schema.startScreen.enabled ? "start" : "step");
@@ -37,12 +41,18 @@ export function QuizRunner({
   const [messenger, setMessenger] = useState(schema.leadScreen.messengers[0] ?? "whatsapp");
   const [error, setError] = useState("");
   const [sending, setSending] = useState(false);
+  const [calculating, setCalculating] = useState(false);
   const forced = screen === "start" || screen === "lead" || screen === "thanks" ? screen : screen ? "step" : null;
   const shownPhase = forced ?? phase;
   const step = forced && forced === "step" ? schema.steps.find((item) => item.id === screen) ?? schema.steps[index] : schema.steps[index];
   const total = schema.steps.length;
   const progress = shownPhase === "start" ? 0 : shownPhase === "thanks" ? 1 : (Math.min(index, total) + (shownPhase === "lead" ? 1 : 0)) / (total + 1);
   const estimate = useMemo(() => priceOf(schema, answers), [schema, answers]);
+  const hasAnswers = Object.keys(answers).length > 0;
+  const computed = useMemo(
+    () => computeQuizResult(schema, answers, { useSampleFallback: !live && !hasAnswers, overrides: !live && !hasAnswers ? previewOverrides : undefined }),
+    [schema, answers, live, hasAnswers, previewOverrides],
+  );
 
   useEffect(() => {
     if (live && siteId) void sendEvent(siteId, "view");
@@ -87,8 +97,13 @@ export function QuizRunner({
     const jump = option?.nextStepId ? schema.steps.findIndex((item) => item.id === option.nextStepId) : -1;
     const next = jump >= 0 ? jump : index + 1;
     if (live && siteId) void sendEvent(siteId, "step_complete", step.id);
-    if (next >= schema.steps.length) setPhase("lead");
-    else setIndex(next);
+    if (next >= schema.steps.length) {
+      setPhase("lead");
+      if (!forced && schema.resultPreview.enabled && schema.resultPreview.loader.enabled) {
+        setCalculating(true);
+        window.setTimeout(() => setCalculating(false), schema.resultPreview.loader.durationMs);
+      }
+    } else setIndex(next);
   }
 
   async function submit() {
@@ -113,6 +128,7 @@ export function QuizRunner({
         question: item.title,
         answer: answerLabel(item, answers[item.id]),
         value: answers[item.id]?.value ?? null,
+        optionIds: answers[item.id]?.optionIds ?? [],
       })),
       result: schema.calculator.enabled ? { label: schema.calculator.label, amount: estimate, currency: schema.calculator.currency } : null,
       utm: readUtm(),
@@ -167,27 +183,31 @@ export function QuizRunner({
             canBack={!forced && (index > 0 || schema.startScreen.enabled)}
           />
         ) : null}
-        {shownPhase === "lead" ? (
+        {shownPhase === "lead" && calculating ? <CalculationLoader steps={schema.resultPreview.loader.steps} palette={palette} /> : null}
+        {shownPhase === "lead" && !calculating ? (
           <Lead
             schema={schema}
+            theme={theme}
             palette={palette}
+            result={computed}
+            compact={compact}
             name={name}
             phone={phone}
             email={email}
             messenger={messenger}
             error={error}
             sending={sending}
-            estimate={schema.calculator.enabled ? estimate : null}
+            estimate={schema.calculator.enabled && !schema.resultPreview.enabled ? estimate : null}
             onName={setName}
             onPhone={setPhone}
             onEmail={setEmail}
             onMessenger={setMessenger}
-            onBack={() => { setPhase("step"); setIndex(Math.max(0, schema.steps.length - 1)); }}
+            onBack={() => { setCalculating(false); setPhase("step"); setIndex(Math.max(0, schema.steps.length - 1)); }}
             onSubmit={() => void submit()}
             gift={<GiftProgress schema={schema} remaining={1} lead palette={palette} />}
           />
         ) : null}
-        {shownPhase === "thanks" ? <Thanks schema={schema} palette={palette} estimate={schema.calculator.enabled ? estimate : null} /> : null}
+        {shownPhase === "thanks" ? <Thanks schema={schema} theme={theme} palette={palette} result={computed} compact={compact} estimate={schema.calculator.enabled ? estimate : null} /> : null}
       </div>
       {schema.hideBranding ? null : (
         <p className="pb-6 text-center text-xs" style={{ color: palette.muted }}>
@@ -263,7 +283,9 @@ function Question(props: {
 
 function Lead(props: {
   schema: QuizSchema;
+  theme: ThemeConfig;
   palette: ReturnType<typeof quizPalette>;
+  result: ReturnType<typeof computeQuizResult>;
   name: string;
   phone: string;
   email: string;
@@ -271,6 +293,7 @@ function Lead(props: {
   error: string;
   sending: boolean;
   estimate: number | null;
+  compact?: boolean;
   onName: (value: string) => void;
   onPhone: (value: string) => void;
   onEmail: (value: string) => void;
@@ -280,14 +303,17 @@ function Lead(props: {
   gift?: ReactNode;
 }) {
   const lead = props.schema.leadScreen;
+  const preview = props.schema.resultPreview.enabled;
   const field = { height: 48, border: `1px solid ${props.palette.line}`, borderRadius: props.palette.radius, background: "transparent", color: props.palette.fg, padding: "0 16px", width: "100%" };
   return (
     <form className="flex flex-1 flex-col" onSubmit={(event) => { event.preventDefault(); props.onSubmit(); }}>
-      <h2 className="text-3xl font-semibold tracking-tight"><span>{lead.headline}</span></h2>
+      {preview ? <ResultPreviewCard result={props.result} theme={props.theme} palette={props.palette} compact={props.compact} onBack={props.onBack} /> : null}
+      {preview ? null : <h2 className="text-3xl font-semibold tracking-tight"><span>{lead.headline}</span></h2>}
       {props.gift}
-      <p className="mt-3 leading-6" style={{ color: props.palette.muted }}><span>{lead.subheadline}</span></p>
+      {preview ? <h3 className="mt-8 text-xl font-semibold tracking-tight"><span>{lead.headline}</span></h3> : null}
+      {!preview && lead.subheadline ? <p className="mt-3 leading-6" style={{ color: props.palette.muted }}><span>{lead.subheadline}</span></p> : null}
       {props.estimate != null ? <p className="mt-4 text-sm"><span>{`${props.schema.calculator.label}: ${props.estimate.toLocaleString("ru-RU")} ${props.schema.calculator.currency}`}</span></p> : null}
-      <div className="mt-8 grid gap-3">
+      <div className="mt-4 grid gap-3">
         {lead.askName ? <input style={field} placeholder="Имя" value={props.name} onChange={(event) => props.onName(event.target.value)} /> : null}
         {lead.askPhone ? <input style={field} placeholder="Телефон" value={props.phone} onChange={(event) => props.onPhone(event.target.value)} /> : null}
         {lead.askEmail ? <input style={field} placeholder="Email" value={props.email} onChange={(event) => props.onEmail(event.target.value)} /> : null}
@@ -302,9 +328,9 @@ function Lead(props: {
         ) : null}
       </div>
       {props.error ? <p className="mt-3 text-sm" style={{ color: props.palette.accent }}><span>{props.error}</span></p> : null}
-      <div className="mt-auto flex gap-3 pt-8">
-        <button type="button" className="h-12 flex-1 border text-sm" style={{ borderColor: props.palette.line, borderRadius: props.palette.radius }} onClick={props.onBack}><span>Назад</span></button>
-        <button type="submit" disabled={props.sending} className="h-12 flex-1 text-sm font-semibold text-[#fff]" style={{ background: props.palette.accent, borderRadius: props.palette.radius }}>
+      <div className={`mt-auto flex gap-3 pt-8 ${preview ? "" : ""}`}>
+        {preview ? null : <button type="button" className="h-12 flex-1 border text-sm" style={{ borderColor: props.palette.line, borderRadius: props.palette.radius }} onClick={props.onBack}><span>Назад</span></button>}
+        <button type="submit" disabled={props.sending} className={`h-12 text-sm font-semibold text-[#fff] ${preview ? "w-full" : "flex-1"}`} style={{ background: props.palette.accent, borderRadius: props.palette.radius }}>
           <span>{props.sending ? "Отправка" : lead.ctaText}</span>
         </button>
       </div>
@@ -313,13 +339,18 @@ function Lead(props: {
   );
 }
 
-function Thanks({ schema, palette, estimate }: { schema: QuizSchema; palette: ReturnType<typeof quizPalette>; estimate: number | null }) {
+function Thanks({ schema, theme, palette, result, compact = false, estimate }: { schema: QuizSchema; theme: ThemeConfig; palette: ReturnType<typeof quizPalette>; result: ReturnType<typeof computeQuizResult>; compact?: boolean; estimate: number | null }) {
   const action = schema.thankYouScreen.primaryAction;
+  const reveal = schema.resultPreview.enabled && schema.resultPreview.revealFullResultOnThankYou;
   return (
-    <div className="flex flex-1 flex-col justify-center">
-      <h2 className="text-4xl font-semibold tracking-tight"><span>{schema.thankYouScreen.headline}</span></h2>
+    <div className="flex flex-1 flex-col">
+      {reveal ? <ResultPreviewCard result={result} theme={theme} palette={palette} compact={compact} unlocked /> : null}
+      {schema.resultPreview.enabled && !reveal ? (
+        <p className="text-sm font-medium"><span>Полный расчёт зафиксирован и отправляется вам</span></p>
+      ) : null}
+      <h2 className={`${reveal || schema.resultPreview.enabled ? "mt-6" : ""} text-4xl font-semibold tracking-tight`}><span>{schema.thankYouScreen.headline}</span></h2>
       <p className="mt-4 text-lg leading-7" style={{ color: palette.muted }}><span>{schema.thankYouScreen.subheadline}</span></p>
-      {schema.thankYouScreen.showSummary && estimate != null ? <p className="mt-6 text-sm"><span>{`${schema.calculator.label}: ${estimate.toLocaleString("ru-RU")} ${schema.calculator.currency}`}</span></p> : null}
+      {schema.thankYouScreen.showSummary && estimate != null && !schema.resultPreview.enabled ? <p className="mt-6 text-sm"><span>{`${schema.calculator.label}: ${estimate.toLocaleString("ru-RU")} ${schema.calculator.currency}`}</span></p> : null}
       <UnlockedGifts schema={schema} palette={palette} />
       {action.type !== "none" && action.url ? (
         <a href={action.url} className="mt-8 inline-flex h-12 items-center justify-center px-6 text-sm font-semibold text-[#fff]" style={{ background: palette.accent, borderRadius: palette.radius }}>

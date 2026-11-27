@@ -7,6 +7,7 @@ export type QuizOption = {
   imageUrl: string;
   nextStepId: string | null;
   priceImpact: number;
+  numericValue?: number;
 };
 
 export type SliderConfig = {
@@ -30,6 +31,8 @@ export type QuizStep = {
   sliderConfig: SliderConfig;
   placeholder: string;
   expertTip: string;
+  variableKey?: string;
+  defaultNumericValue?: number;
 };
 
 export type StartLayout = "cinematic_hero" | "editorial_split" | "spotlight_center" | "swiss_minimal";
@@ -80,6 +83,50 @@ export type StartScreen = {
   };
 };
 
+export type ResultTemplate = "financial_forecast" | "estimate_breakdown" | "curated_match" | "diagnostic_audit";
+export type ValueFormat = "currency" | "percent" | "number" | "text";
+export type CompareOp = "lt" | "lte" | "gt" | "gte" | "eq";
+
+export type ResultRule = {
+  id: string;
+  variable: string;
+  operator: CompareOp;
+  value: number;
+  headline: string;
+  description: string;
+  overrideVariables?: Record<string, number>;
+};
+
+export type ResultPreview = {
+  enabled: boolean;
+  template: ResultTemplate;
+  loader: { enabled: boolean; durationMs: number; steps: string[] };
+  currency: { symbol: string; position: "before" | "after"; decimals: number };
+  eyebrow: string;
+  defaultHeadline: string;
+  defaultDescription: string;
+  rules: ResultRule[];
+  kpis: Array<{ id: string; valueExpr: string; label: string; format: ValueFormat; accent?: boolean }>;
+  table: {
+    columns: Array<{ key: string; label: string; format: ValueFormat; align?: "left" | "right" }>;
+    rows: Array<{ id: string; cells: Record<string, string>; locked: boolean }>;
+  } | null;
+  matches: {
+    badgeText: string;
+    items: Array<{ id: string; title: string; subtitle: string; priceExpr: string; metricText: string; imageUrl?: string | null; locked: boolean }>;
+  } | null;
+  audit: {
+    scoreExpr: string;
+    scoreLabel: string;
+    impactExpr: string;
+    insights: Array<{ id: string; title: string; detail: string; locked: boolean }>;
+  } | null;
+  lockBadgeText: string;
+  footnote: string;
+  revealFullResultOnThankYou: boolean;
+  sampleDefaults?: Record<string, number>;
+};
+
 export type QuizSchema = {
   startScreen: StartScreen;
   giftsConfig: GiftsConfig;
@@ -103,6 +150,7 @@ export type QuizSchema = {
     showSummary: boolean;
     primaryAction: { label: string; url: string; type: "whatsapp" | "telegram" | "link" | "none" };
   };
+  resultPreview: ResultPreview;
   hideBranding: boolean;
 };
 
@@ -213,6 +261,7 @@ export function blankQuiz(title = "Новый квиз"): QuizSchema {
       primaryAction: { label: "", url: "", type: "none" },
     },
     hideBranding: false,
+    resultPreview: disabledResult(),
   };
 }
 
@@ -261,6 +310,7 @@ export function parseQuizSchema(value: unknown): QuizSchema {
     calculator: readCalculator(record.calculator),
     leadScreen: readLead(record.leadScreen, fallback.leadScreen),
     thankYouScreen: readThanks(record.thankYouScreen, fallback.thankYouScreen),
+    resultPreview: readResult(record.resultPreview),
     hideBranding: record.hideBranding === true,
   };
 }
@@ -419,13 +469,32 @@ function readStep(value: unknown): QuizStep | null {
     sliderConfig: readSlider(record.sliderConfig),
     placeholder: text(record.placeholder, "").slice(0, 80),
     expertTip: text(record.expertTip, "").slice(0, 180),
+    ...optionalKey(text(record.variableKey, "")),
+    ...optionalDefault(record.defaultNumericValue),
   };
+}
+
+function optionalKey(value: string): { variableKey: string } | Record<string, never> {
+  const key = value.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 32);
+  return key ? { variableKey: key } : {};
+}
+
+function optionalDefault(value: unknown): { defaultNumericValue: number } | Record<string, never> {
+  const parsed = optionalNumber(value);
+  return parsed === undefined ? {} : { defaultNumericValue: parsed };
+}
+
+function optionalNumber(value: unknown) {
+  if (value === undefined || value === null || value === "") return undefined;
+  const parsed = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(parsed) ? parsed : undefined;
 }
 
 function readOption(value: unknown): QuizOption | null {
   const record = asRecord(value);
   const label = text(record.label, "");
   if (!label) return null;
+  const numeric = optionalNumber(record.numericValue);
   return {
     id: (text(record.id, "") || `o-${Math.random().toString(36).slice(2, 7)}`).slice(0, 40),
     label: label.slice(0, 80),
@@ -433,6 +502,7 @@ function readOption(value: unknown): QuizOption | null {
     imageUrl: text(record.imageUrl, ""),
     nextStepId: typeof record.nextStepId === "string" && record.nextStepId ? record.nextStepId.slice(0, 40) : null,
     priceImpact: number(record.priceImpact, 0),
+    ...(numeric === undefined ? {} : { numericValue: numeric }),
   };
 }
 
@@ -487,6 +557,186 @@ function readThanks(value: unknown, fallback: QuizSchema["thankYouScreen"]): Qui
     subheadline: text(record.subheadline, fallback.subheadline).slice(0, 240),
     showSummary: record.showSummary !== false,
     primaryAction: { label: text(action.label, "").slice(0, 40), url: text(action.url, "").slice(0, 300), type },
+  };
+}
+
+export function disabledResult(): ResultPreview {
+  return {
+    enabled: false,
+    template: "financial_forecast",
+    loader: { enabled: true, durationMs: 1300, steps: ["Анализируем ваши параметры…", "Рассчитываем сценарии…", "Расчёт готов"] },
+    currency: { symbol: "$", position: "before", decimals: 0 },
+    eyebrow: "Ваш результат",
+    defaultHeadline: "",
+    defaultDescription: "",
+    rules: [],
+    kpis: [],
+    table: null,
+    matches: null,
+    audit: null,
+    lockBadgeText: "Полный расчёт — в WhatsApp",
+    footnote: "Предварительный расчёт. Точные условия зафиксируем в мессенджере.",
+    revealFullResultOnThankYou: false,
+  };
+}
+
+function readResult(value: unknown): ResultPreview {
+  const record = asRecord(value);
+  if (Object.keys(record).length === 0) return disabledResult();
+  const base = disabledResult();
+  const template: ResultTemplate =
+    record.template === "estimate_breakdown" || record.template === "curated_match" || record.template === "diagnostic_audit" || record.template === "financial_forecast"
+      ? record.template
+      : "financial_forecast";
+  const loader = asRecord(record.loader);
+  const currency = asRecord(record.currency);
+  const steps = Array.isArray(loader.steps) ? loader.steps.map((item) => text(item, "")).filter(Boolean).slice(0, 3) : [];
+  return {
+    enabled: record.enabled === true,
+    template,
+    loader: {
+      enabled: loader.enabled !== false,
+      durationMs: Math.min(2500, Math.max(800, Math.round(number(loader.durationMs, 1300)))),
+      steps: steps.length > 0 ? steps : base.loader.steps,
+    },
+    currency: {
+      symbol: text(currency.symbol, "$").slice(0, 8),
+      position: currency.position === "after" ? "after" : "before",
+      decimals: Math.min(2, Math.max(0, Math.round(number(currency.decimals, 0)))),
+    },
+    eyebrow: text(record.eyebrow, base.eyebrow).slice(0, 40),
+    defaultHeadline: text(record.defaultHeadline, "").slice(0, 180),
+    defaultDescription: text(record.defaultDescription, "").slice(0, 280),
+    rules: Array.isArray(record.rules) ? record.rules.map(readRule).filter((item): item is ResultRule => item !== null).slice(0, 8) : [],
+    kpis: Array.isArray(record.kpis) ? record.kpis.map(readKpi).filter((item): item is ResultPreview["kpis"][number] => item !== null).slice(0, 3) : [],
+    table: readTable(record.table),
+    matches: readMatches(record.matches),
+    audit: readAudit(record.audit),
+    lockBadgeText: text(record.lockBadgeText, base.lockBadgeText).slice(0, 80),
+    footnote: text(record.footnote, base.footnote).slice(0, 180),
+    revealFullResultOnThankYou: record.revealFullResultOnThankYou === true,
+    ...readSamples(record.sampleDefaults),
+  };
+}
+
+function readSamples(value: unknown): { sampleDefaults: Record<string, number> } | Record<string, never> {
+  const record = asRecord(value);
+  const sampleDefaults: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(record)) {
+    const name = key.toLowerCase().replace(/[^a-z0-9_]/g, "");
+    const parsed = optionalNumber(raw);
+    if (name && parsed !== undefined) sampleDefaults[name] = parsed;
+  }
+  return Object.keys(sampleDefaults).length > 0 ? { sampleDefaults } : {};
+}
+
+function readRule(value: unknown): ResultRule | null {
+  const record = asRecord(value);
+  const variable = text(record.variable, "").toLowerCase().replace(/[^a-z0-9_]/g, "");
+  if (!variable) return null;
+  const operator: CompareOp = record.operator === "lt" || record.operator === "lte" || record.operator === "gt" || record.operator === "gte" || record.operator === "eq" ? record.operator : "gte";
+  const overrides = asRecord(record.overrideVariables);
+  const overrideVariables: Record<string, number> = {};
+  for (const [key, raw] of Object.entries(overrides)) {
+    const name = key.toLowerCase().replace(/[^a-z0-9_]/g, "");
+    const parsed = optionalNumber(raw);
+    if (name && parsed !== undefined) overrideVariables[name] = parsed;
+  }
+  return {
+    id: (text(record.id, "") || `r-${Math.random().toString(36).slice(2, 7)}`).slice(0, 40),
+    variable,
+    operator,
+    value: number(record.value, 0),
+    headline: text(record.headline, "").slice(0, 180),
+    description: text(record.description, "").slice(0, 280),
+    ...(Object.keys(overrideVariables).length > 0 ? { overrideVariables } : {}),
+  };
+}
+
+function readKpi(value: unknown): ResultPreview["kpis"][number] | null {
+  const record = asRecord(value);
+  const valueExpr = text(record.valueExpr, "");
+  const label = text(record.label, "");
+  if (!valueExpr || !label) return null;
+  const format: ValueFormat = record.format === "percent" || record.format === "number" || record.format === "text" || record.format === "currency" ? record.format : "currency";
+  return {
+    id: (text(record.id, "") || `k-${Math.random().toString(36).slice(2, 7)}`).slice(0, 40),
+    valueExpr: valueExpr.slice(0, 160),
+    label: label.slice(0, 40),
+    format,
+    ...(record.accent === true ? { accent: true } : {}),
+  };
+}
+
+function readTable(value: unknown): ResultPreview["table"] {
+  const record = asRecord(value);
+  const columns = Array.isArray(record.columns) ? record.columns.map(readColumn).filter((item): item is NonNullable<ReturnType<typeof readColumn>> => item !== null).slice(0, 4) : [];
+  const rows = Array.isArray(record.rows) ? record.rows.map(readRow).filter((item): item is NonNullable<ReturnType<typeof readRow>> => item !== null).slice(0, 5) : [];
+  if (columns.length < 2 || rows.length === 0) return null;
+  return { columns, rows };
+}
+
+function readColumn(value: unknown) {
+  const record = asRecord(value);
+  const key = text(record.key, "").toLowerCase().replace(/[^a-z0-9_]/g, "");
+  const label = text(record.label, "");
+  if (!key || !label) return null;
+  const format: ValueFormat = record.format === "percent" || record.format === "number" || record.format === "text" || record.format === "currency" ? record.format : "text";
+  return { key, label: label.slice(0, 32), format, align: record.align === "right" ? "right" as const : "left" as const };
+}
+
+function readRow(value: unknown) {
+  const record = asRecord(value);
+  const cellsIn = asRecord(record.cells);
+  const cells: Record<string, string> = {};
+  for (const [key, raw] of Object.entries(cellsIn)) cells[key] = text(raw, "").slice(0, 160);
+  if (Object.keys(cells).length === 0) return null;
+  return { id: (text(record.id, "") || `row-${Math.random().toString(36).slice(2, 7)}`).slice(0, 40), cells, locked: record.locked === true };
+}
+
+function readMatches(value: unknown): ResultPreview["matches"] {
+  const record = asRecord(value);
+  const items = Array.isArray(record.items) ? record.items.map(readMatch).filter((item): item is NonNullable<ReturnType<typeof readMatch>> => item !== null).slice(0, 4) : [];
+  if (items.length === 0) return null;
+  return { badgeText: text(record.badgeText, "Подборка").slice(0, 80), items };
+}
+
+function readMatch(value: unknown) {
+  const record = asRecord(value);
+  const title = text(record.title, "");
+  if (!title) return null;
+  return {
+    id: (text(record.id, "") || `m-${Math.random().toString(36).slice(2, 7)}`).slice(0, 40),
+    title: title.slice(0, 80),
+    subtitle: text(record.subtitle, "").slice(0, 80),
+    priceExpr: text(record.priceExpr, "").slice(0, 160),
+    metricText: text(record.metricText, "").slice(0, 80),
+    imageUrl: text(record.imageUrl, "") || null,
+    locked: record.locked === true,
+  };
+}
+
+function readAudit(value: unknown): ResultPreview["audit"] {
+  const record = asRecord(value);
+  const insights = Array.isArray(record.insights) ? record.insights.map(readInsight).filter((item): item is NonNullable<ReturnType<typeof readInsight>> => item !== null).slice(0, 5) : [];
+  if (!text(record.scoreExpr, "") && insights.length === 0) return null;
+  return {
+    scoreExpr: text(record.scoreExpr, "0").slice(0, 160),
+    scoreLabel: text(record.scoreLabel, "Индекс").slice(0, 40),
+    impactExpr: text(record.impactExpr, "").slice(0, 80),
+    insights,
+  };
+}
+
+function readInsight(value: unknown) {
+  const record = asRecord(value);
+  const title = text(record.title, "");
+  if (!title) return null;
+  return {
+    id: (text(record.id, "") || `i-${Math.random().toString(36).slice(2, 7)}`).slice(0, 40),
+    title: title.slice(0, 80),
+    detail: text(record.detail, "").slice(0, 160),
+    locked: record.locked === true,
   };
 }
 

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 
 import { QuizRunner } from "@/components/sites/quiz-runner";
 import { StartInspector } from "@/components/sites/start-inspector";
+import { ResultInspector } from "@/components/sites/result-inspector";
 import { listSubmissions, publishQuizSite, saveQuiz } from "@/app/funnels/site-actions";
 import { brandHost, normalizeCustomDomain, normalizeSubdomain, publicSiteUrl, fallbackSitePath } from "@/lib/sites/domains";
 import { newStep, type AnalyticsConfig, type QuizSchema, type SeoConfig, type ThemeConfig } from "@/lib/sites/quiz-schema";
@@ -48,6 +49,8 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
   const [saved, setSaved] = useState(true);
   const [notice, setNotice] = useState("");
   const [leads, setLeads] = useState<Awaited<ReturnType<typeof listSubmissions>>>([]);
+  const [testOpen, setTestOpen] = useState(false);
+  const [testVars, setTestVars] = useState<Record<string, number>>({});
   const snapshot = useMemo(() => JSON.stringify({ title, draft, theme, analytics, seo, agentId, subdomain, customDomain }), [title, draft, theme, analytics, seo, agentId, subdomain, customDomain]);
 
   useEffect(() => {
@@ -145,7 +148,15 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
             ) : null}
           </aside>
           <main className="overflow-y-auto p-6">
-            <div className="mb-4 flex justify-end">
+            <div className="mb-4 flex items-center justify-end gap-3">
+              {screen === "lead" && draft.resultPreview.enabled && !walk ? (
+                <div className="relative">
+                  <button type="button" className="text-xs text-[#52525b]" onClick={() => setTestOpen((value) => !value)}>
+                    <span>Тест цифр</span>
+                  </button>
+                  {testOpen ? <TestDigits draft={draft} values={testVars} onChange={setTestVars} /> : null}
+                </div>
+              ) : null}
               <button type="button" className="text-xs text-[#52525b]" onClick={() => setWalk((value) => !value)}>
                 <span>{walk ? "Режим редактирования" : "Пройти как клиент"}</span>
               </button>
@@ -155,13 +166,13 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
                 <span>{liveHost.ok ? publicSiteUrl(liveHost.slug) : "https://имя.strikeplatform.io"}</span>
               </div>
               <div className="min-h-0 flex-1">
-                <QuizRunner schema={draft} theme={theme} siteTitle={title} live={false} screen={walk ? undefined : screen === "gifts" ? "start" : screen} compact={device === "mobile"} embedded />
+                <QuizRunner schema={draft} theme={theme} siteTitle={title} live={false} screen={walk ? undefined : screen === "gifts" ? "start" : screen} compact={device === "mobile"} embedded previewOverrides={testVars} />
               </div>
             </div>
           </main>
           <aside className="overflow-y-auto border-l border-[#e4e4e7] bg-[#fff] p-4">
             {(screen === "start" || screen === "gifts") ? <StartInspector siteId={site.id} title={title} draft={draft} focus={screen === "gifts" ? "gifts" : "start"} onChange={setDraft} /> : null}
-            {step ? <StepInspector step={step} steps={draft.steps} onChange={updateStep} onDelete={() => { setDraft({ ...draft, steps: draft.steps.filter((item) => item.id !== step.id) }); setScreen("start"); }} /> : null}
+            {step ? <StepInspector step={step} steps={draft.steps} calculatorOpen={draft.resultPreview.enabled} onChange={updateStep} onDelete={() => { setDraft({ ...draft, steps: draft.steps.filter((item) => item.id !== step.id) }); setScreen("start"); }} /> : null}
             {screen === "lead" ? <LeadInspector draft={draft} onChange={setDraft} /> : null}
             {screen === "thanks" ? <ThanksInspector draft={draft} onChange={setDraft} /> : null}
           </aside>
@@ -266,7 +277,8 @@ function Settings(props: {
   );
 }
 
-function StepInspector({ step, steps, onChange, onDelete }: { step: QuizSchema["steps"][number]; steps: QuizSchema["steps"]; onChange: (step: QuizSchema["steps"][number]) => void; onDelete: () => void }) {
+function StepInspector({ step, steps, calculatorOpen, onChange, onDelete }: { step: QuizSchema["steps"][number]; steps: QuizSchema["steps"]; calculatorOpen: boolean; onChange: (step: QuizSchema["steps"][number]) => void; onDelete: () => void }) {
+  const choice = step.type === "single_choice" || step.type === "multi_choice" || step.type === "image_cards";
   return (
     <div className="grid gap-3">
       <p className="text-sm font-semibold"><span>Вопрос</span></p>
@@ -285,6 +297,25 @@ function StepInspector({ step, steps, onChange, onDelete }: { step: QuizSchema["
             const options = step.options.map((item, itemIndex) => itemIndex === index ? { ...item, label: event.target.value } : item);
             onChange({ ...step, options });
           }} />
+          {choice ? (
+            <label className="grid gap-1 text-xs text-[#52525b]">
+              <span>Значение / вес</span>
+              <input className={field} inputMode="decimal" value={option.numericValue ?? ""} placeholder="6000000" onChange={(event) => {
+                const raw = event.target.value.trim();
+                const numericValue = raw === "" ? undefined : Number(raw.replace(",", "."));
+                const options = step.options.map((item, itemIndex) => {
+                  if (itemIndex !== index) return item;
+                  if (numericValue === undefined || !Number.isFinite(numericValue)) {
+                    const rest = { ...item };
+                    delete rest.numericValue;
+                    return rest;
+                  }
+                  return { ...item, numericValue };
+                });
+                onChange({ ...step, options });
+              }} />
+            </label>
+          ) : null}
           <select className={field} value={option.nextStepId ?? ""} onChange={(event) => {
             const options = step.options.map((item, itemIndex) => itemIndex === index ? { ...item, nextStepId: event.target.value || null } : item);
             onChange({ ...step, options });
@@ -294,6 +325,27 @@ function StepInspector({ step, steps, onChange, onDelete }: { step: QuizSchema["
           </select>
         </div>
       ))}
+      <details key={`${step.id}-${calculatorOpen ? "on" : "off"}`} className="rounded-xl border border-[#e4e4e7] p-3" open={calculatorOpen || undefined}>
+        <summary className="cursor-pointer text-sm"><span>Для калькулятора</span></summary>
+        <div className="mt-3 grid gap-2">
+          <Text label="Ключ переменной" value={step.variableKey ?? ""} onChange={(variableKey) => onChange({ ...step, variableKey: variableKey.toLowerCase().replace(/[^a-z0-9_]/g, "").slice(0, 32) })} />
+          <p className="text-[11px] text-[#71717a]"><span>Например budget, area, ad_spend. Этот ключ подставляется в формулы.</span></p>
+          <label className="grid gap-1 text-xs text-[#52525b]">
+            <span>Значение по умолчанию</span>
+            <input className={field} inputMode="decimal" value={step.defaultNumericValue ?? ""} onChange={(event) => {
+              const raw = event.target.value.trim();
+              if (!raw) {
+                const rest = { ...step };
+                delete rest.defaultNumericValue;
+                onChange(rest);
+                return;
+              }
+              const parsed = Number(raw.replace(",", "."));
+              if (Number.isFinite(parsed)) onChange({ ...step, defaultNumericValue: parsed });
+            }} />
+          </label>
+        </div>
+      </details>
       {steps.length > 1 ? <button type="button" className="text-left text-sm text-[#cf0234]" onClick={onDelete}><span>Удалить вопрос</span></button> : null}
     </div>
   );
@@ -306,6 +358,7 @@ function LeadInspector({ draft, onChange }: { draft: QuizSchema; onChange: (draf
       <p className="text-sm font-semibold"><span>Контакт</span></p>
       <Text label="Заголовок" value={lead.headline} onChange={(headline) => onChange({ ...draft, leadScreen: { ...lead, headline } })} />
       <Text label="Кнопка" value={lead.ctaText} onChange={(ctaText) => onChange({ ...draft, leadScreen: { ...lead, ctaText } })} />
+      <ResultInspector draft={draft} onChange={onChange} />
     </div>
   );
 }
@@ -347,7 +400,10 @@ function Leads({ rows, onClose }: { rows: Awaited<ReturnType<typeof listSubmissi
             <tr key={String(row.id)} className="border-t border-[#e4e4e7]">
               <td className="py-3"><span>{String(row.contact_name ?? "")}</span></td>
               <td><span>{String(row.contact_phone ?? "")}</span></td>
-              <td className="max-w-md"><span>{summarize(row.answers)}</span></td>
+              <td className="max-w-md">
+                <span>{summarize(row.answers)}</span>
+                <CalculatedResult value={row.calculated_result} />
+              </td>
               <td><span>{String(row.created_at ?? "").slice(0, 16).replace("T", " ")}</span></td>
             </tr>
           ))}
@@ -364,6 +420,50 @@ function summarize(value: unknown) {
     const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
     return `${String(row.question ?? "")}: ${String(row.answer ?? "")}`;
   }).join(" · ");
+}
+
+function CalculatedResult({ value }: { value: unknown }) {
+  const record = value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  if (!record || record.enabled === false) return null;
+  const kpis = Array.isArray(record.kpis) ? record.kpis : [];
+  const table = record.table && typeof record.table === "object" ? (record.table as { rows?: Array<{ cells?: Array<{ text?: string }> }> }) : null;
+  const rows = table?.rows ?? [];
+  if (kpis.length === 0 && rows.length === 0 && !record.headline) return null;
+  return (
+    <details className="mt-2 rounded-lg bg-[#fafafa] px-2 py-1">
+      <summary className="cursor-pointer text-xs text-[#52525b]"><span>Рассчитанный результат</span></summary>
+      {record.headline ? <p className="mt-1 text-xs"><span>{String(record.headline)}</span></p> : null}
+      {kpis.map((item, index) => {
+        const kpi = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+        return <p key={index} className="text-xs text-[#3f3f46]"><span>{`${String(kpi.label ?? "")}: ${String(kpi.text ?? "")}`}</span></p>;
+      })}
+      {rows.map((row, index) => (
+        <p key={index} className="text-xs text-[#3f3f46]"><span>{(row.cells ?? []).map((cell) => cell.text ?? "").join(" · ")}</span></p>
+      ))}
+    </details>
+  );
+}
+
+function TestDigits({ draft, values, onChange }: { draft: QuizSchema; values: Record<string, number>; onChange: (values: Record<string, number>) => void }) {
+  const keys = [...new Set([...draft.steps.map((step) => step.variableKey).filter((item): item is string => Boolean(item)), ...Object.keys(draft.resultPreview.sampleDefaults ?? {})])];
+  return (
+    <div className="absolute right-0 z-20 mt-2 w-64 rounded-xl border border-[#e4e4e7] bg-[#fff] p-3 text-left shadow-lg">
+      <p className="mb-2 text-xs font-medium text-[#09090b]"><span>Тестовые значения</span></p>
+      {keys.length === 0 ? <p className="text-[11px] text-[#71717a]"><span>Добавьте ключ переменной в вопросе.</span></p> : null}
+      {keys.map((key) => (
+        <label key={key} className="mt-2 grid gap-1 text-[11px] text-[#52525b]">
+          <span>{key}</span>
+          <input className={field} inputMode="decimal" value={values[key] ?? draft.resultPreview.sampleDefaults?.[key] ?? ""} onChange={(event) => {
+            const parsed = Number(event.target.value.replace(/\s/g, "").replace(",", "."));
+            const next = { ...values };
+            if (!Number.isFinite(parsed)) delete next[key];
+            else next[key] = parsed;
+            onChange(next);
+          }} />
+        </label>
+      ))}
+    </div>
+  );
 }
 
 function downloadCsv(rows: Awaited<ReturnType<typeof listSubmissions>>) {
