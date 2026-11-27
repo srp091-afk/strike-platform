@@ -153,7 +153,7 @@ export function QuizRunner({
   if (shownPhase === "start") {
     return (
       <div className={shellClass} style={{ background: palette.bg, color: palette.fg, fontFamily: palette.font }}>
-        <div className={embedded ? "min-h-0 flex-1" : "min-h-[100dvh]"}>
+        <div className={embedded ? "min-h-0 flex-1" : "h-[100dvh] overflow-hidden"}>
           <StartScreen schema={schema} theme={theme} siteTitle={siteTitle} compact={compact} onStart={() => { setPhase("step"); if (live && siteId) void sendEvent(siteId, "quiz_start"); }} />
         </div>
       </div>

@@ -423,7 +423,7 @@ function readMicro(value: unknown): StartScreen["ctaMicroText"] {
   }
   const record = asRecord(value);
   const next = text(record.text, "").slice(0, 60);
-  return { show: record.show === true && next.length > 0, text: next };
+  return { show: record.show !== false && next.length > 0, text: next };
 }
 
 function readMedia(value: unknown, legacyImage: string): StartScreen["media"] {

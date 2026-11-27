@@ -63,7 +63,7 @@ export function StartScreen({
   );
 
   if (start.layout === "editorial_split") {
-    if (compact) return <EditorialMobile palette={palette} theme={theme} start={start} content={editorialCopy} />;
+    if (compact) return <EditorialMobile palette={palette} theme={theme} start={start} siteTitle={siteTitle} content={editorialCopy} />;
     return (
       <div className="h-full min-h-0">
         <div className="h-full md:hidden">
@@ -71,6 +71,7 @@ export function StartScreen({
             palette={palette}
             theme={theme}
             start={start}
+            siteTitle={siteTitle}
             content={(
               <Copy
                 schema={schema}
@@ -86,7 +87,7 @@ export function StartScreen({
             )}
           />
         </div>
-        <div className="hidden h-full md:block"><EditorialDesktop palette={palette} theme={theme} start={start} content={editorialCopy} /></div>
+        <div className="hidden h-full md:block"><EditorialDesktop palette={palette} theme={theme} start={start} siteTitle={siteTitle} content={editorialCopy} /></div>
       </div>
     );
   }
@@ -125,11 +126,13 @@ function EditorialDesktop({
   palette,
   theme,
   start,
+  siteTitle,
   content,
 }: {
   palette: QuizPalette;
   theme: ThemeConfig;
   start: QuizSchema["startScreen"];
+  siteTitle: string;
   content: ReactNode;
 }) {
   return (
@@ -138,7 +141,7 @@ function EditorialDesktop({
       <div className="relative min-h-0">
         <Media start={start} theme={theme} />
         <Trust start={start} className="right-5 top-5" dark />
-        <BrandMark start={start} theme={theme} siteTitle="" className="left-5 top-5" light />
+        <BrandMark start={start} theme={theme} siteTitle={siteTitle} className="left-5 top-5" light />
       </div>
     </div>
   );
@@ -148,18 +151,20 @@ function EditorialMobile({
   palette,
   theme,
   start,
+  siteTitle,
   content,
 }: {
   palette: QuizPalette;
   theme: ThemeConfig;
   start: QuizSchema["startScreen"];
+  siteTitle: string;
   content: ReactNode;
 }) {
   return (
     <div className="flex h-full min-h-0 flex-col overflow-hidden" style={{ background: palette.bg, color: palette.fg, fontFamily: palette.font }}>
       <div className="relative h-[32%] min-h-[140px] shrink-0">
         <Media start={start} theme={theme} />
-        <BrandMark start={start} theme={theme} siteTitle="" className="left-4 top-4" light />
+        <BrandMark start={start} theme={theme} siteTitle={siteTitle} className="left-4 top-4" light />
         <div className="absolute inset-x-0 bottom-0 h-16" style={{ background: `linear-gradient(180deg, transparent, ${palette.bg})` }} />
       </div>
       <div className="flex min-h-0 flex-1 flex-col justify-center px-5 py-4">{content}</div>
@@ -215,12 +220,16 @@ function Scrim({
 }) {
   if (fallback || start.layout === "swiss_minimal") return null;
   const strength = start.media.overlayOpacity / 100;
-  const background = vignette
-    ? `radial-gradient(ellipse at center, rgba(0,0,0,${(strength * 0.35).toFixed(2)}) 0%, rgba(0,0,0,${strength.toFixed(2)}) 78%)`
-    : compact
-      ? `linear-gradient(180deg, rgba(0,0,0,${(strength * 0.2).toFixed(2)}) 0%, rgba(0,0,0,${(strength * 0.55).toFixed(2)}) 42%, rgba(0,0,0,${Math.min(0.9, strength + 0.12).toFixed(2)}) 100%)`
-      : `linear-gradient(90deg, rgba(0,0,0,${strength.toFixed(2)}) 0%, rgba(0,0,0,${(strength * 0.62).toFixed(2)}) 42%, rgba(0,0,0,${(strength * 0.18).toFixed(2)}) 100%)`;
-  return <div className="absolute inset-0" style={{ background }} aria-hidden />;
+  const vertical = `linear-gradient(180deg, rgba(0,0,0,${(strength * 0.2).toFixed(2)}) 0%, rgba(0,0,0,${(strength * 0.55).toFixed(2)}) 42%, rgba(0,0,0,${Math.min(0.9, strength + 0.12).toFixed(2)}) 100%)`;
+  const horizontal = `linear-gradient(90deg, rgba(0,0,0,${strength.toFixed(2)}) 0%, rgba(0,0,0,${(strength * 0.62).toFixed(2)}) 42%, rgba(0,0,0,${(strength * 0.18).toFixed(2)}) 100%)`;
+  const radial = `radial-gradient(ellipse at center, rgba(0,0,0,${(strength * 0.35).toFixed(2)}) 0%, rgba(0,0,0,${strength.toFixed(2)}) 78%)`;
+  if (compact) return <div className="absolute inset-0" style={{ background: vertical }} aria-hidden />;
+  return (
+    <>
+      <div className="absolute inset-0 md:hidden" style={{ background: vertical }} aria-hidden />
+      <div className="absolute inset-0 hidden md:block" style={{ background: vignette ? radial : horizontal }} aria-hidden />
+    </>
+  );
 }
 
 function Copy({
@@ -286,7 +295,7 @@ function Copy({
       {gifts.length > 1 || (gifts.length === 1 && centered) ? (
         <div className="mt-3">
           <p className="mb-2 text-[10px] uppercase tracking-[0.14em]" style={{ color: tone.muted }}><span>{schema.giftsConfig.sectionLabel}</span></p>
-          <div className={compact ? "grid gap-2" : "grid grid-cols-2 gap-2"}>
+          <div className={compact ? "grid gap-2" : gifts.length > 2 ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
             {gifts.map((gift) => <GiftCard key={gift.id} gift={gift} dark={tone.dark} locked />)}
           </div>
         </div>

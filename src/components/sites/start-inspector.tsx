@@ -7,6 +7,16 @@ import type { GiftType, QuizGift, QuizSchema, StartLayout } from "@/lib/sites/qu
 
 const field = "h-10 w-full rounded-xl border border-[#e4e4e7] bg-[#fff] px-3 text-sm text-[#09090b] outline-none";
 
+const BULLET_ICONS = [
+  ["check", "Галочка"],
+  ["clock", "Срок"],
+  ["home", "Объект"],
+  ["map", "Место"],
+  ["shield", "Защита"],
+  ["star", "Оценка"],
+  ["wallet", "Бюджет"],
+] as const;
+
 const LAYOUTS: { id: StartLayout; label: string }[] = [
   { id: "cinematic_hero", label: "Cinematic Hero" },
   { id: "editorial_split", label: "Editorial Split" },
@@ -151,6 +161,11 @@ export function StartInspector({
         <p className="text-[11px] text-[#71717a]"><span>**текст** делает цифры жирными.</span></p>
         {start.bullets.items.map((item, index) => (
           <div key={item.id} className="flex gap-2">
+            {start.bullets.iconStyle === "icon" ? (
+              <select className={`${field} max-w-[7.5rem]`} value={item.icon || "check"} onChange={(event) => patch({ bullets: { ...start.bullets, items: start.bullets.items.map((entry, entryIndex) => entryIndex === index ? { ...entry, icon: event.target.value } : entry) } })}>
+                {BULLET_ICONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+            ) : null}
             <input className={field} value={item.text} onChange={(event) => patch({ bullets: { ...start.bullets, items: start.bullets.items.map((entry, entryIndex) => entryIndex === index ? { ...entry, text: event.target.value } : entry) } })} />
             <button type="button" className="text-xs text-[#cf0234]" onClick={() => patch({ bullets: { ...start.bullets, items: start.bullets.items.filter((entry) => entry.id !== item.id) } })}><span>Удалить</span></button>
           </div>
