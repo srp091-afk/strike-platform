@@ -1,5 +1,6 @@
 import "server-only";
 
+import { getEffectiveUserId } from "@/lib/account-context";
 import { getAuthenticatedUserId } from "@/lib/auth-user";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 import {
@@ -68,9 +69,20 @@ export function slugifyLanding(value: string) {
 /** List preview without heavy `bullets` JSON documents. */
 export async function listLandingsPreview(): Promise<LandingListItem[]> {
   const supabase = createSupabaseAdminClient();
+  const userId = await getEffectiveUserId();
+  const withSites = await supabase
+    .from("landings")
+    .select("id, slug, title, subtitle, created_at, site_type, subdomain, status, views_count, leads_count, agents(name)")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false });
+  if (!withSites.error) {
+    return (withSites.data ?? []).map((row) => mapLandingPreview(row as Record<string, unknown>));
+  }
+
   const withStatus = await supabase
     .from("landings")
-    .select("id, title, subtitle, created_at, agents(name), status:bullets->>status")
+    .select("id, slug, title, subtitle, created_at, agents(name), status:bullets->>status")
+    .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   if (!withStatus.error) {
@@ -79,7 +91,8 @@ export async function listLandingsPreview(): Promise<LandingListItem[]> {
 
   const basic = await supabase
     .from("landings")
-    .select("id, title, subtitle, created_at, agents(name)")
+    .select("id, slug, title, subtitle, created_at, agents(name)")
+    .eq("user_id", userId)
     .order("created_at", { ascending: false });
 
   if (basic.error) throw new Error(basic.error.message);
@@ -102,6 +115,7 @@ function mapLandingPreview(row: Record<string, unknown>): LandingListItem {
   const agentName =
     agent && typeof agent === "object" && "name" in agent && typeof agent.name === "string" ? agent.name : null;
   const statusRaw = typeof row.status === "string" ? row.status : null;
+  const siteType = row.site_type === "quiz" || row.site_type === "multipage" || row.site_type === "store" || row.site_type === "bio" ? row.site_type : "landing";
 
   return {
     id: String(row.id),
@@ -109,7 +123,12 @@ function mapLandingPreview(row: Record<string, unknown>): LandingListItem {
     subtitle: String(row.subtitle ?? ""),
     createdAt: String(row.created_at ?? ""),
     agentName,
-    status: statusRaw === "published" ? "published" : "draft",
+    status: statusRaw === "published" || statusRaw === "paused" ? statusRaw : "draft",
+    siteType,
+    subdomain: typeof row.subdomain === "string" ? row.subdomain : null,
+    slug: typeof row.slug === "string" ? row.slug : "",
+    views: Number(row.views_count ?? 0) || 0,
+    leads: Number(row.leads_count ?? 0) || 0,
   };
 }
 

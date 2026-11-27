@@ -1,6 +1,8 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+import { hostName, isAppHost, isCustomSiteHost, subdomainFromHost } from "@/lib/sites/domains";
+
 export async function middleware(request: NextRequest) {
   let response = NextResponse.next({
     request: {
@@ -9,6 +11,23 @@ export async function middleware(request: NextRequest) {
   });
 
   const { pathname } = request.nextUrl;
+  const host = hostName(request.headers.get("host") ?? "");
+  if (
+    host &&
+    !isAppHost(host) &&
+    !pathname.startsWith("/_next") &&
+    !pathname.startsWith("/api") &&
+    pathname !== "/favicon.ico" &&
+    !pathname.startsWith("/s-host/")
+  ) {
+    const sub = subdomainFromHost(host);
+    if (sub || isCustomSiteHost(host)) {
+      const url = request.nextUrl.clone();
+      const suffix = pathname === "/" ? "" : pathname;
+      url.pathname = `/s-host/${host}${suffix}`;
+      return NextResponse.rewrite(url);
+    }
+  }
 
   // Supabase при неразрешённом redirectTo возвращает на Site URL (/) с ?code=...: доводим вход до конца в /auth/callback,
   // иначе пользователь оказывается на лендинге без сессии.
@@ -76,7 +95,12 @@ export async function middleware(request: NextRequest) {
     // Публичное демо голосового агента: ссылку отправляем клиентам без регистрации.
     pathname === "/demo" ||
     pathname.startsWith("/demo/") ||
-    pathname.startsWith("/api/demo/");
+    pathname.startsWith("/api/demo/") ||
+    pathname.startsWith("/l/") ||
+    pathname.startsWith("/s/") ||
+    pathname.startsWith("/s-host/") ||
+    pathname === "/api/sites/submit" ||
+    pathname === "/api/sites/event";
 
   // Локальный dev-сервер открывает страницы без Google. На production редирект остаётся
   // для всего, кроме явных public routes выше.

@@ -68,7 +68,12 @@ export type LandingListItem = {
   subtitle: string;
   createdAt: string;
   agentName: string | null;
-  status: "draft" | "published";
+  status: "draft" | "published" | "paused";
+  siteType: "quiz" | "landing" | "multipage" | "store" | "bio";
+  subdomain: string | null;
+  slug: string;
+  views: number;
+  leads: number;
 };
 
 export const EMPTY_CONTENT: LandingSectionContent = {

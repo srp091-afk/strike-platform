@@ -2,7 +2,7 @@
 
 import useSWR from "swr";
 
-import { FunnelHome } from "@/components/funnel-home";
+import { SitesHub } from "@/components/sites/sites-hub";
 import { SitesRouteSkeleton } from "@/components/route-loading-skeleton";
 import type { LandingListItem } from "@/lib/landing-types";
 import { jsonFetcher } from "@/lib/swr";
@@ -21,5 +21,5 @@ export function FunnelsPageClient() {
     return <SitesRouteSkeleton />;
   }
 
-  return <FunnelHome landings={data?.landings ?? []} loadError={error ? error.message : null} />;
+  return <SitesHub sites={data?.landings ?? []} loadError={error ? error.message : null} />;
 }
