@@ -2,6 +2,7 @@ import "server-only";
 
 import { getEffectiveUserId } from "@/lib/account-context";
 import { compactSubdomain, hostName, isCustomSiteHost, normalizeSubdomain, subdomainFromHost } from "@/lib/sites/domains";
+import { getPublicSiteUrl } from "@/lib/sites/public-url";
 import {
   blankQuiz,
   defaultTheme,
@@ -175,6 +176,7 @@ export async function saveQuizDraft(id: string, patch: {
 export async function publishQuiz(id: string) {
   const current = await getOwnedSite(id);
   if (!current) throw new Error("Квиз не найден.");
+  if (!current.subdomain) throw new Error("Сначала задайте адрес сайта.");
   const admin = createSupabaseAdminClient();
   const { error } = await admin
     .from("landings")
@@ -187,6 +189,12 @@ export async function publishQuiz(id: string) {
     .eq("id", id)
     .eq("user_id", current.userId);
   if (error) throw new Error(error.message);
+  const subdomain = current.subdomain;
+  return {
+    status: "published" as const,
+    subdomain,
+    publicUrl: getPublicSiteUrl(subdomain),
+  };
 }
 
 export async function getPublishedByHost(host: string) {

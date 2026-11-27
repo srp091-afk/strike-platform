@@ -49,12 +49,19 @@ export async function saveQuiz(id: string, patch: {
 
 export async function publishQuizSite(id: string) {
   try {
-    await publishQuiz(id);
+    const published = await publishQuiz(id);
     revalidatePath("/funnels");
     revalidatePath(`/funnels/${id}`);
-    return { ok: true as const, error: null };
+    revalidatePath(`/s/${published.subdomain}`);
+    return { ok: true as const, error: null, status: published.status, subdomain: published.subdomain, publicUrl: published.publicUrl };
   } catch (error) {
-    return { ok: false as const, error: error instanceof Error ? error.message : "Не удалось опубликовать." };
+    return {
+      ok: false as const,
+      error: error instanceof Error ? error.message : "Не удалось опубликовать.",
+      status: null,
+      subdomain: null,
+      publicUrl: null,
+    };
   }
 }
 

@@ -21,7 +21,7 @@ export function PublishedSite({ site, live }: { site: SiteRecord; live: boolean 
     return (
       <main className="grid min-h-screen place-items-center bg-[#fafafa] px-6 text-center text-[#09090b]">
         <div>
-          <h1 className="text-3xl font-semibold"><span>{site.status === "paused" ? "Сайт на паузе" : "Скоро откроется"}</span></h1>
+          <h1 className="text-3xl font-semibold"><span>{site.status === "paused" ? "Сайт на паузе" : "Сайт ещё не опубликован"}</span></h1>
           <p className="mt-3 text-sm text-[#52525b]"><span>{site.title}</span></p>
         </div>
       </main>

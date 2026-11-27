@@ -22,6 +22,7 @@ export default async function SiteStudioPage({ params }: { params: Promise<{ id:
         title: site.title,
         subdomain: site.subdomain,
         customDomain: site.customDomain,
+        status: site.status,
         leads: site.leads,
         draft: site.draft,
         theme: site.theme,

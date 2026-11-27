@@ -1,16 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { Monitor, Smartphone } from "lucide-react";
+import { Check, ExternalLink, Loader2, Monitor, Smartphone } from "lucide-react";
 
 import { QuizRunner } from "@/components/sites/quiz-runner";
 import { DeliveryFields, StartInspector } from "@/components/sites/start-inspector";
 import { ResultInspector } from "@/components/sites/result-inspector";
 import { ConsultantSettings, HelperInspector } from "@/components/sites/consultant-inspector";
-import { listSubmissions, publishQuizSite, saveQuiz } from "@/app/funnels/site-actions";
-import { brandHost, normalizeCustomDomain, normalizeSubdomain, publicSiteUrl, fallbackSitePath } from "@/lib/sites/domains";
+import { listSubmissions, saveQuiz } from "@/app/funnels/site-actions";
+import { normalizeCustomDomain, normalizeSubdomain } from "@/lib/sites/domains";
+import { copyText, getPublicSiteDisplayUrl, getPublicSiteUrl } from "@/lib/sites/public-url";
 import { newStep, type AnalyticsConfig, type QuizSchema, type SeoConfig, type ThemeConfig } from "@/lib/sites/quiz-schema";
 import { stripMarkers } from "@/lib/sites/quiz-polish";
 import { StudioSelect, StudioToggle } from "@/components/sites/studio-controls";
@@ -21,6 +21,7 @@ type StudioSite = {
   title: string;
   subdomain: string | null;
   customDomain: string | null;
+  status: "draft" | "published" | "paused";
   leads: number;
   draft: QuizSchema;
   theme: ThemeConfig;
@@ -35,7 +36,6 @@ type Screen = "start" | "lead" | "thanks" | string;
 const field = "h-11 w-full rounded-xl border border-[#e4e4e7] bg-[#fff] px-3 text-sm text-[#09090b] outline-none";
 
 export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: string; name: string }[] }) {
-  const router = useRouter();
   const [title, setTitle] = useState(stripMarkers(site.title));
   const [draft, setDraft] = useState(site.draft);
   const [theme, setTheme] = useState(site.theme);
@@ -51,18 +51,32 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
   const [walk, setWalk] = useState(false);
   const [leadsOpen, setLeadsOpen] = useState(false);
   const [saved, setSaved] = useState(true);
-  const [notice, setNotice] = useState("");
+  const [status, setStatus] = useState(site.status);
+  const [publishing, setPublishing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [errorText, setErrorText] = useState("");
+  const [toast, setToast] = useState<{ href: string } | null>(null);
   const [leads, setLeads] = useState<Awaited<ReturnType<typeof listSubmissions>>>([]);
   const [testOpen, setTestOpen] = useState(false);
   const [testVars, setTestVars] = useState<Record<string, number>>({});
   const snapshot = useMemo(() => JSON.stringify({ title, draft, theme, analytics, seo, agentId, subdomain, customDomain }), [title, draft, theme, analytics, seo, agentId, subdomain, customDomain]);
+  const [baseline, setBaseline] = useState(snapshot);
+  const chain = useRef(Promise.resolve());
+  const patch = { title, subdomain, customDomain, theme, draft, analytics, seo, agentId: agentId || null };
+
+  function enqueue(task: () => Promise<void>) {
+    const run = chain.current.then(task, task);
+    chain.current = run.then(() => undefined, () => undefined);
+    return run;
+  }
 
   useEffect(() => {
     setSaved(false);
     const timer = window.setTimeout(() => {
-      void saveQuiz(site.id, { title, subdomain, customDomain, theme, draft, analytics, seo, agentId: agentId || null }).then((result) => {
+      void enqueue(async () => {
+        const result = await saveQuiz(site.id, patch);
         setSaved(result.ok);
-        if (!result.ok && result.error) setNotice(result.error);
+        if (!result.ok && result.error) setErrorText(result.error);
       });
     }, 700);
     return () => window.clearTimeout(timer);
@@ -70,7 +84,55 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
 
   const step = draft.steps.find((item) => item.id === screen) ?? null;
   const liveHost = normalizeSubdomain(subdomain);
-  const hostLabel = !subdomain.trim() ? "имя.strikeplatform.io" : liveHost.ok ? brandHost(liveHost.slug) : liveHost.reason;
+  const hostLabel = !subdomain.trim() ? "strikeplatform.io/s/имя" : liveHost.ok ? getPublicSiteDisplayUrl(liveHost.slug) : liveHost.reason;
+  const publicUrl = liveHost.ok ? getPublicSiteUrl(liveHost.slug) : "";
+  const unpublished = status !== "published" || snapshot !== baseline;
+  const publishLabel = publishing ? "Публикуем…" : status === "published" && !unpublished ? "Опубликовано ✓" : status === "published" ? "Опубликовать изменения" : "Опубликовать";
+
+  async function copyLink(slug: string) {
+    const url = getPublicSiteUrl(slug);
+    const ok = await copyText(url);
+    if (!ok) {
+      setErrorText("Не удалось скопировать ссылку.");
+      return;
+    }
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 2000);
+  }
+
+  async function publish() {
+    if (publishing || !liveHost.ok) {
+      if (!liveHost.ok) setErrorText(liveHost.reason || "Сначала задайте адрес сайта.");
+      return;
+    }
+    setPublishing(true);
+    setErrorText("");
+    setToast(null);
+    try {
+      await enqueue(async () => {
+        const savedResult = await saveQuiz(site.id, patch);
+        setSaved(savedResult.ok);
+        if (!savedResult.ok) throw new Error(savedResult.error ?? "Не удалось сохранить черновик.");
+        const response = await fetch(`/api/sites/${site.id}/publish`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify(patch),
+        });
+        const body = (await response.json().catch(() => null)) as { ok?: boolean; error?: string; publicUrl?: string; subdomain?: string } | null;
+        if (!response.ok || !body?.ok) {
+          throw new Error(body?.error || `Не удалось опубликовать (${response.status}).`);
+        }
+        setStatus("published");
+        setBaseline(snapshot);
+        setToast({ href: body.publicUrl || getPublicSiteUrl(body.subdomain || liveHost.slug) });
+        window.setTimeout(() => setToast(null), 6000);
+      });
+    } catch (error) {
+      setErrorText(error instanceof Error ? error.message : "Не удалось опубликовать.");
+    } finally {
+      setPublishing(false);
+    }
+  }
 
   function updateStep(next: QuizSchema["steps"][number]) {
     setDraft((current) => ({ ...current, steps: current.steps.map((item) => (item.id === next.id ? next : item)) }));
@@ -81,12 +143,20 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-[#e4e4e7] bg-[#fff] px-4">
         <Link href="/funnels" className="text-sm text-[#52525b]"><span>← Сайты</span></Link>
         <input value={title} onChange={(event) => setTitle(event.target.value)} className="h-9 min-w-0 max-w-[260px] flex-1 truncate bg-transparent text-sm font-semibold outline-none" />
-        <button type="button" className="hidden items-center gap-2 rounded-full border border-[#e4e4e7] px-3 py-1 text-xs sm:inline-flex" onClick={() => { setPanel("settings"); }}>
-          <span>{hostLabel}</span>
-        </button>
         {liveHost.ok ? (
-          <button type="button" className="text-xs text-[#cf0234]" onClick={() => void navigator.clipboard.writeText(publicSiteUrl(liveHost.slug))}>
-            <span>Скопировать ссылку</span>
+          <a href={publicUrl} target="_blank" rel="noopener noreferrer" title={status === "draft" ? "Сначала нажмите «Опубликовать»" : hostLabel} className="hidden max-w-[240px] items-center gap-1.5 truncate rounded-full border border-[#e4e4e7] px-3 py-1 text-xs text-[#09090b] sm:inline-flex">
+            <span className="truncate">{hostLabel}</span>
+            <ExternalLink className="h-[13px] w-[13px] shrink-0" />
+          </a>
+        ) : (
+          <button type="button" className="hidden items-center gap-2 rounded-full border border-[#e4e4e7] px-3 py-1 text-xs sm:inline-flex" onClick={() => { setPanel("settings"); }}>
+            <span>{hostLabel}</span>
+          </button>
+        )}
+        {liveHost.ok ? (
+          <button type="button" className="inline-flex items-center gap-1 text-xs text-[#cf0234]" onClick={() => void copyLink(liveHost.slug)}>
+            {copied ? <Check className="h-3.5 w-3.5" /> : null}
+            <span>{copied ? "Скопировано ✓" : "Скопировать ссылку"}</span>
           </button>
         ) : null}
         <div className="inline-flex items-center rounded-lg bg-[#f4f4f5] p-0.5">
@@ -100,12 +170,19 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
         <button type="button" className="text-xs text-[#52525b]" onClick={() => { setLeadsOpen(true); void listSubmissions(site.id).then(setLeads); }}>
           <span>{`Заявки (${site.leads})`}</span>
         </button>
-        <span className="text-xs text-[#71717a]"><span>{saved ? "Сохранено" : "Есть неопубликованные правки"}</span></span>
-        <button type="button" className="h-9 rounded-xl bg-[#cf0234] px-4 text-sm font-semibold text-[#fff]" onClick={() => void publishQuizSite(site.id).then((result) => { setNotice(result.ok ? "Опубликовано" : result.error ?? ""); if (result.ok) router.refresh(); })}>
-          <span>Опубликовать</span>
+        <span className="text-xs text-[#71717a]"><span>{saved ? "Сохранено" : "Сохраняем…"}</span></span>
+        <button type="button" disabled={publishing} className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:opacity-70 ${unpublished ? "bg-[#cf0234] text-[#fff]" : "border border-[#e4e4e7] bg-[#fff] text-[#09090b]"}`} onClick={() => void publish()}>
+          {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+          <span>{publishLabel}</span>
         </button>
       </header>
-      {notice ? <p className="bg-[#fff] px-4 py-2 text-sm text-[#52525b]"><span>{notice}</span></p> : null}
+      {errorText ? <p className="border-b border-[#fecaca] bg-[#fef2f2] px-4 py-2 text-sm text-[#b91c1c]"><span>{errorText}</span></p> : null}
+      {toast ? (
+        <div className="fixed right-4 top-4 z-[90] flex items-center gap-3 rounded-xl border border-[#e4e4e7] bg-[#fff] px-4 py-3 text-sm text-[#09090b] shadow-[0_12px_32px_-16px_rgba(0,0,0,0.25)]">
+          <span>Сайт опубликован</span>
+          <a href={toast.href} target="_blank" rel="noopener noreferrer" className="font-medium text-[#cf0234]"><span>Открыть ↗</span></a>
+        </div>
+      ) : null}
       {leadsOpen ? (
         <Leads rows={leads} onClose={() => setLeadsOpen(false)} />
       ) : (
@@ -152,6 +229,8 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
                 onAnalytics={setAnalytics}
                 onSeo={setSeo}
                 onCheck={() => void checkDomain(site.id, setDomainNote)}
+                copied={copied}
+                onCopy={(slug) => void copyLink(slug)}
               />
             ) : null}
           </aside>
@@ -171,7 +250,12 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
             </div>
             <div className={`mx-auto flex h-[min(800px,calc(100dvh-8.5rem))] flex-col overflow-hidden border border-[#e4e4e7] bg-[#fff] ${device === "mobile" ? "w-[390px]" : "w-full max-w-5xl"}`}>
               <div className="border-b border-[#e4e4e7] bg-[#fafafa] px-4 py-2 text-center text-xs text-[#71717a]">
-                <span>{liveHost.ok ? publicSiteUrl(liveHost.slug) : "https://имя.strikeplatform.io"}</span>
+                {liveHost.ok ? (
+                  <a href={publicUrl} target="_blank" rel="noopener noreferrer" title={status === "draft" ? "Сначала нажмите «Опубликовать»" : undefined} className="inline-flex items-center gap-1 text-[#52525b]">
+                    <span>{hostLabel}</span>
+                    <ExternalLink className="h-[13px] w-[13px]" />
+                  </a>
+                ) : <span>strikeplatform.io/s/имя</span>}
               </div>
               <div className="min-h-0 flex-1">
                 <QuizRunner schema={draft} theme={theme} siteTitle={title} live={false} screen={walk ? undefined : screen} compact={device === "mobile"} embedded previewOverrides={testVars} />
@@ -239,6 +323,8 @@ function Settings(props: {
   onAnalytics: (value: AnalyticsConfig) => void;
   onSeo: (value: SeoConfig) => void;
   onCheck: () => void;
+  copied: boolean;
+  onCopy: (slug: string) => void;
 }) {
   const check = normalizeSubdomain(props.subdomain);
   const domain = normalizeCustomDomain(props.customDomain);
@@ -248,11 +334,11 @@ function Settings(props: {
         <span>Субдомен</span>
         <input className={field} value={props.subdomain} onChange={(event) => props.onSubdomain(event.target.value)} />
       </label>
-      <p className="text-xs text-[#71717a]"><span>{check.ok ? brandHost(check.slug) : check.reason}</span></p>
+      <p className="text-xs text-[#71717a]"><span>{check.ok ? getPublicSiteDisplayUrl(check.slug) : check.reason}</span></p>
       {check.ok ? (
         <div className="flex flex-wrap gap-3 text-xs">
-          <button type="button" className="text-[#cf0234]" onClick={() => void navigator.clipboard.writeText(publicSiteUrl(check.slug))}><span>Скопировать ссылку</span></button>
-          <a className="text-[#52525b]" href={fallbackSitePath(check.slug)} target="_blank" rel="noreferrer"><span>Открыть</span></a>
+          <button type="button" className="text-[#cf0234]" onClick={() => props.onCopy(check.slug)}><span>{props.copied ? "Скопировано ✓" : "Скопировать ссылку"}</span></button>
+          <a className="text-[#52525b]" href={getPublicSiteUrl(check.slug)} target="_blank" rel="noopener noreferrer"><span>Открыть</span></a>
         </div>
       ) : null}
       <label className="grid gap-1 text-xs text-[#52525b]">

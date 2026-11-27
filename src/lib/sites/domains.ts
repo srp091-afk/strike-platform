@@ -1,3 +1,5 @@
+import { getPublicSiteUrl } from "@/lib/sites/public-url";
+
 export const RESERVED_SUBDOMAINS = [
   "www",
   "app",
@@ -106,15 +108,14 @@ export function brandHost(subdomain: string) {
 }
 
 export function publicSiteUrl(subdomain: string, path = "") {
+  const base = getPublicSiteUrl(subdomain);
   const suffix = path.replace(/^\/+|\/+$/g, "");
-  const host = `https://${brandHost(subdomain)}`;
-  return suffix ? `${host}/${suffix}` : host;
+  return suffix ? `${base}/${suffix}` : base;
 }
 
-/** Запасной адрес на основном домене, пока wildcard DNS не разъехался. */
+/** Рабочий адрес на основном домене: /s/<субдомен>. */
 export function fallbackSitePath(subdomain: string, path = "") {
-  const suffix = path.replace(/^\/+|\/+$/g, "");
-  return suffix ? `/${subdomain}/${suffix}` : `/${subdomain}`;
+  return internalSitePath(subdomain, path);
 }
 
 export function internalSitePath(subdomain: string, path = "") {

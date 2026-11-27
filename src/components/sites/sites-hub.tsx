@@ -2,11 +2,11 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, ArrowUpRight, Loader2 } from "lucide-react";
+import { ArrowRight, ArrowUpRight, Check, Loader2 } from "lucide-react";
 
 import { createManualLanding, createManualQuiz, deleteSite, duplicateSite } from "@/app/funnels/site-actions";
 import type { LandingListItem } from "@/lib/landing-types";
-import { brandHost, fallbackSitePath, publicSiteUrl } from "@/lib/sites/domains";
+import { copyText, getPublicSiteDisplayUrl, getPublicSiteUrl } from "@/lib/sites/public-url";
 import type { ThemePreset } from "@/lib/sites/quiz-schema";
 
 const SITE_FORMATS = [
@@ -54,6 +54,7 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const presets = format === "landing" ? LANDING_PRESETS : QUIZ_PRESETS;
   const ready = SITE_FORMATS.filter((item) => item.available);
   const later = SITE_FORMATS.filter((item) => !item.available);
@@ -194,7 +195,8 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
         {visible.length === 0 ? <p className="mt-6 rounded-2xl border border-dashed border-[#e4e4e7] px-6 py-12 text-center text-sm text-[#71717a]"><span>Сайтов пока нет.</span></p> : (
           <ul className="mt-6 grid gap-4 sm:grid-cols-2">
             {visible.map((site) => {
-              const address = site.subdomain ? brandHost(site.subdomain) : "";
+              const address = site.subdomain ? getPublicSiteDisplayUrl(site.subdomain) : "";
+              const publicUrl = site.subdomain ? getPublicSiteUrl(site.subdomain) : "";
               const conversion = site.views > 0 ? Math.round((site.leads / site.views) * 1000) / 10 : 0;
               return (
                 <li key={site.id} className="rounded-2xl border border-[#e4e4e7] bg-[#fff] p-5">
@@ -206,8 +208,13 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
                     <span>{site.title}</span>
                   </button>
                   <p className="mt-2 flex flex-wrap items-center gap-2 text-sm text-[#52525b]">
-                    {address ? <a href={fallbackSitePath(site.subdomain!)} target="_blank" rel="noreferrer"><span>{address}</span></a> : <span>Адрес появится после публикации</span>}
-                    {site.subdomain ? <button type="button" className="text-[#cf0234]" onClick={() => void navigator.clipboard.writeText(publicSiteUrl(site.subdomain!))}><span>Скопировать ссылку</span></button> : null}
+                    {address ? <a href={publicUrl} target="_blank" rel="noopener noreferrer"><span>{address}</span></a> : <span>Адрес появится после публикации</span>}
+                    {site.subdomain ? (
+                      <button type="button" className="inline-flex items-center gap-1 text-[#cf0234]" onClick={() => void copyText(publicUrl).then((ok) => { if (!ok) return; setCopiedId(site.id); window.setTimeout(() => setCopiedId((current) => current === site.id ? null : current), 2000); })}>
+                        {copiedId === site.id ? <Check className="h-3.5 w-3.5" /> : null}
+                        <span>{copiedId === site.id ? "Скопировано ✓" : "Скопировать ссылку"}</span>
+                      </button>
+                    ) : null}
                   </p>
                   <p className="mt-4 text-sm text-[#71717a]"><span>{`${site.views} просмотров · ${site.leads} лидов · ${conversion}%`}</span></p>
                   <p className="mt-2 text-sm"><span>{site.agentName ?? "Агент не выбран"}</span></p>
