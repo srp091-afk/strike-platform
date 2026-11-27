@@ -2,6 +2,7 @@
 
 import { useState, type ChangeEvent } from "react";
 
+import { StudioSelect, StudioToggle } from "@/components/sites/studio-controls";
 import { disabledResult, type QuizSchema, type ResultPreview, type ResultTemplate, type ValueFormat } from "@/lib/sites/quiz-schema";
 import { RESULT_PRESETS, resultPreset, presetForTemplate, type ResultPresetId } from "@/lib/sites/result-presets";
 
@@ -58,10 +59,7 @@ export function ResultInspector({ draft, onChange }: { draft: QuizSchema; onChan
 
   return (
     <div className="grid gap-3 border-t border-[#e4e4e7] pt-3">
-      <label className="flex items-center justify-between gap-3 text-sm font-semibold">
-        <span>Превью результата и калькулятор</span>
-        <input type="checkbox" checked={preview.enabled} onChange={(event) => enable(event.target.checked)} />
-      </label>
+      <StudioToggle label="Превью результата и калькулятор" checked={preview.enabled} onChange={enable} />
       {preview.enabled ? (
         <>
           <div className="grid grid-cols-2 gap-2">
@@ -73,10 +71,7 @@ export function ResultInspector({ draft, onChange }: { draft: QuizSchema; onChan
           </div>
           <label className="grid gap-1 text-xs text-[#52525b]">
             <span>Быстрый пресет ниши</span>
-            <select className={field} value="" onChange={(event) => { if (event.target.value) applyPreset(event.target.value as ResultPresetId); }}>
-              <option value="">Выбрать пресет</option>
-              {RESULT_PRESETS.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
-            </select>
+            <StudioSelect ariaLabel="Пресет ниши" value="" onChange={(value) => { if (value) applyPreset(value as ResultPresetId); }} options={[{ value: "", label: "Выбрать пресет" }, ...RESULT_PRESETS.map((item) => ({ value: item.id, label: item.label }))]} />
           </label>
           <div className="flex gap-2">
             {["₸", "$", "€", "₽"].map((symbol) => (
@@ -91,10 +86,7 @@ export function ResultInspector({ draft, onChange }: { draft: QuizSchema; onChan
           </label>
           <label className="grid gap-1 text-xs text-[#52525b]">
             <span>Позиция символа</span>
-            <select className={field} value={preview.currency.position} onChange={(event) => commit({ ...preview, currency: { ...preview.currency, position: event.target.value === "after" ? "after" : "before" } })}>
-              <option value="before">Перед суммой</option>
-              <option value="after">После суммы</option>
-            </select>
+            <StudioSelect ariaLabel="Позиция символа" value={preview.currency.position} onChange={(position) => commit({ ...preview, currency: { ...preview.currency, position: position === "after" ? "after" : "before" } })} options={[{ value: "before", label: "Перед суммой" }, { value: "after", label: "После суммы" }]} />
           </label>
           <Field label="Надзаголовок" {...bind(preview.eyebrow, (eyebrow) => commit({ ...preview, eyebrow }))} />
           <Field label="Заголовок результата" {...bind(preview.defaultHeadline, (defaultHeadline) => commit({ ...preview, defaultHeadline }))} />
@@ -114,20 +106,14 @@ export function ResultInspector({ draft, onChange }: { draft: QuizSchema; onChan
             <summary className="cursor-pointer text-sm"><span>Менять заголовок и ставки по ответам</span></summary>
             <RulesEditor preview={preview} onChange={commit} keys={keys} />
           </details>
-          <label className="flex items-center justify-between text-sm">
-            <span>Лоадер расчёта</span>
-            <input type="checkbox" checked={preview.loader.enabled} onChange={(event) => commit({ ...preview, loader: { ...preview.loader, enabled: event.target.checked } })} />
-          </label>
+          <StudioToggle label="Лоадер расчёта" checked={preview.loader.enabled} onChange={(enabled) => commit({ ...preview, loader: { ...preview.loader, enabled } })} />
           {preview.loader.steps.map((step, index) => (
             <Field key={index} label={`Статус ${index + 1}`} value={step} onChange={(event) => {
               const steps = preview.loader.steps.map((item, itemIndex) => itemIndex === index ? event.target.value : item);
               commit({ ...preview, loader: { ...preview.loader, steps } });
             }} />
           ))}
-          <label className="flex items-start justify-between gap-3 text-sm">
-            <span>Снимать блюр и показывать полный расчёт на странице после отправки</span>
-            <input type="checkbox" checked={preview.revealFullResultOnThankYou} onChange={(event) => commit({ ...preview, revealFullResultOnThankYou: event.target.checked })} />
-          </label>
+          <StudioToggle label="Снимать блюр после отправки" checked={preview.revealFullResultOnThankYou} onChange={(revealFullResultOnThankYou) => commit({ ...preview, revealFullResultOnThankYou })} />
         </>
       ) : null}
     </div>
@@ -164,12 +150,7 @@ function KpiEditor({ preview, onChange, bind }: { preview: ResultPreview; onChan
           <input className={field} {...bind(item.valueExpr, (valueExpr) => updateKpi(preview, onChange, index, { valueExpr }), true)} />
           <input className={field} {...bind(item.label, (label) => updateKpi(preview, onChange, index, { label }))} />
           <div className="flex gap-2">
-            <select className={field} value={item.format} onChange={(event) => updateKpi(preview, onChange, index, { format: event.target.value as ValueFormat })}>
-              <option value="currency">Валюта</option>
-              <option value="percent">Процент</option>
-              <option value="number">Число</option>
-              <option value="text">Текст</option>
-            </select>
+            <StudioSelect ariaLabel="Формат KPI" value={item.format} onChange={(format) => updateKpi(preview, onChange, index, { format: format as ValueFormat })} options={[{ value: "currency", label: "Валюта" }, { value: "percent", label: "Процент" }, { value: "number", label: "Число" }, { value: "text", label: "Текст" }]} />
             <button type="button" className="text-xs text-[#cf0234]" onClick={() => onChange({ ...preview, kpis: preview.kpis.filter((_, itemIndex) => itemIndex !== index) })}><span>Удалить</span></button>
           </div>
         </div>
@@ -199,13 +180,10 @@ function RowsEditor({ preview, onChange, bind }: { preview: ResultPreview; onCha
               }, column.format !== "text")} />
             </label>
           ))}
-          <label className="flex items-center justify-between text-xs">
-            <span>Скрыть под блюром</span>
-            <input type="checkbox" checked={row.locked} onChange={(event) => {
-              const rows = table.rows.map((item, itemIndex) => itemIndex === index ? { ...item, locked: event.target.checked } : item);
-              onChange({ ...preview, table: { ...table, rows } });
-            }} />
-          </label>
+          <StudioToggle label="Скрыть под блюром" checked={row.locked} onChange={(locked) => {
+            const rows = table.rows.map((item, itemIndex) => itemIndex === index ? { ...item, locked } : item);
+            onChange({ ...preview, table: { ...table, rows } });
+          }} />
         </div>
       ))}
     </div>
@@ -222,10 +200,7 @@ function MatchEditor({ preview, onChange, bind }: { preview: ResultPreview; onCh
         <div key={item.id} className="grid gap-2 rounded-xl border border-[#e4e4e7] p-2">
           <input className={field} {...bind(item.title, (title) => updateMatch(preview, onChange, index, { title }))} />
           <input className={field} {...bind(item.priceExpr, (priceExpr) => updateMatch(preview, onChange, index, { priceExpr }), true)} />
-          <label className="flex items-center justify-between text-xs">
-            <span>Скрыть под блюром</span>
-            <input type="checkbox" checked={item.locked} onChange={(event) => updateMatch(preview, onChange, index, { locked: event.target.checked })} />
-          </label>
+          <StudioToggle label="Скрыть под блюром" checked={item.locked} onChange={(locked) => updateMatch(preview, onChange, index, { locked })} />
         </div>
       ))}
     </div>
@@ -250,13 +225,10 @@ function AuditEditor({ preview, onChange, bind }: { preview: ResultPreview; onCh
             const insights = audit.insights.map((entry, entryIndex) => entryIndex === index ? { ...entry, title } : entry);
             onChange({ ...preview, audit: { ...audit, insights } });
           })} />
-          <label className="flex items-center justify-between text-xs">
-            <span>Скрыть под блюром</span>
-            <input type="checkbox" checked={item.locked} onChange={(event) => {
-              const insights = audit.insights.map((entry, entryIndex) => entryIndex === index ? { ...entry, locked: event.target.checked } : entry);
-              onChange({ ...preview, audit: { ...audit, insights } });
-            }} />
-          </label>
+          <StudioToggle label="Скрыть под блюром" checked={item.locked} onChange={(locked) => {
+            const insights = audit.insights.map((entry, entryIndex) => entryIndex === index ? { ...entry, locked } : entry);
+            onChange({ ...preview, audit: { ...audit, insights } });
+          }} />
         </div>
       ))}
     </div>
@@ -270,13 +242,7 @@ function RulesEditor({ preview, onChange, keys }: { preview: ResultPreview; onCh
         <div key={rule.id} className="grid gap-2">
           <div className="grid grid-cols-3 gap-1">
             <input className={field} value={rule.variable} placeholder={keys[0] ?? "budget"} onChange={(event) => updateRule(preview, onChange, index, { variable: event.target.value.toLowerCase().replace(/[^a-z0-9_]/g, "") })} />
-            <select className={field} value={rule.operator} onChange={(event) => updateRule(preview, onChange, index, { operator: event.target.value as ResultPreview["rules"][number]["operator"] })}>
-              <option value="gte">&gt;=</option>
-              <option value="gt">&gt;</option>
-              <option value="lte">&lt;=</option>
-              <option value="lt">&lt;</option>
-              <option value="eq">=</option>
-            </select>
+            <StudioSelect ariaLabel="Оператор" value={rule.operator} onChange={(operator) => updateRule(preview, onChange, index, { operator: operator as ResultPreview["rules"][number]["operator"] })} options={[{ value: "gte", label: ">=" }, { value: "gt", label: ">" }, { value: "lte", label: "<=" }, { value: "lt", label: "<" }, { value: "eq", label: "=" }]} />
             <input className={field} value={String(rule.value)} onChange={(event) => updateRule(preview, onChange, index, { value: Number(event.target.value) || 0 })} />
           </div>
           <input className={field} value={rule.eyebrow ?? ""} placeholder="Надзаголовок программы" onChange={(event) => updateRule(preview, onChange, index, { eyebrow: event.target.value })} />

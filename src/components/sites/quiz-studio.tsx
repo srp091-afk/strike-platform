@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { Monitor, Smartphone } from "lucide-react";
 
 import { QuizRunner } from "@/components/sites/quiz-runner";
 import { StartInspector } from "@/components/sites/start-inspector";
@@ -11,6 +12,8 @@ import { ConsultantSettings, HelperInspector } from "@/components/sites/consulta
 import { listSubmissions, publishQuizSite, saveQuiz } from "@/app/funnels/site-actions";
 import { brandHost, normalizeCustomDomain, normalizeSubdomain, publicSiteUrl, fallbackSitePath } from "@/lib/sites/domains";
 import { newStep, type AnalyticsConfig, type QuizSchema, type SeoConfig, type ThemeConfig } from "@/lib/sites/quiz-schema";
+import { stripMarkers } from "@/lib/sites/quiz-polish";
+import { StudioSelect, StudioToggle } from "@/components/sites/studio-controls";
 import { THEME_LABEL } from "@/lib/sites/theme";
 
 type StudioSite = {
@@ -33,7 +36,7 @@ const field = "h-11 w-full rounded-xl border border-[#e4e4e7] bg-[#fff] px-3 tex
 
 export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: string; name: string }[] }) {
   const router = useRouter();
-  const [title, setTitle] = useState(site.title);
+  const [title, setTitle] = useState(stripMarkers(site.title));
   const [draft, setDraft] = useState(site.draft);
   const [theme, setTheme] = useState(site.theme);
   const [analytics, setAnalytics] = useState(site.analytics);
@@ -77,7 +80,7 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
     <div className="flex h-[100dvh] flex-col bg-[#fafafa] text-[#09090b]">
       <header className="flex h-14 shrink-0 items-center gap-3 border-b border-[#e4e4e7] bg-[#fff] px-4">
         <Link href="/funnels" className="text-sm text-[#52525b]"><span>← Сайты</span></Link>
-        <input value={title} onChange={(event) => setTitle(event.target.value)} className="h-9 min-w-0 flex-1 bg-transparent text-sm font-semibold outline-none" />
+        <input value={title} onChange={(event) => setTitle(event.target.value)} className="h-9 min-w-0 max-w-[260px] flex-1 truncate bg-transparent text-sm font-semibold outline-none" />
         <button type="button" className="hidden items-center gap-2 rounded-full border border-[#e4e4e7] px-3 py-1 text-xs sm:inline-flex" onClick={() => { setPanel("settings"); }}>
           <span>{hostLabel}</span>
         </button>
@@ -86,9 +89,14 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
             <span>Скопировать ссылку</span>
           </button>
         ) : null}
-        <button type="button" className="text-xs text-[#52525b]" onClick={() => setDevice(device === "desktop" ? "mobile" : "desktop")}>
-          <span>{device === "desktop" ? "Desktop" : "Mobile"}</span>
-        </button>
+        <div className="inline-flex items-center rounded-lg bg-[#f4f4f5] p-0.5">
+          <button type="button" aria-label="Desktop" className={`grid h-7 w-8 place-items-center rounded-md ${device === "desktop" ? "bg-[#fff] text-[#09090b]" : "text-[#71717a]"}`} onClick={() => setDevice("desktop")}>
+            <Monitor className="h-3.5 w-3.5" />
+          </button>
+          <button type="button" aria-label="Mobile" className={`grid h-7 w-8 place-items-center rounded-md ${device === "mobile" ? "bg-[#fff] text-[#09090b]" : "text-[#71717a]"}`} onClick={() => setDevice("mobile")}>
+            <Smartphone className="h-3.5 w-3.5" />
+          </button>
+        </div>
         <button type="button" className="text-xs text-[#52525b]" onClick={() => { setLeadsOpen(true); void listSubmissions(site.id).then(setLeads); }}>
           <span>{`Заявки (${site.leads})`}</span>
         </button>
@@ -102,7 +110,7 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
         <Leads rows={leads} onClose={() => setLeadsOpen(false)} />
       ) : (
         <div className="grid min-h-0 flex-1 lg:grid-cols-[260px_minmax(0,1fr)_320px]">
-          <aside className="overflow-y-auto border-r border-[#e4e4e7] bg-[#fff] p-4">
+          <aside className="min-w-0 overflow-x-hidden overflow-y-auto border-r border-[#e4e4e7] bg-[#fff] p-4">
             <div className="grid grid-cols-3 gap-1 rounded-xl bg-[#f4f4f5] p-1 text-xs">
               {(["flow", "design", "settings"] as Panel[]).map((item) => (
                 <button key={item} type="button" className={`rounded-lg py-2 ${panel === item ? "bg-[#fff] font-semibold" : "text-[#52525b]"}`} onClick={() => setPanel(item)}>
@@ -115,7 +123,7 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
                 <FlowButton active={screen === "start"} label="Старт" onClick={() => setScreen("start")} />
                 <FlowButton active={screen === "gifts"} label="Подарки" onClick={() => setScreen("gifts")} />
                 {draft.steps.map((item, index) => (
-                  <div key={item.id} className="flex gap-1">
+                  <div key={item.id} className="flex min-w-0 gap-1">
                     <FlowButton active={screen === item.id} label={`${String(index + 1).padStart(2, "0")} ${item.title}`} onClick={() => setScreen(item.id)} />
                     <button type="button" className="text-xs text-[#71717a]" onClick={() => move(index, -1)}><span>↑</span></button>
                     <button type="button" className="text-xs text-[#71717a]" onClick={() => move(index, 1)}><span>↓</span></button>
@@ -263,12 +271,9 @@ function Settings(props: {
       ) : null}
       <label className="grid gap-1 text-xs text-[#52525b]">
         <span>AI-агент</span>
-        <select className={field} value={props.agentId} onChange={(event) => props.onAgent(event.target.value)}>
-          <option value="">Не привязан</option>
-          {props.agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}
-        </select>
+        <StudioSelect ariaLabel="AI-агент" value={props.agentId} onChange={props.onAgent} options={[{ value: "", label: "Не привязан" }, ...props.agents.map((agent) => ({ value: agent.id, label: agent.name }))]} />
       </label>
-      <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={props.analytics.syncLeads} onChange={(event) => props.onAnalytics({ ...props.analytics, syncLeads: event.target.checked })} /><span>Создавать лид в лидогенерации</span></label>
+      <StudioToggle label="Создавать лид в лидогенерации" checked={props.analytics.syncLeads} onChange={(syncLeads) => props.onAnalytics({ ...props.analytics, syncLeads })} />
       <label className="grid gap-1 text-xs text-[#52525b]"><span>WhatsApp</span><input className={field} value={props.analytics.whatsapp} onChange={(event) => props.onAnalytics({ ...props.analytics, whatsapp: event.target.value })} /></label>
       <label className="grid gap-1 text-xs text-[#52525b]"><span>Meta Pixel</span><input className={field} value={props.analytics.metaPixelId} onChange={(event) => props.onAnalytics({ ...props.analytics, metaPixelId: event.target.value })} /></label>
       <label className="grid gap-1 text-xs text-[#52525b]"><span>GA4</span><input className={field} value={props.analytics.ga4Id} onChange={(event) => props.onAnalytics({ ...props.analytics, ga4Id: event.target.value })} /></label>
@@ -284,13 +289,13 @@ function StepInspector({ siteId, title, step, steps, consultant, calculatorOpen,
   return (
     <div className="grid gap-3">
       <p className="text-sm font-semibold"><span>Вопрос</span></p>
-      <select className={field} value={step.type} onChange={(event) => onChange({ ...step, type: event.target.value as QuizSchema["steps"][number]["type"] })}>
-        <option value="single_choice">Один вариант</option>
-        <option value="multi_choice">Несколько</option>
-        <option value="image_cards">Карточки</option>
-        <option value="range_slider">Ползунок</option>
-        <option value="text_input">Текст</option>
-      </select>
+      <StudioSelect ariaLabel="Тип вопроса" value={step.type} onChange={(type) => onChange({ ...step, type: type as QuizSchema["steps"][number]["type"] })} options={[
+        { value: "single_choice", label: "Один вариант" },
+        { value: "multi_choice", label: "Несколько" },
+        { value: "image_cards", label: "Карточки" },
+        { value: "range_slider", label: "Ползунок" },
+        { value: "text_input", label: "Текст" },
+      ]} />
       <Text label="Вопрос" value={step.title} onChange={(title) => onChange({ ...step, title })} />
       <Text label="Пояснение" value={step.subtitle} onChange={(subtitle) => onChange({ ...step, subtitle })} />
       {step.options.map((option, index) => (
@@ -318,13 +323,10 @@ function StepInspector({ siteId, title, step, steps, consultant, calculatorOpen,
               }} />
             </label>
           ) : null}
-          <select className={field} value={option.nextStepId ?? ""} onChange={(event) => {
-            const options = step.options.map((item, itemIndex) => itemIndex === index ? { ...item, nextStepId: event.target.value || null } : item);
+          <StudioSelect ariaLabel="Следующий шаг" value={option.nextStepId ?? ""} onChange={(next) => {
+            const options = step.options.map((item, itemIndex) => itemIndex === index ? { ...item, nextStepId: next || null } : item);
             onChange({ ...step, options });
-          }}>
-            <option value="">Дальше по порядку</option>
-            {steps.filter((item) => item.id !== step.id).map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
-          </select>
+          }} options={[{ value: "", label: "Дальше по порядку" }, ...steps.filter((item) => item.id !== step.id).map((item) => ({ value: item.id, label: item.title }))]} />
         </div>
       ))}
       <details key={`${step.id}-${calculatorOpen ? "on" : "off"}`} className="rounded-xl border border-[#e4e4e7] p-3" open={calculatorOpen || undefined}>

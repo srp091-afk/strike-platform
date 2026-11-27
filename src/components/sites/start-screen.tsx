@@ -4,6 +4,7 @@ import { Check, Clock, Home, Lock, MapPin, Shield, Star, Unlock, Wallet } from "
 import type { CSSProperties, ReactNode } from "react";
 
 import type { QuizGift, QuizSchema, StartBullet, ThemeConfig } from "@/lib/sites/quiz-schema";
+import { questionPhrase, stripMarkers, tightenHeadline } from "@/lib/sites/quiz-polish";
 import { contrastInk, quizPalette, type QuizPalette } from "@/lib/sites/theme";
 
 const ICONS = { check: Check, clock: Clock, home: Home, map: MapPin, shield: Shield, star: Star, wallet: Wallet };
@@ -266,11 +267,11 @@ function Copy({
         </p>
       ) : null}
       <h1 className={`font-semibold ${compact ? "mt-3 text-[1.7rem] leading-[1.08]" : "mt-3 text-[clamp(1.75rem,3.4vw,3.5rem)] leading-[1.06]"} tracking-[-0.03em]`}>
-        <Headline text={start.headline} style={start.highlightStyle} accent={palette.accent} ink={ink} />
+        <Headline text={tightenHeadline(start.headline)} style={start.highlightStyle} accent={palette.accent} ink={ink} />
       </h1>
       {start.subheadline.show && start.subheadline.text ? (
         <p className={`mt-3 max-w-xl text-sm leading-6 ${centered ? "mx-auto" : ""} ${compact ? "" : "md:text-base"}`} style={{ color: tone.muted }}>
-          <span>{start.subheadline.text}</span>
+          <Marks text={start.subheadline.text} />
         </p>
       ) : null}
       {start.bullets.show && start.bullets.items.length > 0 ? (
@@ -287,21 +288,15 @@ function Copy({
         <button type="button" className={`${compact ? "min-h-[54px] w-full" : "min-h-[54px] w-full justify-self-start md:min-h-[48px] md:w-fit md:px-6"} text-sm font-semibold`} style={{ background: palette.accent, color: ink, borderRadius: palette.radius }} onClick={onStart}>
           <span>{start.ctaText || "Начать"}</span>
         </button>
-        {gifts.length === 1 && !centered ? <GiftCard gift={gifts[0]!} dark={tone.dark} locked /> : null}
+        {gifts.length === 1 && !centered ? <GiftCard gift={gifts[0]!} dark={tone.dark} locked label={schema.giftsConfig.sectionLabel} /> : null}
       </div>
       {start.ctaMicroText.show && start.ctaMicroText.text ? (
-        <p className="mt-2 text-[11px]" style={{ color: tone.muted }}><span>{start.ctaMicroText.text}</span></p>
+        <p className="mt-2 text-[11px]" style={{ color: tone.muted }}><span>{liveMicro(start.ctaMicroText.text, schema.steps.length)}</span></p>
       ) : null}
       {gifts.length > 1 || (gifts.length === 1 && centered) ? (
-        <div className="mt-3">
-          <p className="mb-2 text-[10px] uppercase tracking-[0.14em]" style={{ color: tone.muted }}><span>{schema.giftsConfig.sectionLabel}</span></p>
-          <div className={compact ? "grid gap-2" : gifts.length > 2 ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}>
-            {gifts.map((gift) => <GiftCard key={gift.id} gift={gift} dark={tone.dark} locked />)}
-          </div>
+        <div className={`mt-3 ${compact ? "grid gap-2" : gifts.length > 2 ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}`}>
+          {gifts.map((gift) => <GiftCard key={gift.id} gift={gift} dark={tone.dark} locked label={schema.giftsConfig.sectionLabel} />)}
         </div>
-      ) : null}
-      {gifts.length === 1 && !centered ? (
-        <p className="mt-2 text-[10px] uppercase tracking-[0.14em]" style={{ color: tone.muted }}><span>{schema.giftsConfig.sectionLabel}</span></p>
       ) : null}
     </div>
   );
@@ -322,7 +317,7 @@ function BrandMark({
 }) {
   if (!start.brand.show) return null;
   const logo = start.brand.logoUrl || theme.logoUrl;
-  const name = start.brand.name || siteTitle;
+  const name = stripMarkers(start.brand.name || siteTitle);
   if (!logo && !name) return null;
   return (
     <div className={`flex items-center gap-2 ${className ?? ""} ${light ? "absolute" : ""}`}>
@@ -336,17 +331,18 @@ function Trust({ start, className, dark }: { start: QuizSchema["startScreen"]; c
   if (!start.trustBadge.show || !start.trustBadge.primaryText) return null;
   return (
     <div className={`absolute z-20 rounded-full px-3 py-1.5 text-[11px] backdrop-blur-md ${className}`} style={glass(dark)}>
-      <span>{start.trustBadge.primaryText}</span>
-      {start.trustBadge.secondaryText ? <span style={{ opacity: 0.72 }}>{` · ${start.trustBadge.secondaryText}`}</span> : null}
+      <Marks text={start.trustBadge.primaryText} />
+      {start.trustBadge.secondaryText ? <span style={{ opacity: 0.72 }}><span>{` · `}</span><Marks text={start.trustBadge.secondaryText} /></span> : null}
     </div>
   );
 }
 
-export function GiftCard({ gift, dark, locked, action }: { gift: QuizGift; dark: boolean; locked?: boolean; action?: boolean }) {
+export function GiftCard({ gift, dark, locked, action, label }: { gift: QuizGift; dark: boolean; locked?: boolean; action?: boolean; label?: string }) {
   return (
     <div className="flex min-w-0 items-center gap-3 rounded-2xl px-3 py-2 backdrop-blur-md" style={glass(dark)}>
       <Cover gift={gift} dark={dark} />
       <div className="min-w-0 flex-1">
+        {label ? <p className="mb-1 text-[10px] uppercase tracking-[0.08em] opacity-55"><span>{label}</span></p> : null}
         <p className="truncate text-xs font-medium"><span>{gift.title}</span></p>
         {gift.subtitle ? <p className="truncate text-[11px] opacity-70"><span>{gift.subtitle}</span></p> : null}
         {action ? <GiftAction gift={gift} /> : null}
@@ -431,7 +427,7 @@ function Headline({ text, style, accent, ink }: { text: string; style: QuizSchem
         if (!marked) return <span key={index}>{value}</span>;
         if (style === "accent_text") return <span key={index} style={{ color: accent }}>{value}</span>;
         if (style === "underline") return <span key={index} style={{ boxShadow: `inset 0 -0.12em 0 ${accent}` }}>{value}</span>;
-        return <span key={index} className="mx-1 inline-block px-2 py-0.5 align-baseline" style={{ background: accent, color: ink, borderRadius: 8 }}>{value}</span>;
+        return <span key={index} className="box-decoration-clone rounded-lg px-2.5 py-0.5" style={{ background: accent, color: ink, boxDecorationBreak: "clone", WebkitBoxDecorationBreak: "clone" }}>{value}</span>;
       })}
     </>
   );
@@ -458,8 +454,13 @@ function glass(dark: boolean): CSSProperties {
     : { background: "rgba(255,255,255,0.74)", border: "1px solid rgba(9,9,11,0.10)", color: "#09090B" };
 }
 
+function liveMicro(text: string, count: number) {
+  return text.replace(/\d+\s*вопрос(?:а|ов)?/i, questionPhrase(count));
+}
+
 function architectural(theme: ThemeConfig) {
-  if (theme.preset === "light_minimal") return `radial-gradient(ellipse at 78% 0%, ${theme.accentColor}18, transparent 46%), #F6F6F7`;
-  if (theme.preset === "editorial_warm") return "radial-gradient(ellipse at 80% 0%, rgba(120,90,60,0.18), transparent 44%), #EFEAE3";
-  return "radial-gradient(ellipse at 76% 0%, rgba(255,255,255,0.08), transparent 42%), #0A0A0C";
+  const accent = theme.accentColor || "#cf0234";
+  if (theme.preset === "light_minimal") return `radial-gradient(ellipse at 78% 0%, ${accent}18, transparent 46%), #F7F7F8`;
+  if (theme.preset === "editorial_warm") return `radial-gradient(ellipse at 80% 0%, ${accent}24, transparent 42%), radial-gradient(ellipse at 50% 120%, rgba(28,25,23,0.05), transparent 50%), #F6F4F0`;
+  return `radial-gradient(ellipse at 82% 0%, ${accent}1A, transparent 42%), radial-gradient(ellipse at 50% 110%, rgba(255,255,255,0.05), transparent 48%), #0B0B0E`;
 }

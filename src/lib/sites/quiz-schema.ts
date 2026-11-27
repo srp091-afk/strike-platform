@@ -442,15 +442,19 @@ function readMedia(value: unknown, legacyImage: string): StartScreen["media"] {
 
 function readBullets(value: unknown): StartScreen["bullets"] {
   const record = asRecord(value);
-  const items = Array.isArray(record.items) ? record.items.map(readBullet).filter((item): item is StartBullet => item !== null).slice(0, 6) : [];
+  const source = Array.isArray(value) ? value : Array.isArray(record.items) ? record.items : [];
+  const items = source.map(readBullet).filter((item): item is StartBullet => item !== null).slice(0, 6);
   const iconStyle: BulletIconStyle = record.iconStyle === "icon" || record.iconStyle === "number" ? record.iconStyle : "check";
   const layout: BulletLayout = record.layout === "grid_2" || record.layout === "stack" ? record.layout : "auto";
   return { show: items.length > 0 && record.show !== false, iconStyle, layout, items };
 }
 
 function readBullet(value: unknown): StartBullet | null {
+  if (typeof value === "string" && value.trim()) {
+    return { id: `b-${Math.random().toString(36).slice(2, 7)}`, text: value.trim().slice(0, 120), icon: "check" };
+  }
   const record = asRecord(value);
-  const line = text(record.text, "");
+  const line = text(record.text, text(record.label, ""));
   if (!line) return null;
   const icon = text(record.icon, "");
   return { id: (text(record.id, "") || `b-${Math.random().toString(36).slice(2, 7)}`).slice(0, 40), text: line.slice(0, 120), ...(icon ? { icon: icon.slice(0, 20) } : {}) };
@@ -491,7 +495,7 @@ function readGift(value: unknown): QuizGift | null {
 
 function readStep(value: unknown): QuizStep | null {
   const record = asRecord(value);
-  const title = text(record.title, "");
+  const title = text(record.title, text(record.question, ""));
   if (!title) return null;
   const type = STEP_TYPES.find((item) => item === record.type) ?? "single_choice";
   const options = Array.isArray(record.options) ? record.options.map(readOption).filter((item): item is QuizOption => item !== null).slice(0, 8) : [];
@@ -530,8 +534,9 @@ function optionalNumber(value: unknown) {
 }
 
 function readOption(value: unknown): QuizOption | null {
+  if (typeof value === "string" && value.trim()) return option(`o-${Math.random().toString(36).slice(2, 7)}`, value.trim().slice(0, 80));
   const record = asRecord(value);
-  const label = text(record.label, "");
+  const label = text(record.label, text(record.text, ""));
   if (!label) return null;
   const numeric = optionalNumber(record.numericValue);
   return {

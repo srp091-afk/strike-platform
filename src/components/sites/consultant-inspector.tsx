@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 
+import { StudioSelect, StudioToggle } from "@/components/sites/studio-controls";
 import { AI_AVATARS, consultantPortrait } from "@/lib/sites/ai-avatars";
 import type { ConsultantMode, QuizConsultant, QuizStep, VoiceLocale, VoiceStyle } from "@/lib/sites/quiz-schema";
 
@@ -21,10 +22,7 @@ export function ConsultantSettings({
   return (
     <div className="mt-6 grid gap-3 border-t border-[#e4e4e7] pt-4">
       <p className="text-sm font-semibold"><span>Консультант</span></p>
-      <label className="flex items-center gap-2 text-xs">
-        <input type="checkbox" checked={consultant.enabled} onChange={(event) => onChange({ ...consultant, enabled: event.target.checked })} />
-        <span>Показывать консультанта на шагах</span>
-      </label>
+      <StudioToggle label="Показывать консультанта на шагах" checked={consultant.enabled} onChange={(enabled) => onChange({ ...consultant, enabled })} />
       <AvatarGrid consultant={consultant} onPick={(id) => onChange({ ...consultant, aiAvatarId: id, avatarUrl: null })} />
       <div className="flex items-center gap-3">
         <Portrait consultant={consultant} size={36} />
@@ -81,10 +79,7 @@ export function HelperInspector({
     <div className="grid gap-3 rounded-xl border border-[#e4e4e7] p-3">
       <div className="flex items-center justify-between gap-3">
         <p className="text-sm font-semibold"><span>Подсказка эксперта</span></p>
-        <label className="flex items-center gap-2 text-xs">
-          <input type="checkbox" checked={helper.enabled} onChange={(event) => patch({ ...helper, enabled: event.target.checked })} />
-          <span>На этом шаге</span>
-        </label>
+        <StudioToggle label="На этом шаге" checked={helper.enabled} onChange={(enabled) => patch({ ...helper, enabled })} />
       </div>
       <div className="flex items-center gap-3">
         <Portrait consultant={consultant} size={36} />
@@ -136,20 +131,11 @@ export function HelperInspector({
           <div className="grid grid-cols-2 gap-2">
             <label className="grid gap-1 text-xs text-[#52525b]">
               <span>Язык</span>
-              <select className={field} value={consultant.aiVoiceLocale} onChange={(event) => onConsultant({ ...consultant, aiVoiceLocale: event.target.value as VoiceLocale })}>
-                <option value="ru">Русский</option>
-                <option value="en">English</option>
-                <option value="es">Español</option>
-                <option value="de">Deutsch</option>
-              </select>
+              <StudioSelect ariaLabel="Язык" value={consultant.aiVoiceLocale} onChange={(locale) => onConsultant({ ...consultant, aiVoiceLocale: locale as VoiceLocale })} options={[{ value: "ru", label: "Русский" }, { value: "en", label: "English" }, { value: "es", label: "Español" }, { value: "de", label: "Deutsch" }]} />
             </label>
             <label className="grid gap-1 text-xs text-[#52525b]">
               <span>Тон</span>
-              <select className={field} value={helper.aiAvatar.voiceStyle} onChange={(event) => patch({ ...helper, aiAvatar: { ...helper.aiAvatar, voiceStyle: event.target.value as VoiceStyle } })}>
-                <option value="calm">Спокойный</option>
-                <option value="confident">Уверенный</option>
-                <option value="friendly">Дружелюбный</option>
-              </select>
+              <StudioSelect ariaLabel="Тон" value={helper.aiAvatar.voiceStyle} onChange={(voiceStyle) => patch({ ...helper, aiAvatar: { ...helper.aiAvatar, voiceStyle: voiceStyle as VoiceStyle } })} options={[{ value: "calm", label: "Спокойный" }, { value: "confident", label: "Уверенный" }, { value: "friendly", label: "Дружелюбный" }]} />
             </label>
           </div>
           <div className="grid gap-1">

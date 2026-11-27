@@ -1,7 +1,7 @@
 import "server-only";
 
 import { getEffectiveUserId } from "@/lib/account-context";
-import { hostName, isCustomSiteHost, normalizeSubdomain, subdomainFromHost } from "@/lib/sites/domains";
+import { compactSubdomain, hostName, isCustomSiteHost, normalizeSubdomain, subdomainFromHost } from "@/lib/sites/domains";
 import {
   blankQuiz,
   defaultTheme,
@@ -211,8 +211,7 @@ export async function getPublishedBySubdomain(subdomain: string) {
 }
 
 async function claimSubdomain(admin: ReturnType<typeof createSupabaseAdminClient>, raw: string) {
-  const normalized = normalizeSubdomain(raw);
-  const base = normalized.ok ? normalized.slug : "quiz-site";
+  const base = compactSubdomain(raw);
   for (let index = 0; index < 8; index += 1) {
     const slug = index === 0 ? base : `${base.slice(0, 36)}-${index + 1}`;
     const check = normalizeSubdomain(slug);

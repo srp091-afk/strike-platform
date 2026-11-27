@@ -73,6 +73,23 @@ export function normalizeSubdomain(raw: string): { ok: true; slug: string } | { 
   return { ok: true, slug };
 }
 
+const SLUG_STOP = new Set(["kviz", "dlya", "i", "s", "po", "na", "v", "iz", "the", "of", "and", "raschet", "raschyota", "rascheta", "stoimost", "stoimosti", "podbor", "podbora", "quiz"]);
+
+export function compactSubdomain(raw: string) {
+  const normalized = normalizeSubdomain(raw);
+  const source = normalized.ok ? normalized.slug : "quiz-site";
+  const words = source.split("-").filter((word) => word && !SLUG_STOP.has(word));
+  const picked = (words.length > 0 ? words : source.split("-").filter(Boolean)).slice(0, 3);
+  let slug = picked.join("-");
+  while (slug.length > 22 && picked.length > 1) {
+    picked.pop();
+    slug = picked.join("-");
+  }
+  slug = slug.slice(0, 22).replace(/-+$/g, "");
+  const check = normalizeSubdomain(slug.length >= 3 ? slug : "quiz-site");
+  return check.ok ? check.slug : "quiz-site";
+}
+
 export function normalizeCustomDomain(raw: string): { ok: true; domain: string } | { ok: false; reason: string } {
   const domain = raw.trim().toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "").replace(/\.$/, "");
   if (!/^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$/.test(domain)) {

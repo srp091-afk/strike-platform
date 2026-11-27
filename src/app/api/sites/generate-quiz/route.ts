@@ -5,6 +5,7 @@ import { getOpenAI } from "@/lib/openai";
 import { createQuizSite } from "@/lib/sites/store";
 import { defaultConsultant, parseQuizSchema, type QuizSchema, type ThemePreset } from "@/lib/sites/quiz-schema";
 import { repairGeneratedPreview } from "@/lib/sites/quiz-calculator";
+import { polishGeneratedQuiz, stripMarkers } from "@/lib/sites/quiz-polish";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export const maxDuration = 60;
@@ -53,8 +54,9 @@ export async function POST(request: Request) {
             "Язык — русский. Верни JSON со startScreen, giftsConfig, steps, calculator, leadScreen, thankYouScreen, resultPreview, title, subtitle.",
             "startScreen.layout: cinematic_hero. swiss_minimal только если это чистый B2B без визуального объекта.",
             "startScreen.eyebrow.text: точный нишевый тег из 3–5 слов. trustBadge.primaryText: короткий реалистичный факт-заглушка.",
-            "headline: конкретный заголовок, главный результат или условие оберни в ==двойные равенства==.",
-            "subheadline.text: 1–2 прямых предложения. bullets: ровно 4 коротких пункта, цифры оберни в **двойные звёздочки**, bullets.show true, layout auto.",
+            "headline: конкретный заголовок. В ==двойные равенства== оборачивай только короткую концовку с цифрой или условием, 2–4 слова. Весь заголовок целиком оборачивать запрещено.",
+            "title: короткое имя проекта, 2–4 слова, без == и без **. startScreen.brand.name: название студии из 2–3 слов, не копия заголовка.",
+            "subheadline.text: 1–2 прямых предложения без фразы «ответьте на несколько вопросов». bullets.items: ровно 4 коротких пункта, цифры оберни в **двойные звёздочки**, bullets.show true, layout auto.",
             "ctaText: глагол результата. ctaMicroText: { show: true, text: «N вопросов · займёт 45 сек» }.",
             "media: { type: none, url: null, overlayOpacity: 60, focalPoint: center }. highlightStyle: badge.",
             "giftsConfig: showOnStart, showInProgress и showOnThankYou true, sectionLabel «Бонус после прохождения», один item type file без fileUrl. title — конкретный PDF или чек-лист под нишу.",
@@ -79,16 +81,26 @@ export async function POST(request: Request) {
     });
     const raw = completion.choices[0]?.message?.content;
     if (!raw) return Response.json({ error: "Модель ничего не вернула." }, { status: 502 });
-    const generated = JSON.parse(raw) as { title?: string; subtitle?: string };
-    const schema = repairGeneratedPreview(withConsultant(parseQuizSchema(JSON.parse(raw))), prompt);
+    let payload: { title?: string; subtitle?: string; steps?: unknown } = {};
+    try {
+      payload = JSON.parse(raw) as { title?: string; subtitle?: string; steps?: unknown };
+    } catch (parseError) {
+      console.error("generate-quiz: не удалось разобрать JSON модели", parseError);
+    }
+    const generated = payload;
+    const parsed = parseQuizSchema(payload);
+    const polished = polishGeneratedQuiz(repairGeneratedPreview(withConsultant(parsed), prompt), prompt, generated.title ?? "");
+    if (polished.replacedSteps) {
+      console.error("generate-quiz: шаги модели не подошли, собран нишевый сценарий", { prompt: prompt.slice(0, 180), rawSteps: Array.isArray(generated.steps) ? generated.steps.length : 0 });
+    }
     const site = await createQuizSite({
-      title: generated.title?.trim() || "Квиз",
-      subtitle: generated.subtitle?.trim() || "",
+      title: stripMarkers(polished.title) || "Квиз",
+      subtitle: stripMarkers(generated.subtitle?.trim() || ""),
       prompt,
-      schema,
+      schema: polished.schema,
       preset,
       agentId: agent?.id ?? null,
-      subdomain: body.subdomain,
+      subdomain: body.subdomain || polished.subdomainSeed,
     });
     return Response.json({ id: site.id });
   } catch (error) {
