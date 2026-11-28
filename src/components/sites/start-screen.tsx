@@ -63,8 +63,8 @@ export function StartScreen({
   if (start.layout === "editorial_split") {
     if (compact) return <EditorialMobile palette={palette} theme={theme} start={start} siteTitle={siteTitle} content={editorialCopy} />;
     return (
-      <div className="h-full min-h-0">
-        <div className="h-full md:hidden">
+      <div className="@container/stage h-full min-h-0 w-full">
+        <div className="h-full @min-[760px]/stage:hidden">
           <EditorialMobile
             palette={palette}
             theme={theme}
@@ -85,7 +85,7 @@ export function StartScreen({
             )}
           />
         </div>
-        <div className="hidden h-full md:block"><EditorialDesktop palette={palette} theme={theme} start={start} siteTitle={siteTitle} content={editorialCopy} /></div>
+        <div className="hidden h-full @min-[760px]/stage:block"><EditorialDesktop palette={palette} theme={theme} start={start} siteTitle={siteTitle} content={editorialCopy} /></div>
       </div>
     );
   }
@@ -133,9 +133,13 @@ function EditorialDesktop({
   content: ReactNode;
 }) {
   return (
-    <div className="grid h-full min-h-0 grid-cols-2 overflow-hidden" style={{ background: architectural(theme), color: startInk(theme).fg, fontFamily: palette.font }}>
-      <div className="flex min-h-0 flex-col justify-center px-10 py-8">{content}</div>
-      <div className="relative min-h-0">
+    <div className="grid h-full min-h-0 w-full grid-cols-2 overflow-hidden" style={{ background: architectural(theme), color: startInk(theme).fg, fontFamily: palette.font }}>
+      <div className="flex min-h-0 min-w-0 flex-col overflow-x-hidden overflow-y-auto">
+        <div className="m-auto w-full min-w-0 px-6 py-6 @min-[900px]/stage:px-8 @min-[1200px]/stage:px-10">
+          {content}
+        </div>
+      </div>
+      <div className="relative min-h-0 min-w-0 overflow-hidden">
         <Media start={start} theme={theme} />
         <Trust start={start} className="right-5 top-5" dark />
         <BrandMark start={start} theme={theme} siteTitle={siteTitle} className="left-5 top-5" light />
@@ -158,13 +162,15 @@ function EditorialMobile({
   content: ReactNode;
 }) {
   return (
-    <div className="flex h-full min-h-0 flex-col overflow-hidden" style={{ background: architectural(theme), color: startInk(theme).fg, fontFamily: palette.font }}>
-      <div className="relative h-[32%] min-h-[140px] shrink-0">
+    <div className="flex h-full min-h-0 w-full flex-col overflow-hidden" style={{ background: architectural(theme), color: startInk(theme).fg, fontFamily: palette.font }}>
+      <div className="relative h-[32%] min-h-[120px] max-h-[240px] shrink-0 overflow-hidden">
         <Media start={start} theme={theme} />
         <BrandMark start={start} theme={theme} siteTitle={siteTitle} className="left-4 top-4" light />
         <div className="absolute inset-x-0 bottom-0 h-16" style={{ background: `linear-gradient(180deg, transparent, ${surfaceBase(theme)})` }} />
       </div>
-      <div className="flex min-h-0 flex-1 flex-col justify-center px-5 py-4">{content}</div>
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-x-hidden overflow-y-auto">
+        <div className="m-auto w-full min-w-0 px-5 py-4">{content}</div>
+      </div>
     </div>
   );
 }
@@ -261,45 +267,56 @@ function Copy({
 }) {
   const start = schema.startScreen;
   const centered = align === "center";
+  const editorial = start.layout === "editorial_split" && !compact;
   const ink = contrastInk(palette.accent);
   const grid = bulletGrid(start.bullets, compact);
+  const sideBySide = !compact && gifts.length === 1 && !centered;
+  const headlineSize = compact
+    ? "mt-3 text-[1.7rem]"
+    : editorial
+      ? "mt-3 text-[clamp(1.35rem,3.4cqw,3.5rem)]"
+      : "mt-3 text-[clamp(1.75rem,3.4vw,3.5rem)]";
   return (
-    <div className={centered ? "text-center" : "text-left"} style={{ color: tone.fg }}>
+    <div className={`min-w-0 max-w-full ${centered ? "text-center" : "text-left"}`} style={{ color: tone.fg }}>
       {start.layout === "editorial_split" ? null : <BrandMark start={start} theme={theme} siteTitle={siteTitle} className={centered ? "mb-4 justify-center" : "mb-4"} />}
       {start.eyebrow.show && start.eyebrow.text ? (
-        <p className={`inline-flex rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em] ${centered ? "" : ""}`} style={{ color: tone.fg, border: `1px solid ${tone.line}` }}>
-          <span>{start.eyebrow.text}</span>
+        <p className="inline-flex max-w-full rounded-full px-2.5 py-1 text-[10px] font-medium uppercase tracking-[0.16em]" style={{ color: tone.fg, border: `1px solid ${tone.line}` }}>
+          <span className="min-w-0 break-words">{start.eyebrow.text}</span>
         </p>
       ) : null}
-      <h1 className={`font-semibold tracking-[-0.03em] leading-[1.15] ${compact ? "mt-3 text-[1.7rem]" : "mt-3 text-[clamp(1.75rem,3.4vw,3.5rem)]"}`} style={{ color: tone.headline }}>
+      <h1 className={`max-w-full break-words font-semibold tracking-[-0.03em] leading-[1.15] ${headlineSize}`} style={{ color: tone.headline }}>
         <Headline text={tightenHeadline(start.headline)} style={start.highlightStyle} accent={palette.accent} ink={ink} />
       </h1>
       {start.subheadline.show && start.subheadline.text ? (
-        <p className={`mt-3 max-w-xl text-sm leading-6 ${centered ? "mx-auto" : ""} ${compact ? "" : "md:text-base"}`} style={{ color: tone.muted }}>
+        <p className={`mt-3 max-w-xl break-words text-sm leading-6 ${centered ? "mx-auto" : ""} ${compact ? "" : editorial ? "@min-[1200px]/stage:text-base" : "md:text-base"}`} style={{ color: tone.muted }}>
           <Marks text={start.subheadline.text} />
         </p>
       ) : null}
       {start.bullets.show && start.bullets.items.length > 0 ? (
-        <ul className={`mt-4 ${grid ? "grid grid-cols-2 gap-x-4 gap-y-2" : "grid gap-2"} ${centered && !grid ? "mx-auto max-w-md text-left" : ""}`}>
+        <ul className={`mt-4 min-w-0 ${grid ? (editorial ? "grid grid-cols-1 gap-2 @min-[1200px]/stage:grid-cols-2 @min-[1200px]/stage:gap-x-4" : "grid grid-cols-2 gap-x-4 gap-y-2") : "grid gap-2"} ${centered && !grid ? "mx-auto max-w-md text-left" : ""}`}>
           {start.bullets.items.map((item, index) => (
-            <li key={item.id} className="flex items-start gap-2 text-[13px] leading-5">
+            <li key={item.id} className="flex min-w-0 items-start gap-2 text-[13px] leading-5">
               <BulletMark item={item} index={index} style={start.bullets.iconStyle} accent={palette.accent} />
-              <span><Marks text={item.text} /></span>
+              <span className="min-w-0 break-words"><Marks text={item.text} /></span>
             </li>
           ))}
         </ul>
       ) : null}
-      <div className={`mt-5 ${compact || gifts.length !== 1 || centered ? "grid gap-3" : "grid gap-3 md:flex md:items-center"}`}>
-        <button type="button" className={`${compact ? "min-h-[54px] w-full" : "min-h-[54px] w-full justify-self-start md:min-h-[48px] md:w-fit md:px-6"} text-sm font-semibold`} style={{ background: palette.accent, color: ink, borderRadius: palette.radius }} onClick={onStart}>
+      <div className={sideBySide ? (editorial ? "mt-5 grid min-w-0 gap-3 @min-[1080px]/stage:flex @min-[1080px]/stage:items-center" : "mt-5 grid gap-3 md:flex md:items-center") : "mt-5 grid gap-3"}>
+        <button type="button" className={`${compact ? "min-h-[54px] w-full" : editorial ? "min-h-[48px] w-full @min-[1080px]/stage:w-fit @min-[1080px]/stage:px-6" : "min-h-[54px] w-full justify-self-start md:min-h-[48px] md:w-fit md:px-6"} text-sm font-semibold`} style={{ background: palette.accent, color: ink, borderRadius: palette.radius }} onClick={onStart}>
           <span>{start.ctaText || "Начать"}</span>
         </button>
-        {gifts.length === 1 && !centered ? <GiftCard gift={gifts[0]!} dark={tone.dark} locked label={schema.giftsConfig.sectionLabel} /> : null}
+        {gifts.length === 1 && !centered ? (
+          <div className={editorial ? "min-w-0 @min-[1080px]/stage:flex-1" : "min-w-0 md:flex-1"}>
+            <GiftCard gift={gifts[0]!} dark={tone.dark} locked label={schema.giftsConfig.sectionLabel} />
+          </div>
+        ) : null}
       </div>
       {start.ctaMicroText.show && start.ctaMicroText.text ? (
-        <p className="mt-2 text-[11px]" style={{ color: tone.muted }}><span>{liveMicro(start.ctaMicroText.text, schema.steps.length)}</span></p>
+        <p className="mt-2 break-words text-[11px]" style={{ color: tone.muted }}><span>{liveMicro(start.ctaMicroText.text, schema.steps.length)}</span></p>
       ) : null}
       {gifts.length > 1 || (gifts.length === 1 && centered) ? (
-        <div className={`mt-3 ${compact ? "grid gap-2" : gifts.length > 2 ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}`}>
+        <div className={`mt-3 min-w-0 ${compact || editorial ? "grid gap-2 @min-[1200px]/stage:grid-cols-2" : gifts.length > 2 ? "grid grid-cols-3 gap-2" : "grid grid-cols-2 gap-2"}`}>
           {gifts.map((gift) => <GiftCard key={gift.id} gift={gift} dark={tone.dark} locked label={schema.giftsConfig.sectionLabel} />)}
         </div>
       ) : null}
