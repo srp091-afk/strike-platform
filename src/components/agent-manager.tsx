@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, GripVertical, Loader2, Maximize, Pause, Play, Shield, Sparkles, TextQuote, Timer, Trash } from "lucide-react";
+import { Bell, GripVertical, Info, Loader2, Maximize, Pause, Play, Shield, Sparkles, TextQuote, Timer, Trash } from "lucide-react";
 import {
   DndContext,
   KeyboardSensor,
@@ -4910,8 +4910,9 @@ function FollowupField({
       </label>
       {enabled ? (
         <>
-          <p className="rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-100">
-            <span>Если для этого агента запущена кампания «Ассистент Pro», таймерные напоминания не уйдут, пока по чату есть задача или кампания перехватывает дожим. По умолчанию кампания ждёт встроенную цепочку и отдельно поднимает запрос КП и оставленный контакт.</span>
+          <p className="flex gap-2.5 rounded-xl border border-[#FDE68A] bg-[#FFFBEB] px-4 py-3 text-sm leading-relaxed text-[#451A03]">
+            <Info className="mt-0.5 size-4 shrink-0 text-[#92400E]" strokeWidth={2} aria-hidden />
+            <span>Если для этого агента запущена кампания <span className="font-semibold">«Ассистент Pro»</span>, таймерные напоминания не уйдут, пока по чату есть задача или кампания перехватывает дожим. По умолчанию кампания ждёт встроенную цепочку и отдельно поднимает запрос КП и оставленный контакт.</span>
           </p>
           <label className="grid gap-2">
             <span className="text-[10px] font-semibold uppercase tracking-widest text-zinc-400">
