@@ -86,6 +86,39 @@ export async function createQuizSite(input: {
   return mapSite(data);
 }
 
+/** Пустой квиз без LLM и без генерации фона. Возвращает только id. */
+export async function createBlankQuiz(input: { title: string; preset: ThemePreset }) {
+  const userId = await getEffectiveUserId();
+  const admin = createSupabaseAdminClient();
+  const title = input.title.trim().slice(0, 160) || "Новый квиз";
+  const subdomain = await claimSubdomain(admin, title);
+  const theme = defaultTheme(input.preset);
+  const { data, error } = await admin
+    .from("landings")
+    .insert({
+      user_id: userId,
+      slug: subdomain,
+      title,
+      subtitle: "",
+      site_type: "quiz",
+      subdomain,
+      status: "draft",
+      theme_config: theme,
+      draft_schema: blankQuiz(title),
+      analytics_config: { ...emptyAnalytics() },
+      seo_config: emptySeo(title),
+      agent_id: null,
+      capture_mode: "quiz",
+      welcome_message: "",
+      success_message: "",
+      bullets: { prompt: "", status: "draft", theme: { accent: theme.accentColor, background: "#0A0A0C", foreground: "#F4F4F5" }, sections: [] },
+    })
+    .select("id")
+    .single();
+  if (error || !data) throw new Error(error?.message ?? "Не удалось создать квиз.");
+  return { id: String(data.id) };
+}
+
 export async function createBlankLanding(input: { title: string; preset: ThemePreset }) {
   const userId = await getEffectiveUserId();
   const admin = createSupabaseAdminClient();

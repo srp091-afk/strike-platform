@@ -50,7 +50,8 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
   const [format, setFormat] = useState<(typeof SITE_FORMATS)[number]["id"]>("quiz");
   const [prompt, setPrompt] = useState("");
   const [preset, setPreset] = useState<ThemePreset>("dark_premium");
-  const [busy, setBusy] = useState(false);
+  const [generating, setGenerating] = useState(false);
+  const [creatingBlank, setCreatingBlank] = useState(false);
   const [error, setError] = useState("");
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
@@ -67,12 +68,12 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
 
   async function generate() {
     const text = prompt.trim();
-    if (text.length < 8 || busy || (format !== "quiz" && format !== "landing")) return;
+    if (text.length < 8 || generating || creatingBlank || (format !== "quiz" && format !== "landing")) return;
     if (format === "landing") {
       router.push(`/funnels/builder?prompt=${encodeURIComponent(text)}`);
       return;
     }
-    setBusy(true);
+    setGenerating(true);
     setError("");
     const response = await fetch("/api/sites/generate-quiz", {
       method: "POST",
@@ -80,7 +81,7 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
       body: JSON.stringify({ prompt: text, preset }),
     });
     const body = (await response.json()) as { id?: string; error?: string };
-    setBusy(false);
+    setGenerating(false);
     if (!response.ok || !body.id) {
       setError(body.error ?? "Не удалось собрать квиз.");
       return;
@@ -89,8 +90,8 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
   }
 
   async function blank() {
-    if (busy || (format !== "quiz" && format !== "landing")) return;
-    setBusy(true);
+    if (generating || creatingBlank || (format !== "quiz" && format !== "landing")) return;
+    setCreatingBlank(true);
     setError("");
     try {
       const result = format === "landing"
@@ -98,7 +99,7 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
         : await createManualQuiz("Новый квиз", preset);
       router.push(format === "landing" ? `/funnels/builder?id=${result.id}` : `/funnels/${result.id}`);
     } catch (cause) {
-      setBusy(false);
+      setCreatingBlank(false);
       setError(cause instanceof Error ? cause.message : "Не удалось создать сайт.");
     }
   }
@@ -153,12 +154,13 @@ export function SitesHub({ sites, loadError }: { sites: LandingListItem[]; loadE
               })}
             </div>
             <div className="flex items-center gap-2">
-              <button type="button" className="px-2.5 py-2 text-[13px] font-medium text-[#71717a] transition-colors hover:text-[#09090b] disabled:text-[#a1a1aa]" disabled={busy} onClick={() => void blank()}>
-                <span>Пустой шаблон</span>
+              <button type="button" className="inline-flex items-center gap-1.5 px-2.5 py-2 text-[13px] font-medium text-[#71717a] transition-colors hover:text-[#09090b] disabled:text-[#a1a1aa]" disabled={generating || creatingBlank} onClick={(event) => { event.preventDefault(); void blank(); }}>
+                {creatingBlank ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                <span>{creatingBlank ? "Создаём…" : "Пустой шаблон"}</span>
               </button>
-              <button type="submit" disabled={busy || prompt.trim().length < 8} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#09090b] px-5 text-[14px] font-medium text-[#fff] transition-all hover:bg-[#27272a] disabled:bg-[#e4e4e7] disabled:text-[#a1a1aa]">
-                {busy ? <Loader2 className="h-[15px] w-[15px] animate-spin" /> : <ArrowRight className="h-[15px] w-[15px]" />}
-                <span>{busy ? "Собираем…" : format === "landing" ? "Собрать лендинг" : "Собрать квиз"}</span>
+              <button type="submit" disabled={generating || creatingBlank || prompt.trim().length < 8} className="inline-flex h-10 items-center gap-2 rounded-xl bg-[#09090b] px-5 text-[14px] font-medium text-[#fff] transition-all hover:bg-[#27272a] disabled:bg-[#e4e4e7] disabled:text-[#a1a1aa]">
+                {generating ? <Loader2 className="h-[15px] w-[15px] animate-spin" /> : <ArrowRight className="h-[15px] w-[15px]" />}
+                <span>{generating ? "Собираем…" : format === "landing" ? "Собрать лендинг" : "Собрать квиз"}</span>
               </button>
             </div>
           </div>

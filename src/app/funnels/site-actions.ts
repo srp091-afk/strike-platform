@@ -3,19 +3,12 @@
 import { revalidatePath } from "next/cache";
 
 import { getEffectiveUserId } from "@/lib/account-context";
-import { blankQuiz, type AnalyticsConfig, type QuizSchema, type SeoConfig, type ThemeConfig, type ThemePreset } from "@/lib/sites/quiz-schema";
-import { createBlankLanding, createQuizSite, getOwnedSite, publishQuiz, saveQuizDraft } from "@/lib/sites/store";
+import type { AnalyticsConfig, QuizSchema, SeoConfig, ThemeConfig, ThemePreset } from "@/lib/sites/quiz-schema";
+import { createBlankLanding, createBlankQuiz, createQuizSite, getOwnedSite, publishQuiz, saveQuizDraft } from "@/lib/sites/store";
 import { createSupabaseAdminClient } from "@/lib/supabase-admin";
 
 export async function createManualQuiz(title: string, preset: ThemePreset = "dark_premium") {
-  const site = await createQuizSite({
-    title: title.trim() || "Квиз",
-    subtitle: "",
-    prompt: "",
-    schema: blankQuiz(title.trim() || "Квиз"),
-    preset,
-    agentId: null,
-  });
+  const site = await createBlankQuiz({ title: title.trim() || "Новый квиз", preset });
   revalidatePath("/funnels");
   return { id: site.id };
 }
