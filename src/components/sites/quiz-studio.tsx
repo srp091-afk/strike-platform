@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { Check, ExternalLink, Loader2, Monitor, Smartphone } from "lucide-react";
+import { Check, Copy, ExternalLink, Loader2, Monitor, PanelLeft, PanelRight, Play, Smartphone } from "lucide-react";
 
 import { QuizRunner } from "@/components/sites/quiz-runner";
 import { DeliveryFields, StartInspector } from "@/components/sites/start-inspector";
@@ -34,6 +34,8 @@ type Panel = "flow" | "design" | "settings";
 type Screen = "start" | "lead" | "thanks" | string;
 
 const field = "h-11 w-full rounded-xl border border-[#e4e4e7] bg-[#fff] px-3 text-sm text-[#09090b] outline-none";
+const LEFT_KEY = "strike_studio_left_panel";
+const RIGHT_KEY = "strike_studio_right_panel";
 
 export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: string; name: string }[] }) {
   const [title, setTitle] = useState(stripMarkers(site.title));
@@ -48,6 +50,8 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
   const [panel, setPanel] = useState<Panel>("flow");
   const [screen, setScreen] = useState<Screen>("start");
   const [device, setDevice] = useState<"desktop" | "mobile">("desktop");
+  const [leftOpen, setLeftOpen] = useState(true);
+  const [rightOpen, setRightOpen] = useState(true);
   const [walk, setWalk] = useState(false);
   const [leadsOpen, setLeadsOpen] = useState(false);
   const [saved, setSaved] = useState(true);
@@ -69,6 +73,11 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
     chain.current = run.then(() => undefined, () => undefined);
     return run;
   }
+
+  useEffect(() => {
+    if (window.localStorage.getItem(LEFT_KEY) === "false") setLeftOpen(false);
+    if (window.localStorage.getItem(RIGHT_KEY) === "false") setRightOpen(false);
+  }, []);
 
   useEffect(() => {
     setSaved(false);
@@ -134,49 +143,115 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
     }
   }
 
+  function togglePanel(side: "left" | "right") {
+    const key = side === "left" ? LEFT_KEY : RIGHT_KEY;
+    const setOpen = side === "left" ? setLeftOpen : setRightOpen;
+    setOpen((value) => {
+      const next = !value;
+      window.localStorage.setItem(key, String(next));
+      return next;
+    });
+  }
+
   function updateStep(next: QuizSchema["steps"][number]) {
     setDraft((current) => ({ ...current, steps: current.steps.map((item) => (item.id === next.id ? next : item)) }));
   }
 
+  const showLeft = leftOpen && panel !== "settings";
+  const showRight = rightOpen && panel !== "settings";
+  const showTest = screen === "lead" && draft.resultPreview.enabled && !walk;
+  const settings = (
+    <Settings
+      siteId={site.id}
+      subdomain={subdomain}
+      customDomain={customDomain}
+      agents={agents}
+      agentId={agentId}
+      analytics={analytics}
+      seo={seo}
+      domainNote={domainNote}
+      onSubdomain={setSubdomain}
+      onDomain={setCustomDomain}
+      onAgent={setAgentId}
+      onAnalytics={setAnalytics}
+      onSeo={setSeo}
+      onCheck={() => void checkDomain(site.id, setDomainNote)}
+      copied={copied}
+      onCopy={(slug) => void copyLink(slug)}
+    />
+  );
+
   return (
-    <div className="flex h-[100dvh] flex-col bg-[#fafafa] text-[#09090b]">
-      <header className="flex h-14 shrink-0 items-center gap-3 border-b border-[#e4e4e7] bg-[#fff] px-4">
-        <Link href="/funnels" className="text-sm text-[#52525b]"><span>← Сайты</span></Link>
-        <input value={title} onChange={(event) => setTitle(event.target.value)} className="h-9 min-w-0 max-w-[260px] flex-1 truncate bg-transparent text-sm font-semibold outline-none" />
-        {liveHost.ok ? (
-          <a href={publicUrl} target="_blank" rel="noopener noreferrer" title={status === "draft" ? "Сначала нажмите «Опубликовать»" : hostLabel} className="hidden max-w-[240px] items-center gap-1.5 truncate rounded-full border border-[#e4e4e7] px-3 py-1 text-xs text-[#09090b] sm:inline-flex">
-            <span className="truncate">{hostLabel}</span>
-            <ExternalLink className="h-[13px] w-[13px] shrink-0" />
-          </a>
-        ) : (
-          <button type="button" className="hidden items-center gap-2 rounded-full border border-[#e4e4e7] px-3 py-1 text-xs sm:inline-flex" onClick={() => { setPanel("settings"); }}>
-            <span>{hostLabel}</span>
-          </button>
-        )}
-        {liveHost.ok ? (
-          <button type="button" className="inline-flex items-center gap-1 text-xs text-[#cf0234]" onClick={() => void copyLink(liveHost.slug)}>
-            {copied ? <Check className="h-3.5 w-3.5" /> : null}
-            <span>{copied ? "Скопировано ✓" : "Скопировать ссылку"}</span>
-          </button>
-        ) : null}
-        <div className="inline-flex items-center rounded-lg bg-[#f4f4f5] p-0.5">
-          <button type="button" aria-label="Desktop" className={`grid h-7 w-8 place-items-center rounded-md ${device === "desktop" ? "bg-[#fff] text-[#09090b]" : "text-[#71717a]"}`} onClick={() => setDevice("desktop")}>
-            <Monitor className="h-3.5 w-3.5" />
-          </button>
-          <button type="button" aria-label="Mobile" className={`grid h-7 w-8 place-items-center rounded-md ${device === "mobile" ? "bg-[#fff] text-[#09090b]" : "text-[#71717a]"}`} onClick={() => setDevice("mobile")}>
-            <Smartphone className="h-3.5 w-3.5" />
+    <div className="flex h-screen w-full flex-col overflow-hidden bg-[#fafafa] text-[#09090b]">
+      <header className="flex h-[52px] shrink-0 items-center justify-between gap-2 border-b border-[#e4e4e7] bg-[#fff] px-3">
+        <div className="flex min-w-0 shrink-0 items-center gap-2">
+          <Link href="/funnels" className="shrink-0 whitespace-nowrap text-[13px] text-[#52525b]"><span>← Сайты</span></Link>
+          <input value={title} onChange={(event) => setTitle(event.target.value)} className="h-8 w-[180px] max-w-[180px] truncate bg-transparent text-sm font-semibold text-[#09090b] outline-none" />
+          <button type="button" title="Скрыть / показать левую панель" aria-pressed={leftOpen} className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${leftOpen ? "bg-[#f4f4f5] text-[#18181b]" : "text-[#71717a]"}`} onClick={() => togglePanel("left")}>
+            <PanelLeft className="h-4 w-4" />
           </button>
         </div>
-        <button type="button" className="text-xs text-[#52525b]" onClick={() => { setLeadsOpen(true); void listSubmissions(site.id).then(setLeads); }}>
-          <span>{`Заявки (${site.leads})`}</span>
-        </button>
-        <span className="text-xs text-[#71717a]"><span>{saved ? "Сохранено" : "Сохраняем…"}</span></span>
-        <button type="button" disabled={publishing} className={`inline-flex h-9 items-center gap-2 rounded-xl px-4 text-sm font-semibold disabled:opacity-70 ${unpublished ? "bg-[#cf0234] text-[#fff]" : "border border-[#e4e4e7] bg-[#fff] text-[#09090b]"}`} onClick={() => void publish()}>
-          {publishing ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-          <span>{publishLabel}</span>
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <div className="inline-flex items-center rounded-lg bg-[#f4f4f5] p-0.5" role="tablist" aria-label="Режим студии">
+            {(["flow", "design", "settings"] as Panel[]).map((item) => (
+              <button key={item} type="button" role="tab" aria-selected={panel === item} className={`whitespace-nowrap rounded-md px-2.5 py-1 text-[12px] ${panel === item ? "bg-[#fff] font-semibold text-[#09090b] shadow-[0_1px_2px_rgba(0,0,0,0.06)]" : "text-[#71717a]"}`} onClick={() => setPanel(item)}>
+                <span>{item === "flow" ? "Сценарий" : item === "design" ? "Дизайн" : "Настройки"}</span>
+              </button>
+            ))}
+          </div>
+          <span className="h-4 w-px bg-[#e4e4e7]" aria-hidden />
+          <div className="inline-flex items-center rounded-lg bg-[#f4f4f5] p-0.5">
+            <button type="button" aria-label="Desktop" className={`grid h-7 w-8 place-items-center rounded-md ${device === "desktop" ? "bg-[#fff] text-[#09090b]" : "text-[#71717a]"}`} onClick={() => setDevice("desktop")}>
+              <Monitor className="h-3.5 w-3.5" />
+            </button>
+            <button type="button" aria-label="Mobile" className={`grid h-7 w-8 place-items-center rounded-md ${device === "mobile" ? "bg-[#fff] text-[#09090b]" : "text-[#71717a]"}`} onClick={() => setDevice("mobile")}>
+              <Smartphone className="h-3.5 w-3.5" />
+            </button>
+          </div>
+          {showTest ? (
+            <div className="relative">
+              <button type="button" className="inline-flex h-8 items-center whitespace-nowrap rounded-lg px-2 text-[12px] text-[#52525b] hover:bg-[#f4f4f5]" onClick={() => setTestOpen((value) => !value)}>
+                <span>Тест цифр</span>
+              </button>
+              {testOpen ? <TestDigits draft={draft} values={testVars} onChange={setTestVars} /> : null}
+            </div>
+          ) : null}
+          <button type="button" className="inline-flex h-8 items-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-[12px] font-medium text-[#52525b] hover:bg-[#f4f4f5]" onClick={() => setWalk((value) => !value)}>
+            <Play className="h-3.5 w-3.5" />
+            <span>{walk ? "Редактирование" : "Пройти как клиент"}</span>
+          </button>
+        </div>
+        <div className="flex min-w-0 items-center justify-end gap-2">
+          <div className="flex h-8 min-w-0 max-w-[168px] items-center rounded-full border border-[#e4e4e7] bg-[#fff] pl-2.5">
+            {liveHost.ok ? (
+              <a href={publicUrl} target="_blank" rel="noopener noreferrer" title={status === "draft" ? "Сначала нажмите «Опубликовать»" : hostLabel} className="inline-flex min-w-0 flex-1 items-center gap-1 text-[11px] text-[#09090b]">
+                <span className="truncate">{hostLabel}</span>
+                <ExternalLink className="h-3 w-3 shrink-0" />
+              </a>
+            ) : (
+              <button type="button" className="min-w-0 truncate text-left text-[11px] text-[#71717a]" onClick={() => setPanel("settings")}>
+                <span className="truncate">{hostLabel}</span>
+              </button>
+            )}
+            <span className="mx-1 h-3.5 w-px shrink-0 bg-[#e4e4e7]" aria-hidden />
+            <button type="button" title="Скопировать ссылку" aria-label="Скопировать ссылку" disabled={!liveHost.ok} className="grid h-8 w-7 shrink-0 place-items-center text-[#52525b] disabled:text-[#d4d4d8]" onClick={() => { if (liveHost.ok) void copyLink(liveHost.slug); }}>
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+            </button>
+          </div>
+          <button type="button" className="shrink-0 whitespace-nowrap text-[12px] text-[#52525b]" onClick={() => { setLeadsOpen(true); void listSubmissions(site.id).then(setLeads); }}>
+            <span>{`Заявки (${site.leads})`}</span>
+          </button>
+          <span className="shrink-0 whitespace-nowrap text-[11px] text-[#a1a1aa]"><span>{saved ? "Сохранено" : "Сохраняем…"}</span></span>
+          <button type="button" disabled={publishing} className={`inline-flex h-8 shrink-0 items-center gap-1.5 whitespace-nowrap rounded-lg px-3 text-[12px] font-semibold disabled:opacity-70 ${unpublished ? "bg-[#cf0234] text-[#fff]" : "border border-[#e4e4e7] bg-[#fff] text-[#09090b]"}`} onClick={() => void publish()}>
+            {publishing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+            <span>{publishLabel}</span>
+          </button>
+          <button type="button" title="Скрыть / показать инспектор" aria-pressed={rightOpen} className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${rightOpen ? "bg-[#f4f4f5] text-[#18181b]" : "text-[#71717a]"}`} onClick={() => togglePanel("right")}>
+            <PanelRight className="h-4 w-4" />
+          </button>
+        </div>
       </header>
-      {errorText ? <p className="border-b border-[#fecaca] bg-[#fef2f2] px-4 py-2 text-sm text-[#b91c1c]"><span>{errorText}</span></p> : null}
+      {errorText ? <p className="shrink-0 border-b border-[#fecaca] bg-[#fef2f2] px-4 py-2 text-sm text-[#b91c1c]"><span>{errorText}</span></p> : null}
       {toast ? (
         <div className="fixed right-4 top-4 z-[90] flex items-center gap-3 rounded-xl border border-[#e4e4e7] bg-[#fff] px-4 py-3 text-sm text-[#09090b] shadow-[0_12px_32px_-16px_rgba(0,0,0,0.25)]">
           <span>Сайт опубликован</span>
@@ -186,88 +261,50 @@ export function QuizStudio({ site, agents }: { site: StudioSite; agents: { id: s
       {leadsOpen ? (
         <Leads rows={leads} onClose={() => setLeadsOpen(false)} />
       ) : (
-        <div className="grid min-h-0 flex-1 lg:grid-cols-[260px_minmax(0,1fr)_320px]">
-          <aside className="min-w-0 overflow-x-hidden overflow-y-auto border-r border-[#e4e4e7] bg-[#fff] p-4">
-            <div className="grid grid-cols-3 gap-1 rounded-xl bg-[#f4f4f5] p-1 text-xs">
-              {(["flow", "design", "settings"] as Panel[]).map((item) => (
-                <button key={item} type="button" className={`rounded-lg py-2 ${panel === item ? "bg-[#fff] font-semibold" : "text-[#52525b]"}`} onClick={() => setPanel(item)}>
-                  <span>{item === "flow" ? "Сценарий" : item === "design" ? "Дизайн" : "Настройки"}</span>
-                </button>
-              ))}
-            </div>
-            {panel === "flow" ? (
-              <div className="mt-4 grid gap-2">
-                <FlowButton active={screen === "start"} label="Старт" onClick={() => setScreen("start")} />
-                {draft.steps.map((item, index) => (
-                  <div key={item.id} className="flex min-w-0 gap-1">
-                    <FlowButton active={screen === item.id} label={`${String(index + 1).padStart(2, "0")} ${item.title}`} onClick={() => setScreen(item.id)} />
-                    <button type="button" className="text-xs text-[#71717a]" onClick={() => move(index, -1)}><span>↑</span></button>
-                    <button type="button" className="text-xs text-[#71717a]" onClick={() => move(index, 1)}><span>↓</span></button>
-                  </div>
-                ))}
-                <button type="button" className="text-left text-sm text-[#cf0234]" onClick={() => { const created = newStep(draft.steps.length); setDraft({ ...draft, steps: [...draft.steps, created] }); setScreen(created.id); }}>
-                  <span>+ Добавить вопрос</span>
-                </button>
-                <FlowButton active={screen === "lead"} label="Контакт" onClick={() => setScreen("lead")} />
-                <FlowButton active={screen === "thanks"} label="Спасибо" onClick={() => setScreen("thanks")} />
-              </div>
-            ) : null}
-            {panel === "design" ? <Design theme={theme} consultant={draft.consultant} siteId={site.id} onChange={setTheme} onConsultant={(consultant) => setDraft((current) => ({ ...current, consultant }))} /> : null}
-            {panel === "settings" ? (
-              <Settings
-                siteId={site.id}
-                subdomain={subdomain}
-                customDomain={customDomain}
-                agents={agents}
-                agentId={agentId}
-                analytics={analytics}
-                seo={seo}
-                domainNote={domainNote}
-                onSubdomain={setSubdomain}
-                onDomain={setCustomDomain}
-                onAgent={setAgentId}
-                onAnalytics={setAnalytics}
-                onSeo={setSeo}
-                onCheck={() => void checkDomain(site.id, setDomainNote)}
-                copied={copied}
-                onCopy={(slug) => void copyLink(slug)}
-              />
-            ) : null}
-          </aside>
-          <main className="overflow-y-auto p-6">
-            <div className="mb-4 flex items-center justify-end gap-3">
-              {screen === "lead" && draft.resultPreview.enabled && !walk ? (
-                <div className="relative">
-                  <button type="button" className="text-xs text-[#52525b]" onClick={() => setTestOpen((value) => !value)}>
-                    <span>Тест цифр</span>
+        <div className="flex min-h-0 flex-1 overflow-hidden">
+          {showLeft ? (
+            <aside className="w-[220px] shrink-0 overflow-x-hidden overflow-y-auto border-r border-[#e4e4e7] bg-[#fff] p-3">
+              {panel === "flow" ? (
+                <div className="grid gap-1.5">
+                  <FlowButton active={screen === "start"} label="Старт" onClick={() => setScreen("start")} />
+                  {draft.steps.map((item, index) => (
+                    <div key={item.id} className="flex min-w-0 gap-1">
+                      <FlowButton active={screen === item.id} label={`${String(index + 1).padStart(2, "0")} ${item.title}`} onClick={() => setScreen(item.id)} />
+                      <button type="button" className="text-xs text-[#71717a]" onClick={() => move(index, -1)}><span>↑</span></button>
+                      <button type="button" className="text-xs text-[#71717a]" onClick={() => move(index, 1)}><span>↓</span></button>
+                    </div>
+                  ))}
+                  <button type="button" className="px-3 py-2 text-left text-sm text-[#cf0234]" onClick={() => { const created = newStep(draft.steps.length); setDraft({ ...draft, steps: [...draft.steps, created] }); setScreen(created.id); }}>
+                    <span>+ Добавить вопрос</span>
                   </button>
-                  {testOpen ? <TestDigits draft={draft} values={testVars} onChange={setTestVars} /> : null}
+                  <FlowButton active={screen === "lead"} label="Контакт" onClick={() => setScreen("lead")} />
+                  <FlowButton active={screen === "thanks"} label="Спасибо" onClick={() => setScreen("thanks")} />
                 </div>
               ) : null}
-              <button type="button" className="text-xs text-[#52525b]" onClick={() => setWalk((value) => !value)}>
-                <span>{walk ? "Режим редактирования" : "Пройти как клиент"}</span>
-              </button>
-            </div>
-            <div className={`mx-auto flex h-[min(800px,calc(100dvh-8.5rem))] flex-col overflow-hidden border border-[#e4e4e7] bg-[#fff] ${device === "mobile" ? "w-[390px]" : "w-full max-w-5xl"}`}>
-              <div className="border-b border-[#e4e4e7] bg-[#fafafa] px-4 py-2 text-center text-xs text-[#71717a]">
-                {liveHost.ok ? (
-                  <a href={publicUrl} target="_blank" rel="noopener noreferrer" title={status === "draft" ? "Сначала нажмите «Опубликовать»" : undefined} className="inline-flex items-center gap-1 text-[#52525b]">
-                    <span>{hostLabel}</span>
-                    <ExternalLink className="h-[13px] w-[13px]" />
-                  </a>
-                ) : <span>strikeplatform.io/s/имя</span>}
+              {panel === "design" ? <Design theme={theme} consultant={draft.consultant} siteId={site.id} onChange={setTheme} onConsultant={(consultant) => setDraft((current) => ({ ...current, consultant }))} /> : null}
+            </aside>
+          ) : null}
+          {panel === "settings" ? (
+            <main className="min-h-0 min-w-0 flex-1 overflow-y-auto p-8">
+              <div className="mx-auto w-full max-w-xl">{settings}</div>
+            </main>
+          ) : (
+            <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden p-4">
+              <div className={`mx-auto flex min-h-0 w-full flex-1 flex-col overflow-hidden rounded-xl border border-[#e4e4e7]/80 bg-[#fff] shadow-sm ${device === "mobile" ? "max-w-[390px]" : ""}`}>
+                <div className="min-h-0 flex-1">
+                  <QuizRunner schema={draft} theme={theme} siteTitle={title} live={false} screen={walk ? undefined : screen} compact={device === "mobile"} embedded previewOverrides={testVars} />
+                </div>
               </div>
-              <div className="min-h-0 flex-1">
-                <QuizRunner schema={draft} theme={theme} siteTitle={title} live={false} screen={walk ? undefined : screen} compact={device === "mobile"} embedded previewOverrides={testVars} />
-              </div>
-            </div>
-          </main>
-          <aside className="overflow-y-auto border-l border-[#e4e4e7] bg-[#fff] p-4">
-            {screen === "start" ? <StartInspector siteId={site.id} title={title} preset={theme.preset} draft={draft} onChange={setDraft} /> : null}
-            {step ? <StepInspector siteId={site.id} title={title} step={step} steps={draft.steps} consultant={draft.consultant} calculatorOpen={draft.resultPreview.enabled} onChange={updateStep} onConsultant={(consultant) => setDraft((current) => ({ ...current, consultant }))} onDelete={() => { setDraft((current) => ({ ...current, steps: current.steps.filter((item) => item.id !== step.id) })); setScreen("start"); }} /> : null}
-            {screen === "lead" ? <LeadInspector siteId={site.id} title={title} draft={draft} onChange={setDraft} /> : null}
-            {screen === "thanks" ? <ThanksInspector draft={draft} onChange={setDraft} /> : null}
-          </aside>
+            </main>
+          )}
+          {showRight ? (
+            <aside className="w-[320px] shrink-0 overflow-y-auto border-l border-[#e4e4e7] bg-[#fff] p-4">
+              {screen === "start" ? <StartInspector siteId={site.id} title={title} preset={theme.preset} draft={draft} onChange={setDraft} /> : null}
+              {step ? <StepInspector siteId={site.id} title={title} step={step} steps={draft.steps} consultant={draft.consultant} calculatorOpen={draft.resultPreview.enabled} onChange={updateStep} onConsultant={(consultant) => setDraft((current) => ({ ...current, consultant }))} onDelete={() => { setDraft((current) => ({ ...current, steps: current.steps.filter((item) => item.id !== step.id) })); setScreen("start"); }} /> : null}
+              {screen === "lead" ? <LeadInspector siteId={site.id} title={title} draft={draft} onChange={setDraft} /> : null}
+              {screen === "thanks" ? <ThanksInspector draft={draft} onChange={setDraft} /> : null}
+            </aside>
+          ) : null}
         </div>
       )}
     </div>
@@ -294,7 +331,7 @@ function FlowButton({ active, label, onClick }: { active: boolean; label: string
 
 function Design({ theme, consultant, siteId, onChange, onConsultant }: { theme: ThemeConfig; consultant: QuizSchema["consultant"]; siteId: string; onChange: (theme: ThemeConfig) => void; onConsultant: (consultant: QuizSchema["consultant"]) => void }) {
   return (
-    <div className="mt-4 grid gap-3">
+    <div className="grid gap-3">
       {(Object.keys(THEME_LABEL) as Array<keyof typeof THEME_LABEL>).map((preset) => (
         <button key={preset} type="button" className={`rounded-xl border px-3 py-3 text-left text-sm ${theme.preset === preset ? "border-[#09090b]" : "border-[#e4e4e7]"}`} onClick={() => onChange({ ...theme, preset })}>
           <span>{THEME_LABEL[preset]}</span>
@@ -329,7 +366,7 @@ function Settings(props: {
   const check = normalizeSubdomain(props.subdomain);
   const domain = normalizeCustomDomain(props.customDomain);
   return (
-    <div className="mt-4 grid gap-3 text-sm">
+    <div className="grid gap-3 text-sm">
       <label className="grid gap-1 text-xs text-[#52525b]">
         <span>Субдомен</span>
         <input className={field} value={props.subdomain} onChange={(event) => props.onSubdomain(event.target.value)} />

@@ -5,7 +5,7 @@ import type { ReactNode } from "react";
 import { SWRConfig } from "swr";
 
 import { LegalLinks } from "@/components/legal-links";
-import { isPortalPath } from "@/lib/navigation";
+import { isPortalPath, isQuizStudioPath } from "@/lib/navigation";
 import { swrConfig } from "@/lib/swr";
 
 /**
@@ -24,7 +24,11 @@ export function AppShell({
 }) {
   const pathname = usePathname();
 
-  const content = !isPortalPath(pathname) ? (
+  const content = isQuizStudioPath(pathname) ? (
+    <div className="portal h-dvh w-full overflow-hidden bg-[#fafafa] text-[#52525b]">
+      <main className="h-full w-full overflow-hidden">{children}</main>
+    </div>
+  ) : !isPortalPath(pathname) ? (
     <>
       <main className="flex-1">{children}</main>
       {footer}

@@ -21,12 +21,15 @@ export function StartScreen({
   theme,
   siteTitle,
   compact = false,
+  pinnedSplit = false,
   onStart,
 }: {
   schema: QuizSchema;
   theme: ThemeConfig;
   siteTitle: string;
   compact?: boolean;
+  /** Студия в режиме Desktop: всегда две колонки, без стопки из-за узкого холста. */
+  pinnedSplit?: boolean;
   onStart: () => void;
 }) {
   const palette = quizPalette(theme);
@@ -62,6 +65,7 @@ export function StartScreen({
 
   if (start.layout === "editorial_split") {
     if (compact) return <EditorialMobile palette={palette} theme={theme} start={start} siteTitle={siteTitle} content={editorialCopy} />;
+    if (pinnedSplit) return <EditorialDesktop palette={palette} theme={theme} start={start} siteTitle={siteTitle} content={editorialCopy} />;
     return (
       <div className="@container/stage h-full min-h-0 w-full">
         <div className="h-full @min-[760px]/stage:hidden">
@@ -133,7 +137,7 @@ function EditorialDesktop({
   content: ReactNode;
 }) {
   return (
-    <div className="grid h-full min-h-0 w-full grid-cols-2 overflow-hidden" style={{ background: architectural(theme), color: startInk(theme).fg, fontFamily: palette.font }}>
+    <div className="@container/stage grid h-full min-h-0 w-full grid-cols-2 overflow-hidden" style={{ background: architectural(theme), color: startInk(theme).fg, fontFamily: palette.font }}>
       <div className="flex min-h-0 min-w-0 flex-col overflow-x-hidden overflow-y-auto">
         <div className="m-auto w-full min-w-0 px-6 py-6 @min-[900px]/stage:px-8 @min-[1200px]/stage:px-10">
           {content}

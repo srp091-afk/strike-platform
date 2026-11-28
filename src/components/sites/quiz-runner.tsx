@@ -167,7 +167,7 @@ export function QuizRunner({
     return (
       <div className={shellClass} style={canvas}>
         <div className={embedded ? "min-h-0 flex-1" : "h-[100dvh] overflow-hidden"}>
-          <StartScreen schema={schema} theme={theme} siteTitle={siteTitle} compact={compact} onStart={() => { setPhase("step"); if (live && siteId) void sendEvent(siteId, "quiz_start"); }} />
+          <StartScreen schema={schema} theme={theme} siteTitle={siteTitle} compact={compact} pinnedSplit={embedded && !compact} onStart={() => { setPhase("step"); if (live && siteId) void sendEvent(siteId, "quiz_start"); }} />
         </div>
       </div>
     );

@@ -48,6 +48,11 @@ export function isPortalPath(pathname: string) {
   return PORTAL_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
 }
 
+/** Редактор квиза. Список `/funnels` и конструктор лендинга остаются в обычном портале. */
+export function isQuizStudioPath(pathname: string) {
+  return /^\/funnels\/(?!builder$)[^/]+$/.test(pathname);
+}
+
 export function isNavActive(pathname: string, href: string) {
   if (href === "/dashboard") return pathname === "/dashboard";
   return pathname === href || pathname.startsWith(`${href}/`);
